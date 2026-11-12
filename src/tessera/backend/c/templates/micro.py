@@ -131,6 +131,16 @@ def describe(
     return PrimFunc(f"{block}_desc", tuple(params), root)
 
 
+def is_constant(group: LoweredGroup, buffer: Buffer) -> bool:
+    """Whether ``buffer`` is a parameter of the group's function bound to a
+    graph constant (a weight)."""
+    params = list(group.func.params)
+    if buffer not in params:
+        return False
+    index = params.index(buffer)
+    return index < len(group.group.inputs) and group.group.inputs[index].data is not None
+
+
 def _register(kind: str, desc: PrimFunc, impl: intrin.Impl, reference: intrin.Reference) -> str:
     name = f"c.{kind}_{structural_hash(desc)[:16]}"
     if name not in intrin.registered():
@@ -208,10 +218,17 @@ def gemm_layout(sch: Schedule, block: str, i: Var, j: Var, k: Var) -> GemmLayout
 
 
 def gemm_intrinsic(
-    sch: Schedule, block: str, layout: GemmLayout, nest: Sequence[Var], isa: str
+    sch: Schedule,
+    block: str,
+    layout: GemmLayout,
+    nest: Sequence[Var],
+    isa: str,
+    *,
+    constant_b: bool = False,
 ) -> str:
     """Register the GEMM intrinsic for the ``(rows, columns, reduction)`` nest
-    and return its name."""
+    and return its name. With ``constant_b`` (B is a model constant) the
+    microkernel keeps its packing of B for later calls."""
     red = sch.extent(nest[2])
     kernel = SGEMM_KERNELS[isa][layout.transposed]
     # The description has a buffer of its own per operand, so two operands that
@@ -238,7 +255,7 @@ def gemm_intrinsic(
             pa, IntImm(sa[layout.a_rows]),
             pb, IntImm(sb[layout.b_stride_dim]),
             pc, IntImm(sc[layout.c_rows]),
-            IntImm(1),
+            IntImm(1), IntImm(int(constant_b)),
         )  # fmt: skip
         return Evaluate(Call(kernel.name, args, DType.int32))
 
@@ -251,7 +268,7 @@ def gemm_intrinsic(
         product = av.astype(np.float64) @ (bv.T if layout.transposed else bv).astype(np.float64)
         cv += product.astype(np.float32)
 
-    return _register(f"{isa}_sgemm", desc, impl, reference)
+    return _register(f"{isa}_sgemm{'_constb' if constant_b else ''}", desc, impl, reference)
 
 
 @dataclass(frozen=True)
@@ -340,6 +357,8 @@ def conv_intrinsic(
     layout: ConvLayout,
     nest: Sequence[Var],
     isa: str,
+    *,
+    constant_w: bool = False,
 ) -> str:
     """Register the convolution intrinsic for the nest ``(oh, ow, o, kh, kw, c)``
     (the whole output plane, a strip of channels) and return its name."""
@@ -364,6 +383,7 @@ def conv_intrinsic(
             *(IntImm(g) for g in geometry),
             IntImm(pads[0]), IntImm(pads[1]),
             IntImm(dilations[0]), IntImm(dilations[1]), IntImm(ow), IntImm(1),
+            IntImm(int(constant_w)),
         )  # fmt: skip
         return Evaluate(Call(kernel.name, args, DType.int32))
 
@@ -384,4 +404,4 @@ def conv_intrinsic(
         yv = y.reshape(oh, ow, strip)
         yv += out.astype(np.float32)
 
-    return _register(f"{isa}_conv2d", desc, impl, reference)
+    return _register(f"{isa}_conv2d{'_constw' if constant_w else ''}", desc, impl, reference)

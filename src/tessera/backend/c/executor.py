@@ -94,6 +94,7 @@ def model_sources(plan: ExecutionPlan, target: Target) -> ModelSource:
 
     out.append(f"TSR_EXPORT int32_t tessera_abi(void) {{ return {ABI_VERSION}; }}")
     out.append("")
+    out += _forget_constants(headers)
     out.append(f"TSR_EXPORT void tessera_run({_RUN_PARAMS}) {{")
     out.append("  tsr_prefer_performance_cores();")
     out += [f"  {c}" for c in calls]
@@ -120,6 +121,15 @@ def model_sources(plan: ExecutionPlan, target: Target) -> ModelSource:
     ]
     files = {"model.c": "\n".join(out), **header_files(["tessera_runtime.h", *headers])}
     return ModelSource(files, kernels)
+
+
+def _forget_constants(headers: list[str]) -> list[str]:
+    """``tessera_forget_constants``: drops the microkernels' packings of
+    constant operands, so that none is reused for other data later placed at
+    the same address."""
+    packs = any(h != "tessera_runtime.h" for h in headers)
+    body = "  tsr_forget_panels();" if packs else ""
+    return ["TSR_EXPORT void tessera_forget_constants(void) {", *([body] if body else []), "}", ""]
 
 
 def _pointer(ref: BufferRef, ctype: str) -> str:
@@ -156,6 +166,9 @@ class CModel:
         self._lib = ctypes.CDLL(str(library))
         if self._lib.tessera_abi() != ABI_VERSION:
             raise RuntimeError(f"{library} was built for another runtime version")
+        # The library may be shared with a model loaded earlier whose constants
+        # lived at addresses this one's may reuse.
+        self._lib.tessera_forget_constants()
         ptrs = [ctypes.c_void_p] * 4
         self._run = self._lib.tessera_run
         self._run.argtypes = ptrs
@@ -291,6 +304,7 @@ def kernel_sources(func: PrimFunc, target: Target) -> dict[str, str]:
             code.text,
             f"TSR_EXPORT int32_t tessera_abi(void) {{ return {ABI_VERSION}; }}",
             "",
+            *_forget_constants(list(code.headers)),
             "TSR_EXPORT void tessera_kernel(void* const* args) {",
             "  tsr_prefer_performance_cores();",
             f"  {code.name}({casts});",
@@ -322,4 +336,5 @@ def run_kernel(func: PrimFunc, args: Sequence[NDArray], target: Target | None = 
     fn.argtypes = [ctypes.c_void_p]
     fn.restype = None
     pointers = (ctypes.c_void_p * max(len(args), 1))(*[a.ctypes.data for a in args])
+    lib.tessera_forget_constants()  # earlier calls' arrays may have lived here
     fn(pointers)

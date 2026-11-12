@@ -98,20 +98,23 @@ static const tsr_blocking tsr_neon_blocking = {
     TSR_NEON_MR, TSR_NEON_NR, TSR_NEON_MC, TSR_NEON_NC, TSR_NEON_KC, tsr_neon_macro,
 };
 
-/* C = A B (accumulate == 0) or C += A B, for one m x n tile. */
+/* C = A B (accumulate == 0) or C += A B, for one m x n tile. With constant_b,
+ * B is a model constant and its packing is kept for later calls. */
 static void tsr_neon_sgemm(int64_t m, int64_t n, int64_t k, const float* A, int64_t lda,
                            const float* B, int64_t ldb, float* C, int64_t ldc,
-                           int64_t accumulate) {
+                           int64_t accumulate, int64_t constant_b) {
   tsr_lhs lhs = {A, lda, NULL, 0};
-  tsr_blocked_gemm(&tsr_neon_blocking, m, n, k, &lhs, B, ldb, false, C, ldc, accumulate != 0);
+  tsr_blocked_gemm(&tsr_neon_blocking, m, n, k, &lhs, B, ldb, false, C, ldc, accumulate != 0,
+                   constant_b != 0);
 }
 
 /* The same with B read transposed: B[p, j] at B[j * ldb + p]. */
 static void tsr_neon_sgemm_bt(int64_t m, int64_t n, int64_t k, const float* A, int64_t lda,
                               const float* B, int64_t ldb, float* C, int64_t ldc,
-                              int64_t accumulate) {
+                              int64_t accumulate, int64_t constant_b) {
   tsr_lhs lhs = {A, lda, NULL, 0};
-  tsr_blocked_gemm(&tsr_neon_blocking, m, n, k, &lhs, B, ldb, true, C, ldc, accumulate != 0);
+  tsr_blocked_gemm(&tsr_neon_blocking, m, n, k, &lhs, B, ldb, true, C, ldc, accumulate != 0,
+                   constant_b != 0);
 }
 
 /*
@@ -123,11 +126,11 @@ static void tsr_neon_conv2d(int64_t m, int64_t n, int64_t p0, const float* x, co
                             int64_t ldw, float* y, int64_t ldy, int64_t h, int64_t wd,
                             int64_t c, int64_t kh, int64_t kw, int64_t sh, int64_t sw,
                             int64_t ph, int64_t pw, int64_t dh, int64_t dw, int64_t ow,
-                            int64_t accumulate) {
+                            int64_t accumulate, int64_t constant_b) {
   tsr_conv_shape shape = {h, wd, c, kh, kw, sh, sw, ph, pw, dh, dw, ow};
   tsr_lhs lhs = {x, 0, &shape, p0};
   tsr_blocked_gemm(&tsr_neon_blocking, m, n, kh * kw * c, &lhs, w, ldw, false, y, ldy,
-                   accumulate != 0);
+                   accumulate != 0, constant_b != 0);
 }
 
 #endif /* TESSERA_NEON_H */

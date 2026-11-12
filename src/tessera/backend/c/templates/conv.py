@@ -27,7 +27,7 @@ from tessera.backend.c.templates.common import (
     vectorize_inside,
 )
 from tessera.backend.c.templates.matmul import tile_loops
-from tessera.backend.c.templates.micro import ConvLayout, conv_intrinsic, conv_layout
+from tessera.backend.c.templates.micro import ConvLayout, conv_intrinsic, conv_layout, is_constant
 from tessera.plan import LoweredGroup
 from tessera.tir.expr import Var
 from tessera.tir.schedule import Schedule
@@ -175,4 +175,6 @@ def _schedule_micro(
             schedule_alone(sch, epilogue)
     parallel_on(sch, [n, co], enabled, knobs.threads)
     nest = [oh, ow, ci, *reduce]
-    sch.tensorize(oh, conv_intrinsic(sch, main, group, layout, nest, target.isa))
+    constant = is_constant(group, layout.w)
+    intrinsic = conv_intrinsic(sch, main, group, layout, nest, target.isa, constant_w=constant)
+    sch.tensorize(oh, intrinsic)

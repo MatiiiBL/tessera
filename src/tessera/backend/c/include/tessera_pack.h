@@ -194,9 +194,127 @@ typedef struct {
  *
  * B[q, j] is B[q * ldb + j], or B[j * ldb + q] with b_transposed.
  */
+/* Where the driver gets its packed blocks of B: packed on the spot into a
+ * scratch buffer, or taken in order from panels packed earlier. */
+typedef struct {
+  const float* b;
+  int64_t ldb, nr;
+  bool transposed;
+  float* scratch;
+  const float* cached; /* the next block of a packing made earlier, or NULL */
+} tsr_rhs;
+
+static const float* tsr_rhs_block(tsr_rhs* r, int64_t j0, int64_t nc, int64_t p0, int64_t kc) {
+  if (r->cached) {
+    const float* block = r->cached;
+    r->cached += (nc + r->nr - 1) / r->nr * r->nr * kc;
+    return block;
+  }
+  if (r->transposed) {
+    tsr_pack_rows(r->nr, nc, kc, r->b + j0 * r->ldb + p0, r->ldb, r->scratch);
+  } else {
+    tsr_pack_cols(r->nr, kc, nc, r->b + p0 * r->ldb + j0, r->ldb, r->scratch);
+  }
+  return r->scratch;
+}
+
+/* The order in which the driver visits blocks of B: by blocks of the
+ * reduction then of columns when A is a single block of rows, else by
+ * blocks of columns then of the reduction. */
+static bool tsr_reduction_outer(const tsr_blocking* blk, int64_t m) { return m <= blk->mc; }
+
+/* ---- weights packed once ------------------------------------------------ */
+
+/*
+ * A B operand that is a model constant (a weight) is packed at its first
+ * call, every block in the order the driver uses them, and the packing is
+ * kept for later calls: for the skinny products of a transformer, packing
+ * B costs about as much as the multiplication. Entries are keyed by the
+ * operand's address and geometry. tsr_forget_panels drops them all; the
+ * executor calls it whenever it loads a model (and run_kernel before every
+ * call), so a packing is never reused for other data that came to live at
+ * the same address. The packing costs as much memory as the weights.
+ */
+typedef struct {
+  const float* b;
+  int64_t ldb, k, n;
+  bool transposed, reduction_outer;
+  const tsr_blocking* blk;
+  float* panels;
+} tsr_panel_entry;
+
+static tsr_panel_entry* tsr_panel_entries;
+static size_t tsr_panel_count, tsr_panel_capacity;
+static pthread_mutex_t tsr_panel_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void tsr_forget_panels(void) {
+  pthread_mutex_lock(&tsr_panel_mutex);
+  for (size_t i = 0; i < tsr_panel_count; ++i) tsr_free(tsr_panel_entries[i].panels);
+  tsr_panel_count = 0;
+  pthread_mutex_unlock(&tsr_panel_mutex);
+}
+
+static const float* tsr_constant_panels(const tsr_blocking* blk, int64_t m, int64_t n, int64_t k,
+                                        const float* b, int64_t ldb, bool transposed) {
+  bool outer = tsr_reduction_outer(blk, m);
+  pthread_mutex_lock(&tsr_panel_mutex);
+  for (size_t i = 0; i < tsr_panel_count; ++i) {
+    tsr_panel_entry* e = &tsr_panel_entries[i];
+    if (e->b == b && e->ldb == ldb && e->k == k && e->n == n && e->transposed == transposed &&
+        e->reduction_outer == outer && e->blk == blk) {
+      pthread_mutex_unlock(&tsr_panel_mutex);
+      return e->panels;
+    }
+  }
+  int64_t n_pad = 0;
+  for (int64_t j0 = 0; j0 < n; j0 += blk->nc) {
+    int64_t nc = n - j0 < blk->nc ? n - j0 : blk->nc;
+    n_pad += (nc + blk->nr - 1) / blk->nr * blk->nr;
+  }
+  float* panels = (float*)tsr_alloc((size_t)(n_pad * k) * sizeof(float));
+  float* out = panels;
+  tsr_rhs r = {b, ldb, blk->nr, transposed, NULL, NULL};
+  for (int64_t outer_i = 0; outer_i < (outer ? k : n); outer_i += outer ? blk->kc : blk->nc) {
+    for (int64_t inner_i = 0; inner_i < (outer ? n : k); inner_i += outer ? blk->nc : blk->kc) {
+      int64_t p0 = outer ? outer_i : inner_i, j0 = outer ? inner_i : outer_i;
+      int64_t kc = k - p0 < blk->kc ? k - p0 : blk->kc;
+      int64_t nc = n - j0 < blk->nc ? n - j0 : blk->nc;
+      r.scratch = out;
+      tsr_rhs_block(&r, j0, nc, p0, kc);
+      out += (nc + blk->nr - 1) / blk->nr * blk->nr * kc;
+    }
+  }
+  if (tsr_panel_count == tsr_panel_capacity) {
+    tsr_panel_capacity = tsr_panel_capacity ? 2 * tsr_panel_capacity : 64;
+    tsr_panel_entries = (tsr_panel_entry*)realloc(
+        tsr_panel_entries, tsr_panel_capacity * sizeof(tsr_panel_entry));
+  }
+  tsr_panel_entries[tsr_panel_count++] =
+      (tsr_panel_entry){b, ldb, k, n, transposed, outer, blk, panels};
+  pthread_mutex_unlock(&tsr_panel_mutex);
+  return panels;
+}
+
+/* ---- the blocked driver shared by every GEMM-like kernel ----------------- */
+
+/*
+ * C[0:m, 0:n] (+)= A[0:m, 0:k] B[0:k, 0:n], BLIS-style:
+ *
+ *   for each block of nc columns:            pack B (kc x nc) into nr-wide panels
+ *     for each block of kc reduction steps:
+ *       for each block of mc rows:           pack A (mc x kc) into mr-high panels
+ *         macro: every mr x nr block of the mc x nc block of C
+ *
+ * When A is a single block of rows (m <= mc), the column loop moves inside
+ * the reduction loop, so A is packed once per block of the reduction rather
+ * than once per block of columns. With `constant_b`, B's blocks come from a
+ * packing kept across calls (tsr_constant_panels).
+ *
+ * B[q, j] is B[q * ldb + j], or B[j * ldb + q] with b_transposed.
+ */
 static void tsr_blocked_gemm(const tsr_blocking* blk, int64_t m, int64_t n, int64_t k,
                              const tsr_lhs* lhs, const float* B, int64_t ldb, bool b_transposed,
-                             float* C, int64_t ldc, bool accumulate) {
+                             float* C, int64_t ldc, bool accumulate, bool constant_b) {
   if (m <= 0 || n <= 0) return;
   if (k <= 0) {
     if (!accumulate)
@@ -206,9 +324,15 @@ static void tsr_blocked_gemm(const tsr_blocking* blk, int64_t m, int64_t n, int6
   int64_t kc_max = k < blk->kc ? k : blk->kc;
   int64_t mc_max = m < blk->mc ? m : blk->mc;
   int64_t nc_max = n < blk->nc ? n : blk->nc;
-  float* bp = tsr_pack_buffer(0, (size_t)((nc_max + blk->nr - 1) / blk->nr * blk->nr * kc_max));
   float* ap = tsr_pack_buffer(1, (size_t)((mc_max + blk->mr - 1) / blk->mr * blk->mr * kc_max));
-  if (m <= blk->mc) {
+  tsr_rhs rhs = {B, ldb, blk->nr, b_transposed, NULL, NULL};
+  if (constant_b) {
+    rhs.cached = tsr_constant_panels(blk, m, n, k, B, ldb, b_transposed);
+  } else {
+    rhs.scratch =
+        tsr_pack_buffer(0, (size_t)((nc_max + blk->nr - 1) / blk->nr * blk->nr * kc_max));
+  }
+  if (tsr_reduction_outer(blk, m)) {
     /* One block of rows (the skinny products of a transformer): pack A once
      * per block of the reduction and walk every block of columns under it. */
     for (int64_t p0 = 0; p0 < k; p0 += blk->kc) {
@@ -220,11 +344,7 @@ static void tsr_blocked_gemm(const tsr_blocking* blk, int64_t m, int64_t n, int6
       }
       for (int64_t j0 = 0; j0 < n; j0 += blk->nc) {
         int64_t nc = n - j0 < blk->nc ? n - j0 : blk->nc;
-        if (b_transposed) {
-          tsr_pack_rows(blk->nr, nc, kc, B + j0 * ldb + p0, ldb, bp);
-        } else {
-          tsr_pack_cols(blk->nr, kc, nc, B + p0 * ldb + j0, ldb, bp);
-        }
+        const float* bp = tsr_rhs_block(&rhs, j0, nc, p0, kc);
         blk->macro(m, nc, kc, ap, bp, C + j0, ldc, accumulate || p0 > 0);
       }
     }
@@ -234,11 +354,7 @@ static void tsr_blocked_gemm(const tsr_blocking* blk, int64_t m, int64_t n, int6
     int64_t nc = n - j0 < blk->nc ? n - j0 : blk->nc;
     for (int64_t p0 = 0; p0 < k; p0 += blk->kc) {
       int64_t kc = k - p0 < blk->kc ? k - p0 : blk->kc;
-      if (b_transposed) {
-        tsr_pack_rows(blk->nr, nc, kc, B + j0 * ldb + p0, ldb, bp);
-      } else {
-        tsr_pack_cols(blk->nr, kc, nc, B + p0 * ldb + j0, ldb, bp);
-      }
+      const float* bp = tsr_rhs_block(&rhs, j0, nc, p0, kc);
       for (int64_t i0 = 0; i0 < m; i0 += blk->mc) {
         int64_t mc = m - i0 < blk->mc ? m - i0 : blk->mc;
         if (lhs->conv) {

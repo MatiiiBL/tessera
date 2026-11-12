@@ -53,7 +53,7 @@ def host_supports(isa: CpuIsa) -> bool:
 
 # Implicit-GEMM convolution of one NHWC image with HWIO weights, on output
 # pixels [p0, p0 + m) x channels [0, n): arguments ``(m, n, p0, x, w, ldw, y,
-# ldy, h, w, c, kh, kw, sh, sw, ph, pw, dh, dw, ow, accumulate)``.
+# ldy, h, w, c, kh, kw, sh, sw, ph, pw, dh, dw, ow, accumulate, constant_w)``.
 CONV2D_KERNELS = {
     isa: register_microkernel(
         Microkernel(f"c.{isa}_conv2d", f"tsr_{isa}_conv2d", f"tessera_{isa}.h", isa)
@@ -62,9 +62,11 @@ CONV2D_KERNELS = {
 }
 
 # GEMM on one tile, ``C[0:m, 0:n] (+)= A[0:m, 0:k] B[0:k, 0:n]``, with arguments
-# ``(m, n, k, A, lda, B, ldb, C, ldc, accumulate)``: row-major operands with
-# leading dimensions in elements; ``accumulate`` 0 overwrites C. The ``_bt``
-# variants read B transposed, ``B[p, j]`` at ``B[j * ldb + p]``.
+# ``(m, n, k, A, lda, B, ldb, C, ldc, accumulate, constant_b)``: row-major
+# operands with leading dimensions in elements; ``accumulate`` 0 overwrites
+# C; ``constant_b`` 1 says B (or the weights W) is a model constant, whose
+# packing the kernel keeps for later calls. The ``_bt`` variants read B
+# transposed, ``B[p, j]`` at ``B[j * ldb + p]``.
 SGEMM_KERNELS = {
     isa: {
         transposed: register_microkernel(

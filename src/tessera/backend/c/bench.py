@@ -301,10 +301,10 @@ static void work(void* args, int64_t begin, int64_t end) {
     if (hi <= lo) continue;
     if (j->mode == 0 || (j->mode == 2 && p == 0)) {
       tsr_sme_sgemm(hi - lo, j->n, j->k, j->a + lo * j->k, j->k, j->b, j->n, j->c + lo * j->n,
-                    j->n, 0);
+                    j->n, 0, 0);
     } else {
       tsr_neon_sgemm(hi - lo, j->n, j->k, j->a + lo * j->k, j->k, j->b, j->n, j->c + lo * j->n,
-                     j->n, 0);
+                     j->n, 0, 0);
     }
   }
 }

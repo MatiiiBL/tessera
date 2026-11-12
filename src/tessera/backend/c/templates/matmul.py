@@ -27,7 +27,7 @@ from tessera.backend.c.templates.common import (
     try_apply,
     vectorize_inside,
 )
-from tessera.backend.c.templates.micro import GemmLayout, gemm_intrinsic, gemm_layout
+from tessera.backend.c.templates.micro import GemmLayout, gemm_intrinsic, gemm_layout, is_constant
 from tessera.plan import LoweredGroup
 from tessera.tir.expr import Var
 from tessera.tir.schedule import Schedule
@@ -158,7 +158,9 @@ def _schedule_micro(
             schedule_alone(sch, epilogue)
     # Parallelize first: the tensorized block passes every operand by address.
     parallel_on(sch, [*batch, jo, io], enabled, knobs.threads)
-    sch.tensorize(ii, gemm_intrinsic(sch, main, layout, [ii, ji, k], target.isa))
+    constant = is_constant(group, layout.b)
+    intrinsic = gemm_intrinsic(sch, main, layout, [ii, ji, k], target.isa, constant_b=constant)
+    sch.tensorize(ii, intrinsic)
 
 
 def tile_loops(

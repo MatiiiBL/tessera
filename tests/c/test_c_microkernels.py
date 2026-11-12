@@ -40,15 +40,16 @@ WRAPPER = """
 #include "tessera_{isa}.h"
 TSR_EXPORT void gemm(int64_t m, int64_t n, int64_t k, const float* a, int64_t lda,
                      const float* b, int64_t ldb, float* c, int64_t ldc, int64_t accumulate,
-                     int64_t transposed) {{
-  if (transposed) tsr_{isa}_sgemm_bt(m, n, k, a, lda, b, ldb, c, ldc, accumulate);
-  else tsr_{isa}_sgemm(m, n, k, a, lda, b, ldb, c, ldc, accumulate);
+                     int64_t transposed, int64_t constant) {{
+  if (transposed) tsr_{isa}_sgemm_bt(m, n, k, a, lda, b, ldb, c, ldc, accumulate, constant);
+  else tsr_{isa}_sgemm(m, n, k, a, lda, b, ldb, c, ldc, accumulate, constant);
 }}
 TSR_EXPORT void conv(int64_t m, int64_t n, int64_t p0, const float* x, const float* w,
                      int64_t ldw, float* y, int64_t ldy, const int64_t* g, int64_t accumulate) {{
   tsr_{isa}_conv2d(m, n, p0, x, w, ldw, y, ldy, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
-                   g[8], g[9], g[10], g[11], accumulate);
+                   g[8], g[9], g[10], g[11], accumulate, 0);
 }}
+TSR_EXPORT void forget(void) {{ tsr_forget_panels(); }}
 """
 
 
@@ -86,7 +87,7 @@ def _check(isa: CpuIsa, m: int, n: int, k: int, *, transposed: bool, accumulate:
         a_full.ctypes.data, k + 3,
         b_full.ctypes.data, b_full.shape[1],
         c_full.ctypes.data, n + 7,
-        int(accumulate), int(transposed),
+        int(accumulate), int(transposed), 0,
     )  # fmt: skip
     np.testing.assert_allclose(c_full[:, :n], expected, rtol=1e-4, atol=1e-4 * np.sqrt(k + 1))
     np.testing.assert_array_equal(c_full[:, n:], untouched)
@@ -129,7 +130,7 @@ def test_generated_code_calls_the_microkernel(isa: CpuIsa) -> None:
         a.address(10, 0), IntImm(16),
         b.address(0, 0), IntImm(24),
         c.address(0, 0), IntImm(30),
-        IntImm(0),
+        IntImm(0), IntImm(0),
     )  # fmt: skip
     func = PrimFunc("tile", (a, b, c), root(Evaluate(Call(kernel.name, args, DType.int32))))
     rng = np.random.default_rng(3)
@@ -210,3 +211,34 @@ def test_conv2d_tiles(isa: CpuIsa, case: tuple) -> None:  # type: ignore[type-ar
         outside = np.ones_like(y, bool)
         outside[p0 : p0 + m, o0 : o0 + n] = False
         np.testing.assert_array_equal(y[outside], before[outside])
+
+
+@pytest.mark.parametrize("isa", ISA_PARAMS)
+@pytest.mark.parametrize("transposed", [False, True])
+def test_constant_b_is_packed_once_and_forgotten(isa: CpuIsa, transposed: bool) -> None:
+    """A constant B is packed at the first call and reused; after forget, new
+    data at the same address is packed again."""
+    m, n, k = 40, 70, 300
+    rng = np.random.default_rng(5)
+    a = rng.standard_normal((m, k)).astype(np.float32)
+    b = rng.standard_normal((n, k) if transposed else (k, n)).astype(np.float32)
+    c = np.zeros((m, n), np.float32)
+    gemm, lib = _gemm(isa), _library(isa)
+    lib.forget()
+
+    def call() -> NDArray:
+        ldb = b.shape[1]
+        gemm(m, n, k, a.ctypes.data, k, b.ctypes.data, ldb, c.ctypes.data, n, 0, int(transposed), 1)
+        return c.copy()
+
+    def want() -> NDArray:
+        bm = b.T if transposed else b
+        return (a.astype(np.float64) @ bm.astype(np.float64)).astype(np.float32)
+
+    np.testing.assert_allclose(call(), want(), rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(call(), want(), rtol=1e-4, atol=1e-4)  # from the kept packing
+    old = want()
+    b[...] = rng.standard_normal(b.shape).astype(np.float32)
+    np.testing.assert_allclose(call(), old, rtol=1e-4, atol=1e-4)  # still the kept packing
+    lib.forget()
+    np.testing.assert_allclose(call(), want(), rtol=1e-4, atol=1e-4)
