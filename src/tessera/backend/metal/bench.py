@@ -125,13 +125,101 @@ def launch_markdown(data: dict[str, Any], env: dict[str, Any]) -> str:
     )
 
 
+# Compute-bound work, where the clock matters: 256 threadgroups of 256 threads, each
+# thread running a dependent chain of multiply-adds.
+WARMUP_KERNEL = """\
+#include <metal_stdlib>
+using namespace metal;
+kernel void chain(device float* x [[buffer(0)]],
+                  uint i [[thread_position_in_grid]]) {
+  float v = x[i];
+  for (int k = 0; k < 2048; ++k) {
+    v = fma(v, 0.999f, 0.001f);
+  }
+  x[i] = v;
+}
+"""
+WARMUP_BATCH = 10
+
+
+def bench_warmup(idle_seconds: float = 3.0, batches: int = 40) -> dict[str, Any]:
+    """How an idle GPU's clock reacts to work: per-launch time of a small kernel in
+    batches of 50 launches, one command buffer per batch, starting from idle,
+    and then again after one continuous command buffer of about 50 ms."""
+    import time
+
+    device = runtime.device()
+    pipeline = device.compile(WARMUP_KERNEL).pipeline("chain")
+    buffer = device.buffer(4 * 256 * 256)
+
+    def program(count: int) -> runtime.Program:
+        p = device.program()
+        for _ in range(count):
+            p.add(pipeline, (256, 1, 1), (256, 1, 1), [(buffer, 0)])
+        return p
+
+    batch = program(WARMUP_BATCH)
+    trials: list[dict[str, Any]] = []
+    for warm in (False, True):
+        time.sleep(idle_seconds)
+        warm_seconds = 0.0
+        if warm:
+            single = program(1).run(1).gpu[0]
+            count = max(1, min(20000, int(0.05 / max(single, 1e-6))))
+            warm_seconds = program(count).run(1).gpu[0]
+        elapsed, points = 0.0, []
+        for _ in range(batches):
+            gpu = batch.run(1).gpu[0]
+            elapsed += gpu
+            points.append({"elapsed": elapsed, "per_launch": gpu / WARMUP_BATCH})
+        trials.append({"warmup_seconds": warm_seconds, "batches": points})
+    return {"device": device.info.name, "idle_seconds": idle_seconds, "trials": trials}
+
+
+def warmup_markdown(data: dict[str, Any], env: dict[str, Any]) -> str:
+    cold, warm = data["trials"]
+    picks = [0, 1, 2, 4, 9, 19, len(cold["batches"]) - 1]
+    rows = [
+        [
+            i + 1,
+            f"{cold['batches'][i]['elapsed'] * 1e3:.1f}",
+            f"{cold['batches'][i]['per_launch'] * 1e6:.1f}",
+            f"{warm['batches'][i]['per_launch'] * 1e6:.1f}",
+        ]
+        for i in picks
+    ]
+    return "\n".join(
+        [
+            report.header("Metal: GPU clock warmup", env, COMMANDS["warmup"]),
+            f"A compute-bound kernel of 256 x 256 threads, in batches of {WARMUP_BATCH} (one "
+            "command buffer each,",
+            "the CPU waiting for each), after the GPU has been idle for "
+            f"{data['idle_seconds']:.0f} s. The last column repeats",
+            "the batches after one continuous command buffer of "
+            f"{warm['warmup_seconds'] * 1e3:.0f} ms of the same kernel.",
+            "",
+            report.markdown_table(
+                [
+                    "Batch",
+                    "GPU time so far (ms)",
+                    "Per launch, from idle (µs)",
+                    "Per launch, after warmup (µs)",
+                ],
+                rows,
+            ),
+        ]
+    )
+
+
 COMMANDS = {
     "launch": "uv run python -m tessera.backend.metal.bench launch",
+    "warmup": "uv run python -m tessera.backend.metal.bench warmup",
 }
 BENCHMARKS: dict[
     str, tuple[Callable[[], dict[str, Any]], Callable[[dict[str, Any], dict[str, Any]], str]]
 ] = {
     "launch": (bench_launch, launch_markdown),
+    "warmup": (bench_warmup, warmup_markdown),
 }
 
 
