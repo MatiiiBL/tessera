@@ -12,6 +12,6 @@ build/
 dist/
 
 # Exported models, downloaded weights, compiled kernels and tuning scratch.
-data/
+/data
 *.dylib
 *.so
