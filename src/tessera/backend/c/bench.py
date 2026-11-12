@@ -276,8 +276,8 @@ def conv_study(quick: bool) -> list[Row]:
     return rows
 
 
+# Preceded by the runtime settings of a four-thread SME target (``runtime_defines``).
 SME_THREADS_SOURCE = r"""
-#define TSR_NUM_THREADS 4
 #include "tessera_runtime.h"
 #include "tessera_neon.h"
 #include "tessera_sme.h"
@@ -347,11 +347,12 @@ int main(int argc, char** argv) {
 def sme_threads_study(quick: bool) -> list[Row]:
     if not host_supports("sme"):
         return []
+    target = Target(isa="sme", num_threads=4)
     files = {
-        "sme_threads.c": SME_THREADS_SOURCE,
+        "sme_threads.c": "\n".join([*cbuild.runtime_defines(target), SME_THREADS_SOURCE]),
         **header_files(["tessera_sme.h", "tessera_neon.h"]),
     }
-    binary = cbuild.build(files, "sme_threads.c", Target(isa="sme"), kind="executable")
+    binary = cbuild.build(files, "sme_threads.c", target, kind="executable")
     rows = []
     for m, n, k in [(1024, 1024, 1024), (128, 3072, 768)][: 1 if quick else 2]:
         out = subprocess.run(

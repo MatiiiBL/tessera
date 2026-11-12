@@ -5,457 +5,457 @@
     "system": "Darwin 27.0.0",
     "compiler": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
     "numpy": "2.5.4",
-    "load_average": 1.76611328125,
-    "date": "2026-11-12T07:28:53+00:00"
+    "load_average": 1.7177734375,
+    "date": "2026-11-12T12:02:16+00:00"
   },
   "rows": [
     {
       "study": "gemm",
       "case": "256x256x256",
       "variant": "numpy t1",
-      "seconds": 2.3757304414780536e-05,
-      "gflops": 1412.3838047520328
+      "seconds": 2.364065758256923e-05,
+      "gflops": 1419.3527351261337
     },
     {
       "study": "gemm",
       "case": "256x256x256",
       "variant": "numpy t4",
-      "seconds": 2.3674620702507307e-05,
-      "gflops": 1417.316561124308
+      "seconds": 2.3841852640979835e-05,
+      "gflops": 1407.3751945906251
     },
     {
       "study": "gemm",
       "case": "256x256x256",
       "variant": "generic t1",
-      "seconds": 0.0002875074299,
-      "gflops": 116.70805172468346
+      "seconds": 0.0002911417942,
+      "gflops": 115.25116856616528
     },
     {
       "study": "gemm",
       "case": "256x256x256",
       "variant": "generic t4",
-      "seconds": 8.96644883e-05,
-      "gflops": 374.22208765340156
+      "seconds": 8.782417487e-05,
+      "gflops": 382.063731878703
     },
     {
       "study": "gemm",
       "case": "256x256x256",
       "variant": "neon t1",
-      "seconds": 0.0002849098031,
-      "gflops": 117.77212168520151
+      "seconds": 0.0002902553511,
+      "gflops": 115.60314692851155
     },
     {
       "study": "gemm",
       "case": "256x256x256",
       "variant": "neon t4",
-      "seconds": 9.423541268e-05,
-      "gflops": 356.07030356987445
+      "seconds": 9.246634959e-05,
+      "gflops": 362.8826286403852
     },
     {
       "study": "gemm",
       "case": "256x256x256",
       "variant": "sme t1",
-      "seconds": 3.018589255e-05,
-      "gflops": 1111.593170366599
+      "seconds": 3.022481967e-05,
+      "gflops": 1110.1615283847284
     },
     {
       "study": "gemm",
       "case": "256x256x256",
       "variant": "sme t4",
-      "seconds": 3.01098964e-05,
-      "gflops": 1114.3987861745018
+      "seconds": 3.018404054e-05,
+      "gflops": 1111.6613746769108
     },
     {
       "study": "gemm",
       "case": "512x512x512",
       "variant": "numpy t1",
-      "seconds": 0.00015195645648821254,
-      "gflops": 1766.5287951803673
+      "seconds": 0.0001521489382206829,
+      "gflops": 1764.2939815370287
     },
     {
       "study": "gemm",
       "case": "512x512x512",
       "variant": "numpy t4",
-      "seconds": 0.00015218441055036316,
-      "gflops": 1763.8827461316434
+      "seconds": 0.00015252807598257456,
+      "gflops": 1759.9084907533168
     },
     {
       "study": "gemm",
       "case": "512x512x512",
       "variant": "generic t1",
-      "seconds": 0.002320996609,
-      "gflops": 115.65525557387836
+      "seconds": 0.002322204365,
+      "gflops": 115.59510439555996
     },
     {
       "study": "gemm",
       "case": "512x512x512",
       "variant": "generic t4",
-      "seconds": 0.0007078784294,
-      "gflops": 379.2112386127188
+      "seconds": 0.0006993444233,
+      "gflops": 383.8387024426852
     },
     {
       "study": "gemm",
       "case": "512x512x512",
       "variant": "neon t1",
-      "seconds": 0.002198909553,
-      "gflops": 122.07662458593175
+      "seconds": 0.00219542723,
+      "gflops": 122.27025898735893
     },
     {
       "study": "gemm",
       "case": "512x512x512",
       "variant": "neon t4",
-      "seconds": 0.0006599594262,
-      "gflops": 406.74539273669063
+      "seconds": 0.0006414502688,
+      "gflops": 418.48210072805574
     },
     {
       "study": "gemm",
       "case": "512x512x512",
       "variant": "sme t1",
-      "seconds": 0.0001821137097,
-      "gflops": 1473.999164819605
+      "seconds": 0.0001807087998,
+      "gflops": 1485.458684342388
     },
     {
       "study": "gemm",
       "case": "512x512x512",
       "variant": "sme t4",
-      "seconds": 0.0004259758987,
-      "gflops": 630.1658305533614
+      "seconds": 0.0001720704486,
+      "gflops": 1560.0322901697834
     },
     {
       "study": "gemm",
       "case": "1024x1024x1024",
       "variant": "numpy t1",
-      "seconds": 0.001380502234893576,
-      "gflops": 1555.5814353068042
+      "seconds": 0.0012726158580570032,
+      "gflops": 1687.4563006614756
     },
     {
       "study": "gemm",
       "case": "1024x1024x1024",
       "variant": "numpy t4",
-      "seconds": 0.0011597645348787368,
-      "gflops": 1851.65486908473
+      "seconds": 0.0011353446531541527,
+      "gflops": 1891.4817117727011
     },
     {
       "study": "gemm",
       "case": "1024x1024x1024",
       "variant": "generic t1",
-      "seconds": 0.0188623447,
-      "gflops": 113.85030239639296
+      "seconds": 0.01843643561,
+      "gflops": 116.48041375390349
     },
     {
       "study": "gemm",
       "case": "1024x1024x1024",
       "variant": "generic t4",
-      "seconds": 0.005964587366,
-      "gflops": 360.0389291372147
+      "seconds": 0.005641982639,
+      "gflops": 380.6257100395165
     },
     {
       "study": "gemm",
       "case": "1024x1024x1024",
       "variant": "neon t1",
-      "seconds": 0.01749717803,
-      "gflops": 122.73314269981168
+      "seconds": 0.01747982639,
+      "gflops": 122.85497579246838
     },
     {
       "study": "gemm",
       "case": "1024x1024x1024",
       "variant": "neon t4",
-      "seconds": 0.005212910256,
-      "gflops": 411.95484720426003
+      "seconds": 0.004919523148,
+      "gflops": 436.5227245394801
     },
     {
       "study": "gemm",
       "case": "1024x1024x1024",
       "variant": "sme t1",
-      "seconds": 0.001486938967,
-      "gflops": 1444.2311995714886
+      "seconds": 0.001402201211,
+      "gflops": 1531.5089098150836
     },
     {
       "study": "gemm",
       "case": "1024x1024x1024",
       "variant": "sme t4",
-      "seconds": 0.002150703564,
-      "gflops": 998.5028545756388
+      "seconds": 0.001315368405,
+      "gflops": 1632.6100276066766
     },
     {
       "study": "gemm",
       "case": "2048x2048x2048",
       "variant": "numpy t1",
-      "seconds": 0.010476515368377716,
-      "gflops": 1639.8457483158636
+      "seconds": 0.01006243205254003,
+      "gflops": 1707.327721001936
     },
     {
       "study": "gemm",
       "case": "2048x2048x2048",
       "variant": "numpy t4",
-      "seconds": 0.009231410999994048,
-      "gflops": 1861.0231073029981
+      "seconds": 0.008954212285711296,
+      "gflops": 1918.635457349477
     },
     {
       "study": "gemm",
       "case": "2048x2048x2048",
       "variant": "generic t1",
-      "seconds": 0.272083125,
-      "gflops": 63.14198715557976
+      "seconds": 0.2701047917,
+      "gflops": 63.60445912814956
     },
     {
       "study": "gemm",
       "case": "2048x2048x2048",
       "variant": "generic t4",
-      "seconds": 0.092228625,
-      "gflops": 186.27480550642494
+      "seconds": 0.08338397222,
+      "gflops": 206.0332306869801
     },
     {
       "study": "gemm",
       "case": "2048x2048x2048",
       "variant": "neon t1",
-      "seconds": 0.1426760625,
-      "gflops": 120.41171366079718
+      "seconds": 0.1421928958,
+      "gflops": 120.82086863301649
     },
     {
       "study": "gemm",
       "case": "2048x2048x2048",
       "variant": "neon t4",
-      "seconds": 0.04293345833,
-      "gflops": 400.15106754154647
+      "seconds": 0.04138700833,
+      "gflops": 415.10294841840283
     },
     {
       "study": "gemm",
       "case": "2048x2048x2048",
       "variant": "sme t1",
-      "seconds": 0.01268518229,
-      "gflops": 1354.3257630237808
+      "seconds": 0.01252532031,
+      "gflops": 1371.61116512796
     },
     {
       "study": "gemm",
       "case": "2048x2048x2048",
       "variant": "sme t4",
-      "seconds": 0.01268102865,
-      "gflops": 1354.769369123695
+      "seconds": 0.0126156224,
+      "gflops": 1361.7932305900342
     },
     {
       "study": "gemm",
       "case": "4096x4096x4096",
       "variant": "numpy t1",
-      "seconds": 0.08676345849926292,
-      "gflops": 1584.064949107205
+      "seconds": 0.08589043749816483,
+      "gflops": 1600.1659494974233
     },
     {
       "study": "gemm",
       "case": "4096x4096x4096",
       "variant": "numpy t4",
-      "seconds": 0.07535681250010384,
-      "gflops": 1823.8424491722046
+      "seconds": 0.07335362500089104,
+      "gflops": 1873.649100100104
     },
     {
       "study": "gemm",
       "case": "4096x4096x4096",
       "variant": "generic t1",
-      "seconds": 5.967094375,
-      "gflops": 23.032810415705885
+      "seconds": 5.965810875,
+      "gflops": 23.03776575418174
     },
     {
       "study": "gemm",
       "case": "4096x4096x4096",
       "variant": "generic t4",
-      "seconds": 3.168981167,
-      "gflops": 43.37007581591601
+      "seconds": 2.09929475,
+      "gflops": 65.46910740952409
     },
     {
       "study": "gemm",
       "case": "4096x4096x4096",
       "variant": "neon t1",
-      "seconds": 1.162569042,
-      "gflops": 118.22003554778985
+      "seconds": 1.14970375,
+      "gflops": 119.54292875186326
     },
     {
       "study": "gemm",
       "case": "4096x4096x4096",
       "variant": "neon t4",
-      "seconds": 0.3674625,
-      "gflops": 374.02171234343643
+      "seconds": 0.3484250833,
+      "gflops": 394.4576899294667
     },
     {
       "study": "gemm",
       "case": "4096x4096x4096",
       "variant": "sme t1",
-      "seconds": 0.1104332083,
-      "gflops": 1244.5436982926087
+      "seconds": 0.1058586458,
+      "gflops": 1298.3252566036513
     },
     {
       "study": "gemm",
       "case": "4096x4096x4096",
       "variant": "sme t4",
-      "seconds": 0.1064917083,
-      "gflops": 1290.6070873125436
+      "seconds": 0.1063697083,
+      "gflops": 1292.087340169946
     },
     {
       "study": "gemm",
       "case": "128x768x768",
       "variant": "numpy t1",
-      "seconds": 8.956694736843929e-05,
-      "gflops": 1685.833317271301
+      "seconds": 8.677765771115027e-05,
+      "gflops": 1740.0209683304038
     },
     {
       "study": "gemm",
       "case": "128x768x768",
       "variant": "numpy t4",
-      "seconds": 8.95141025637744e-05,
-      "gflops": 1686.828551874533
+      "seconds": 8.691841943468566e-05,
+      "gflops": 1737.203057557487
     },
     {
       "study": "gemm",
       "case": "128x768x768",
       "variant": "generic t1",
-      "seconds": 0.001397681025,
-      "gflops": 108.03247758192897
+      "seconds": 0.001340202945,
+      "gflops": 112.665730636788
     },
     {
       "study": "gemm",
       "case": "128x768x768",
       "variant": "generic t4",
-      "seconds": 0.0004562419834,
-      "gflops": 330.95363752971093
+      "seconds": 0.0004367777778,
+      "gflops": 345.7019831927905
     },
     {
       "study": "gemm",
       "case": "128x768x768",
       "variant": "neon t1",
-      "seconds": 0.001271610339,
-      "gflops": 118.74309241519938
+      "seconds": 0.001223085027,
+      "gflops": 123.45416767169696
     },
     {
       "study": "gemm",
       "case": "128x768x768",
       "variant": "neon t4",
-      "seconds": 0.000397100372,
-      "gflops": 380.24377373285364
+      "seconds": 0.0003749232117,
+      "gflops": 402.73565169611504
     },
     {
       "study": "gemm",
       "case": "128x768x768",
       "variant": "sme t1",
-      "seconds": 0.0001009086892,
-      "gflops": 1496.352248721907
+      "seconds": 9.548943774e-05,
+      "gflops": 1581.2737782699191
     },
     {
       "study": "gemm",
       "case": "128x768x768",
       "variant": "sme t4",
-      "seconds": 9.932011806e-05,
-      "gflops": 1520.2855871434112
+      "seconds": 9.547531803e-05,
+      "gflops": 1581.5076306166875
     },
     {
       "study": "gemm",
       "case": "128x768x3072",
       "variant": "numpy t1",
-      "seconds": 0.0003719017125431587,
-      "gflops": 1624.0306393585347
+      "seconds": 0.0003465554621921727,
+      "gflops": 1742.8084156557886
     },
     {
       "study": "gemm",
       "case": "128x768x3072",
       "variant": "numpy t4",
-      "seconds": 0.0004028951489353981,
-      "gflops": 1499.099151717125
+      "seconds": 0.0003896664244208761,
+      "gflops": 1549.9918344200103
     },
     {
       "study": "gemm",
       "case": "128x768x3072",
       "variant": "generic t1",
-      "seconds": 0.006427947619,
-      "gflops": 93.96152734890542
+      "seconds": 0.005985991935,
+      "gflops": 100.89886230359582
     },
     {
       "study": "gemm",
       "case": "128x768x3072",
       "variant": "generic t4",
-      "seconds": 0.002082369186,
-      "gflops": 290.0445223933505
+      "seconds": 0.001956390224,
+      "gflops": 308.7215263042533
     },
     {
       "study": "gemm",
       "case": "128x768x3072",
       "variant": "neon t1",
-      "seconds": 0.005028216435,
-      "gflops": 120.11809431985998
+      "seconds": 0.00505780625,
+      "gflops": 119.41536431926393
     },
     {
       "study": "gemm",
       "case": "128x768x3072",
       "variant": "neon t4",
-      "seconds": 0.001577889286,
-      "gflops": 382.77703091013956
+      "seconds": 0.001495575641,
+      "gflops": 403.8443522630228
     },
     {
       "study": "gemm",
       "case": "128x768x3072",
       "variant": "sme t1",
-      "seconds": 0.0004437128586,
-      "gflops": 1361.195115926262
+      "seconds": 0.0004164493093,
+      "gflops": 1450.3080267205046
     },
     {
       "study": "gemm",
       "case": "128x768x3072",
       "variant": "sme t4",
-      "seconds": 0.0004263314394,
-      "gflops": 1416.6906781494097
+      "seconds": 0.0003904988889,
+      "gflops": 1546.6875660039811
     },
     {
       "study": "gemm",
       "case": "128x3072x768",
       "variant": "numpy t1",
-      "seconds": 0.0003925611712216639,
-      "gflops": 1538.5621917735627
+      "seconds": 0.0003772388944508131,
+      "gflops": 1601.0538279179239
     },
     {
       "study": "gemm",
       "case": "128x3072x768",
       "variant": "numpy t4",
-      "seconds": 0.000473211789096102,
-      "gflops": 1276.3413547952437
+      "seconds": 0.00047096631205673756,
+      "gflops": 1282.4267055585885
     },
     {
       "study": "gemm",
       "case": "128x3072x768",
       "variant": "generic t1",
-      "seconds": 0.005654881579,
-      "gflops": 106.80679472456907
+      "seconds": 0.005437633838,
+      "gflops": 111.07400645096546
     },
     {
       "study": "gemm",
       "case": "128x3072x768",
       "variant": "generic t4",
-      "seconds": 0.001796775794,
-      "gflops": 336.14643408313856
+      "seconds": 0.001728613194,
+      "gflops": 349.40134559681024
     },
     {
       "study": "gemm",
       "case": "128x3072x768",
       "variant": "neon t1",
-      "seconds": 0.005217163461,
-      "gflops": 115.76784597893972
+      "seconds": 0.004934429398,
+      "gflops": 122.4011384669527
     },
     {
       "study": "gemm",
       "case": "128x3072x768",
       "variant": "neon t4",
-      "seconds": 0.001564026115,
-      "gflops": 386.16987926700955
+      "seconds": 0.001481669192,
+      "gflops": 407.63469960844003
     },
     {
       "study": "gemm",
       "case": "128x3072x768",
       "variant": "sme t1",
-      "seconds": 0.0004524161366,
-      "gflops": 1335.009357842609
+      "seconds": 0.0004362233055,
+      "gflops": 1384.5655846097386
     },
     {
       "study": "gemm",
       "case": "128x3072x768",
       "variant": "sme t4",
-      "seconds": 0.000803259007,
-      "gflops": 751.9116134853374
+      "seconds": 0.00040360954,
+      "gflops": 1496.4457381260117
     }
   ]
 }

@@ -5,71 +5,71 @@
     "system": "Darwin 27.0.0",
     "compiler": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
     "numpy": "2.5.4",
-    "load_average": 3.07763671875,
-    "date": "2026-11-12T07:31:18+00:00"
+    "load_average": 1.31982421875,
+    "date": "2026-11-12T11:59:36+00:00"
   },
   "rows": [
     {
       "study": "sme_models",
       "case": "resnet50",
       "variant": "default",
-      "seconds": 0.018164479166443925,
+      "seconds": 0.015646895830286667,
       "gflops": 0.0
     },
     {
       "study": "sme_models",
       "case": "resnet50",
       "variant": "SME on 1 thread",
-      "seconds": 0.023875312499512802,
+      "seconds": 0.023667895835387753,
       "gflops": 0.0
     },
     {
       "study": "sme_models",
       "case": "resnet50",
       "variant": "SME on every thread",
-      "seconds": 0.01775647916656453,
+      "seconds": 0.016935125000600237,
       "gflops": 0.0
     },
     {
       "study": "sme_models",
       "case": "bert",
       "variant": "default",
-      "seconds": 0.02712327083463606,
+      "seconds": 0.02196460416598711,
       "gflops": 0.0
     },
     {
       "study": "sme_models",
       "case": "bert",
       "variant": "SME on 1 thread",
-      "seconds": 0.031010166663691052,
+      "seconds": 0.0256818750021921,
       "gflops": 0.0
     },
     {
       "study": "sme_models",
       "case": "bert",
       "variant": "SME on every thread",
-      "seconds": 0.026124375001018052,
+      "seconds": 0.02105043749907054,
       "gflops": 0.0
     },
     {
       "study": "sme_models",
       "case": "gpt2",
       "variant": "default",
-      "seconds": 0.038020354168111226,
+      "seconds": 0.032357479165511904,
       "gflops": 0.0
     },
     {
       "study": "sme_models",
       "case": "gpt2",
       "variant": "SME on 1 thread",
-      "seconds": 0.04427150000083202,
+      "seconds": 0.037868791667278856,
       "gflops": 0.0
     },
     {
       "study": "sme_models",
       "case": "gpt2",
       "variant": "SME on every thread",
-      "seconds": 0.055922687499332824,
+      "seconds": 0.03258458333220915,
       "gflops": 0.0
     }
   ]

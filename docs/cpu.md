@@ -220,9 +220,9 @@ Sleeping alone left about half the runs of some processes with a thread on
 an efficiency core (medians 13.6 and 18.5 ms in two of three processes);
 with all three, three processes ran ResNet-50 in 11.8–11.9 ms (p90 at most
 12.2 ms) with no chunk on an efficiency core. The scheduler can still keep
-one worker on the efficiency cluster for a whole process, waking it there
-for every loop; the model then runs on three threads, 15.5 ms instead of
-11.8 ms (and instead of 17.5–25 ms before). NEON targets are unchanged
+waking one worker on the efficiency cluster for every loop; the model then
+runs on three threads, 15.5 ms instead of 11.8 ms (and instead of 17.5–25
+ms before). Limitations says how often. NEON targets are unchanged
 (MobileNetV2, ResNet-50 and BERT on c:neon within 1 percent).
 
 **Memory and time.** `tsr_alloc` returns 128-byte-aligned memory (the cache
@@ -526,22 +526,30 @@ exported models). A kernel's time is the median of five samples from
 `measure`, each a loop of calls on random inputs, unless a study says it
 keeps each variant's best time over interleaved rounds. All numbers were
 measured on 2026-11-12 with no other work on the machine; the load averages
-the files record (1.8 to 3.5) come from the benchmarks' own threads.
+the files record (1.3 to 3.5) come from the benchmarks' own threads. The
+studies with SME on several threads (`gemm`, `conv`, `sme_threads`,
+`sme_template`, `sme_models`) were measured again after the thread pool
+changes described under "Threads on SME targets".
 
-**GEMM** (`gemm.md`, fp32 GFLOPS). One thread: the generated loops 107 to
-117 (63 at 2048³ and 23 at 4096³, where a K x 16 strip of B is too large to
+**GEMM** (`gemm.md`, fp32 GFLOPS). One thread: the generated loops 101 to
+116 (64 at 2048³ and 23 at 4096³, where a K x 16 strip of B is too large to
 pack and every row tile reads it with a stride of N floats), the NEON
-microkernel 116 to 123, the SME microkernel 1112 to 1496, NumPy's matmul
-(Accelerate) 1412 to 1767. Four threads: the generated loops 290 to 379, NEON
-356 to 412, NumPy 1276 to 1861. Accelerate gains little from threads, as
-expected of a library that runs on the matrix unit, and on one thread the SME
-microkernel comes within 7 to 21 percent of it.
+microkernel 116 to 123, the SME microkernel 1110 to 1585, NumPy's matmul
+(Accelerate) 1419 to 1764. Four threads: the generated loops 309 to 384
+(206 and 65 at the two largest), NEON 363 to 437, SME 1112 to 1633, NumPy
+1282 to 1919. Accelerate gains little from threads, as expected of a library
+that runs on the matrix unit; on one thread the SME microkernel comes within
+9 to 22 percent of it, and on four threads SME matches or beats one thread
+on every shape.
 
 **ResNet-50 convolutions** (`conv.md`, GFLOPS). On four threads the
-generated loops reach 200 to 352 and NEON (the microkernel on the deep
-layers, the loops on the 64-channel ones) 293 to 375. SME reaches 329 to
-1106 on one thread on every layer but the first (whose NCHW input keeps the
-generated loops) and less on four threads in these sustained runs.
+generated loops reach 213 to 377 and NEON (the microkernel on the deep
+layers, the loops on the 64-channel ones) 308 to 392. SME reaches 330 to
+1104 on one thread on every layer but the first (whose NCHW input keeps the
+generated loops) and 252 to 1294 on four: four threads win on the 1 x 1
+layers of the second to fourth stages (the downsample of layer3: 1294
+against 919), tie on the 3 x 3 ones and lose on the narrow layers of the
+first stage (its 1 x 1 reduce: 252 against 330).
 
 **Schedule choices** (`schedules.md`, best over interleaved rounds). On the
 transformer product with a 3072-wide weight matrix, column strips outside
@@ -557,38 +565,40 @@ empty: this is the rule of the conv2d template's NEON default.
 how much more threads help depends on how long they keep it busy:
 
 - The microkernel alone (`sme_threads.md`, rows of C split between threads):
-  at 1024³, 1342 GFLOPS on one thread, 1585 on two and 1624 on four; at
-  128 x 3072 x 768, 1103 on one and 595 on four. Giving one thread SME and
-  three NEON never beats SME alone (at best 1357 at 1024³ with 90 percent of
-  the rows on SME): the NEON part becomes the slowest thread.
+  at 1024³, 1116 GFLOPS on one thread, 1460 on two and 1701 on four; at
+  128 x 3072 x 768, 1049 on one, 1363 on two and 882 on four. Giving one
+  thread SME and three NEON never beats SME alone (at best 1389 at 1024³
+  with 90 percent of the rows on SME): the NEON part becomes the slowest
+  thread. In this study NEON on four threads (239 at 1024³) falls below
+  three (347): after the SME runs before it, one worker wakes on an
+  efficiency core and skips, so three threads compute the four bands in
+  two rounds. Two more runs of the study gave the same.
 - The matmul template's tiles in short interleaved bursts (`sme_template.md`):
-  four threads 1576 to 1585 GFLOPS, one thread 962 to 1118, since other
-  threads overlap one thread's packing and epilogue with its streaming
-  computation.
-- In sustained single-kernel runs (`gemm.md`), several threads streaming
-  through the unit lose to one on most shapes.
-- On whole models, with the thread count forced to one, to four, or chosen
-  by the matmul template's rule (every thread when a product has no more
-  tiles than threads, one thread otherwise; convolutions on every thread),
-  median of 40 runs in interleaved rounds, with the workers sleeping between
-  loops:
+  four threads 1618 to 1678 GFLOPS, two 1313 to 1403, one 969 to 1140, since
+  other threads overlap one thread's packing and epilogue with its
+  streaming computation.
+- In sustained single-kernel runs (`gemm.md`) four threads match or beat
+  one on every shape, by up to 11 percent.
+- On whole models (`sme_models.md`), with the thread count forced to one, to
+  four, or chosen by the matmul template's rule (every thread when a product
+  has no more tiles than threads, one thread otherwise; convolutions on
+  every thread), each variant's best median of 10 runs over interleaved
+  rounds:
 
   | c:sme | default | 1 thread | 4 threads |
   |---|---:|---:|---:|
-  | ResNet-50 | 12.0 ms | 25.1 ms | 12.0 ms |
-  | BERT | 26.9 ms | 30.9 ms | 26.1 ms |
-  | GPT-2 | 37.8 ms | 43.8 ms | 50.1 ms |
+  | ResNet-50 | 15.6 ms | 23.7 ms | 16.9 ms |
+  | BERT | 22.0 ms | 25.7 ms | 21.1 ms |
+  | GPT-2 | 32.4 ms | 37.9 ms | 32.6 ms |
 
-  The rule is within 3 percent of the better fixed choice on every model
-  and avoids the 33 percent loss of four threads on GPT-2, whose 50257-wide
-  output layer has 50 tiles that would keep all four threads contending for
-  the unit.
-
-The microkernel and template studies above (and `sme_models.md`, which
-gave ResNet-50 18.2 ms by default) ran while idle workers still polled, so
-some of their multi-threaded runs had a thread on the efficiency cluster
-(see "Threads on SME targets"); the losses of four threads there are partly
-that.
+  ResNet-50's 15.6 and 16.9 ms are the state in which a worker stays on an
+  efficiency core (see Limitations); two more runs of the study gave 11.8
+  and 11.9 ms by default and 15.4 and 12.0 ms on four threads. Before the
+  pool changes, four threads lost 47 percent on GPT-2 (55.9 against 38.0
+  ms), which is what the rule was made for; that loss came mostly from
+  threads on the efficiency cluster, and now every thread is as fast on
+  GPT-2 and 4 percent faster on BERT. The rule stays the default until
+  tuning chooses `micro_threads` per task.
 
 ## Limitations
 
@@ -608,13 +618,21 @@ that.
   tile-relative form by more than an offset and tensorize matches indices up
   to offsets. Threads share the work by output-channel strips, so a layer
   with 64 output channels has at most four strips of 16.
+- **A worker kept on the efficiency cluster.** On SME targets macOS can
+  keep waking one worker on the efficiency cluster, for a whole run or for
+  as long as a process lives. That worker then skips every loop, and the
+  model runs on three threads: untuned ResNet-50 takes 15.4 to 15.6 ms
+  instead of 11.8 to 12.0 ms. In six processes of 40 runs each, 77 of the
+  240 runs (32 percent) had a worker woken on an efficiency core at least
+  once, and in 55 of them (23 percent, in three of the six processes) it
+  stayed for the whole run; two processes never saw it. Nothing in user
+  space pins a thread to a core on macOS, so this is the scheduler's
+  choice; skipping turns what was a straggler (17.5 to 25 ms) into a lost
+  thread.
 - **Coarse loops and slow threads.** Threads claim the iterations of a
   loop, but a loop with no more iterations than threads (most SME tiles)
-  still waits for its slowest iteration. On SME targets macOS may keep one
-  worker on the efficiency cluster for a whole process; that worker then
-  skips every loop, and models run on three threads (ResNet-50 untuned:
-  15.5 ms instead of 11.8 ms). Thread placement on Linux is left to the
-  scheduler.
+  still waits for its slowest iteration. Thread placement on Linux is left
+  to the scheduler.
 - **Memory for packed weights.** The microkernels keep a packed copy of
   every constant weight they multiply, as large as the weights themselves,
   for as long as the model is loaded.
