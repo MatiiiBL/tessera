@@ -86,9 +86,9 @@ def test_unpicklable_tasks_fail_their_candidates() -> None:
     assert "cannot send to the build process" in (results[0].error or "")
 
 
-def test_at_most_three_build_processes() -> None:
-    with pytest.raises(ValueError, match="between 1 and 3"):
-        LocalRunner(build_workers=4)
+def test_needs_a_build_process() -> None:
+    with pytest.raises(ValueError, match="at least 1"):
+        LocalRunner(build_workers=0)
 
 
 def test_tasks_the_worker_cannot_import_fail_their_candidates(

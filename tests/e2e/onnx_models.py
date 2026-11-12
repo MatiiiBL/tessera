@@ -5,6 +5,9 @@ weight, BatchNormalization after Conv, Flatten, GlobalAveragePool, a
 decomposed GELU, multi-head attention through Reshape and Transpose) so
 that importing, optimizing and fusing them exercises the same paths as the
 benchmark models, at sizes that compile and run in seconds.
+
+Models are written with IR version 9: onnx 1.23 defaults to version 14,
+which ONNX Runtime 1.31 refuses to load.
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import onnx
 from onnx import TensorProto, helper, numpy_helper
 
 OPSET = 17
-IR_VERSION = 9  # the newest that every supported ONNX Runtime loads
+IR_VERSION = 9
 
 
 class _Builder:

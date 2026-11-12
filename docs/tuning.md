@@ -43,10 +43,13 @@ CPU name), so a log tuned on one machine is never applied to another.
 `LocalRunner` (`tessera/tune/measure.py`) handles a batch of candidates in
 two phases:
 
-1. **Build** in up to three processes at once. A build applies the
-   template to the configuration and, when the backend is a `Prebuilder`
-   (both backends are), compiles the kernel into the build cache. Three is
-   the limit because the machine is shared and clang is the expensive part.
+1. **Build** in parallel processes (`build_workers`, 3 by default). A
+   build applies the template to the configuration and, when the backend
+   is a `Prebuilder` (both backends are), compiles the kernel into the
+   build cache. Each build runs a compiler (clang, or Metal's) with its
+   own CPU and memory, so the count bounds what a batch takes from the
+   machine. Builds
+   and measurements never overlap, so the count does not affect timings.
 2. **Measure** one candidate at a time in a separate process, through
    `backend.measure`, with no builds running, so candidates do not compete
    for cores or memory bandwidth while they are timed.

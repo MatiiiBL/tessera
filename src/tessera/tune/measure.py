@@ -1,9 +1,11 @@
 """Building and timing candidates.
 
-``LocalRunner`` builds a batch of candidates in parallel processes (at most
-three, so compilation does not starve the rest of the machine), then times
-them one at a time in a separate measurement process, with nothing else of
-the tuner's running. Every process is isolated: a candidate that crashes
+``LocalRunner`` builds a batch of candidates in parallel processes
+(``build_workers``, 3 by default), then times them one at a time in a
+separate measurement process, with nothing else of the tuner's running.
+The two phases never overlap, so the build parallelism does not affect the
+measurements; it only bounds how much CPU and memory the clang processes
+of one batch take at once. Every process is isolated: a candidate that crashes
 (a segmentation fault in generated code), hangs past its timeout or raises
 is recorded as a failure with a reason, its process is replaced, and the
 run continues.
@@ -39,7 +41,7 @@ from typing import Any, Literal, Protocol
 
 from tessera.tune.task import Point, TuningTask
 
-MAX_BUILD_WORKERS = 3
+DEFAULT_BUILD_WORKERS = 3
 
 type _Op = Literal["build", "measure"]
 
@@ -85,12 +87,12 @@ class LocalRunner:
     def __init__(
         self,
         *,
-        build_workers: int = MAX_BUILD_WORKERS,
+        build_workers: int = DEFAULT_BUILD_WORKERS,
         build_timeout: float = 120.0,
         measure_timeout: float = 60.0,
     ) -> None:
-        if not 1 <= build_workers <= MAX_BUILD_WORKERS:
-            raise ValueError(f"build_workers must be between 1 and {MAX_BUILD_WORKERS}")
+        if build_workers < 1:
+            raise ValueError(f"build_workers must be at least 1, got {build_workers}")
         self.build_timeout = build_timeout
         self.measure_timeout = measure_timeout
         self._builders = [_Worker() for _ in range(build_workers)]
