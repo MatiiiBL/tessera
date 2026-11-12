@@ -56,23 +56,53 @@ def models_page(
             variants=variants,
             progress=progress,
         )
-        kept[name] = {**result.as_dict(), "environment": env}
+        kept[name] = merge_model(kept.get(name), result.as_dict(), env)
     entries = [kept[n] for n in [*MODELS, *sorted(set(kept) - set(MODELS))] if n in kept]
     # The page's provenance is its latest model's; each model states its own below.
     latest = max((e["environment"] for e in entries), key=lambda e: str(e["date"]))
     env = {**latest, "provisional": any(e["environment"]["provisional"] for e in entries)}
     sections = []
     for entry in entries:
-        e = entry["environment"]
-        when = (
-            f"Measured {e['date']} at commit `{e['commit']}`, load average {e['load_average'][0]}"
+        runs = entry.get("runs", [entry["environment"]])
+        when = "Measured " + "; ".join(
+            f"{r['date']} at commit `{r['commit']}`, load average {r['load_average'][0]}"
+            for r in runs
         )
+        provisional = any(r["provisional"] for r in runs)
         sections.append(
             models_bench.markdown([models_bench.ModelResult.from_dict(entry)])
-            + f"\n\n{when}{' (provisional)' if e['provisional'] else ''}."
+            + f"\n\n{when}{' (provisional)' if provisional else ''}."
         )
     text = header("Models", env, "tessera bench models") + "\n" + "\n\n".join(sections)
     return write("models", {"environment": env, "models": entries}, text, out)
+
+
+def merge_model(
+    old: dict[str, Any] | None, new: dict[str, Any], env: dict[str, Any]
+) -> dict[str, Any]:
+    """``new`` measurements over ``old`` ones: systems by name, ablations by target
+    and variant; every row records when it was measured."""
+    for system in new["systems"]:
+        system["measured"] = env["date"]
+    for variants in new["ablations"].values():
+        for variant in variants.values():
+            variant["measured"] = env["date"]
+    if old is None:
+        return {**new, "environment": env, "runs": [env]}
+    systems = {s["system"]: s for s in old["systems"]}
+    systems.update({s["system"]: s for s in new["systems"]})
+    order = [s["system"] for s in new["systems"]]
+    order += [n for n in systems if n not in order]
+    ablations = {t: dict(v) for t, v in old.get("ablations", {}).items()}
+    for target, variants in new["ablations"].items():
+        ablations.setdefault(target, {}).update(variants)
+    return {
+        "model": new["model"],
+        "systems": [systems[n] for n in order],
+        "ablations": ablations,
+        "environment": env,
+        "runs": [*old.get("runs", [old["environment"]]), env],
+    }
 
 
 def ops_page(

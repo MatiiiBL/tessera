@@ -153,6 +153,10 @@ class BestConfigs:
     def __len__(self) -> int:
         return len(self._by_task)
 
+    def targets(self) -> set[str]:
+        """The target keys that have at least one successful record."""
+        return {target for target, _ in self._by_task}
+
     def lookup(
         self,
         target: str,

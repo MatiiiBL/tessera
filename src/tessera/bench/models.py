@@ -33,7 +33,7 @@ from tessera.bench.baselines import Runner, onnxruntime_cpu, torch_available, to
 from tessera.bench.report import markdown_table
 from tessera.bench.stats import Agreement, Latency, agreement, time_runs
 from tessera.bench.zoo import ModelSpec
-from tessera.driver import Compilation, lower
+from tessera.driver import Compilation, best_configs, lower, resolve_target
 from tessera.ir.graph import NDArray
 from tessera.plan import StorageKind
 
@@ -217,8 +217,12 @@ def bench_model(
     for name in baselines:
         if not name.startswith("pytorch-") or torch_available(name.removeprefix("pytorch-")):
             attempt(name, partial(baseline, name))
+    logged = best_configs(None).targets()
     for target in targets:
         for tuned in (True, False):
+            if tuned and _target_key(target) not in logged:
+                progress(f"{spec.name}: no tuning log for {target}, so no tuned row")
+                continue
             label = f"tessera-{target}{'' if tuned else '-untuned'}"
             attempt(label, partial(tessera, label, target, tuned))
     found: dict[str, Any] = {}
@@ -352,3 +356,10 @@ def _ablation_table(r: ModelResult) -> str:
         ],
         rows,
     )
+
+
+def _target_key(target: str) -> str | None:
+    try:
+        return resolve_target(target).key
+    except ValueError:
+        return None

@@ -55,7 +55,7 @@ def test_samples_and_baseline_only_bench(tmp_path: Path) -> None:
 def test_failures_are_reported_not_raised(tmp_path: Path) -> None:
     spec = load_manifest(tiny_zoo(tmp_path))["resnet50"]
     result = bench_model(spec, targets=["cuda"], baselines=[], variants=())
-    assert [s.system for s in result.systems] == ["tessera-cuda", "tessera-cuda-untuned"]
+    assert [s.system for s in result.systems] == ["tessera-cuda-untuned"]  # no log: no tuned row
     assert all("unknown target" in (s.error or "") for s in result.systems)
 
 
@@ -128,3 +128,35 @@ def test_pages_merge_models_measured_separately(
     assert page.index("### resnet50") < page.index("### mobilenet_v2")
     assert "| c:generic | no schedule |" in page
     assert page.count("(provisional).") == 2
+
+
+def test_reruns_replace_only_what_they_measure() -> None:
+    from tessera.bench.pages import merge_model
+
+    first = {"date": "2026-11-12T01:00:00Z", "provisional": True}
+    second = {"date": "2026-11-12T02:00:00Z", "provisional": False}
+    old = merge_model(
+        None,
+        {
+            "model": "m",
+            "systems": [{"system": "a", "v": 1}, {"system": "b", "v": 1}],
+            "ablations": {"c:sme": {"no schedule": {"v": 1}}},
+        },
+        first,
+    )
+    new = merge_model(
+        old,
+        {
+            "model": "m",
+            "systems": [{"system": "b", "v": 2}],
+            "ablations": {"c:sme": {"full": {"v": 2}}, "metal": {"full": {"v": 2}}},
+        },
+        second,
+    )
+    assert [(s["system"], s["v"], s["measured"]) for s in new["systems"]] == [
+        ("b", 2, second["date"]),
+        ("a", 1, first["date"]),
+    ]
+    assert set(new["ablations"]["c:sme"]) == {"no schedule", "full"}
+    assert new["ablations"]["c:sme"]["no schedule"]["measured"] == first["date"]
+    assert new["runs"] == [first, second]

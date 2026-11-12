@@ -67,6 +67,7 @@ def test_best_configs_skips_failures_and_rejected_configs(tmp_path: Path) -> Non
     TuningLog(tmp_path / "sub" / "b.jsonl").append(Record("t", "b", {"y": 1}, 2.0))
     best = BestConfigs.load(tmp_path, tmp_path / "missing.jsonl")
     assert len(best) == 2
+    assert best.targets() == {"t"}
     found = best.lookup("t", "a")
     assert found is not None
     assert found.config == {"x": 2}

@@ -112,11 +112,11 @@ def test_bench_models_on_a_stand_in_zoo(tmp_path: Path, monkeypatch: pytest.Monk
     invoke("bench", "models", "--model", "resnet50", "--target", "c:generic", "--provisional")
     page = (tmp_path / "results" / "models.md").read_text()
     assert "**Provisional:**" in page
-    assert "| tessera-c:generic |" in page
+    assert "| tessera-c:generic-untuned |" in page
     assert "| c:generic | fusion off |" in page
     data = json.loads((tmp_path / "results" / "models.json").read_text())
     systems = {s["system"]: s for s in data["models"][0]["systems"]}
-    assert systems["tessera-c:generic"]["agreement"]["top1"] == 1.0
+    assert systems["tessera-c:generic-untuned"]["agreement"]["top1"] == 1.0
     assert systems["onnxruntime-cpu"]["latency"]["runs"] >= 50
 
 
