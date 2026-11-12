@@ -286,10 +286,18 @@ def _cheap(node: Node) -> bool:
 def _materialize(graph: Graph, groups: Sequence[_Group]) -> list[FusedGroup]:
     index = {id(n): i for i, n in enumerate(graph.nodes)}
     ordered = sorted(groups, key=lambda g: index[id(g.root)])
+    members: dict[int, list[Node]] = {id(g): [] for g in ordered}
+    by_node: dict[int, list[_Group]] = {}
+    for g in ordered:
+        for node_id in g.members:
+            by_node.setdefault(node_id, []).append(g)
+    for node in graph.nodes:  # in graph order, so each group's nodes are sorted
+        for g in by_node.get(id(node), []):
+            members[id(g)].append(node)
     names: set[str] = set()
     out: list[FusedGroup] = []
     for g in ordered:
-        nodes = sorted((n for n in graph.nodes if id(n) in g.members), key=lambda n: index[id(n)])
+        nodes = members[id(g)]
         inside = {id(v) for n in nodes for v in n.outputs}
         inputs = _unique(v for n in nodes for v in n.inputs if id(v) not in inside)
         name = _kernel_name(g.anchor or g.root, names)

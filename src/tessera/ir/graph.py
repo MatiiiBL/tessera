@@ -11,7 +11,6 @@ printing, for kernel names and as keys in the memory plan.
 
 from __future__ import annotations
 
-import copy
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -171,6 +170,7 @@ class Graph:
         self.outputs: list[Value] = []
         self.nodes: list[Node] = []
         self._names: set[str] = set()
+        self._suffixes: dict[str, int] = {}  # next suffix to try per base name
 
     # -- construction -------------------------------------------------------
 
@@ -179,10 +179,13 @@ class Graph:
         base = _NAME_SAFE.sub("_", hint) or "v"
         if base[0].isdigit():
             base = f"v{base}"
-        name, i = base, 1
-        while name in self._names:
+        name = base
+        if name in self._names:
+            i = self._suffixes.get(base, 1)
+            while f"{base}_{i}" in self._names:
+                i += 1
             name = f"{base}_{i}"
-            i += 1
+            self._suffixes[base] = i + 1
         self._names.add(name)
         return name
 
@@ -376,12 +379,26 @@ class Graph:
                 raise ValueError(f"graph output {v!r} is never defined")
 
     def copy(self) -> Graph:
-        """A deep copy of the structure; constant arrays are shared, not copied."""
-        memo: dict[int, Any] = {}
-        for v in self.values():
-            if v.data is not None:
-                memo[id(v.data)] = v.data
-        return copy.deepcopy(self, memo)
+        """A copy of the structure with new Values and Nodes; constant arrays are shared."""
+        out = Graph(self.name)
+        out._names = set(self._names)
+        out._suffixes = dict(self._suffixes)
+        mapping: dict[int, Value] = {}
+
+        def get(v: Value) -> Value:
+            new = mapping.get(id(v))
+            if new is None:
+                new = Value(v.name, v.type, data=v.data)
+                mapping[id(v)] = new
+            return new
+
+        out.inputs = [get(v) for v in self.inputs]
+        for node in self.nodes:
+            inputs = [get(v) for v in node.inputs]
+            outputs = [get(v) for v in node.outputs]
+            out.nodes.append(Node(node.op, inputs, outputs, node.attrs, node.name))
+        out.outputs = [get(v) for v in self.outputs]
+        return out
 
     def __str__(self) -> str:
         lines = [f"graph {self.name}("]
