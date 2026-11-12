@@ -372,6 +372,152 @@ def gemm_markdown(data: dict[str, Any], env: dict[str, Any]) -> str:
     )
 
 
+# -- threadgroup shape -----------------------------------------------------------------------
+
+
+def simdgroup_matmul(
+    m: int, n: int, k: int, *, groups: tuple[int, int] = (1, 2), frags: tuple[int, int] = (2, 4)
+) -> PrimFunc:
+    """A matmul with SIMD-group matrices, as tensorizing leaves it: ``groups`` SIMD
+    groups per threadgroup (rows on thread.z, columns on thread.y), each holding
+    ``frags`` 8 x 8 accumulator tiles, A and B tiles loaded from device memory
+    every 8 steps of K. The fragment buffers have the whole tensors' shapes."""
+    from tessera.backend.metal.codegen import (
+        simdgroup_fill,
+        simdgroup_load,
+        simdgroup_mma,
+        simdgroup_store,
+    )
+    from tessera.tir.expr import Expr, FloatImm, IntImm, Var
+    from tessera.tir.stmt import (
+        TRUE,
+        Block,
+        BlockRealize,
+        Buffer,
+        BufferRegion,
+        For,
+        ForKind,
+        Stmt,
+        seq,
+    )
+
+    (gm, gn), (fm, fn) = groups, frags
+    bm, bn = gm * fm * 8, gn * fn * 8
+    a, b, c = Buffer("A", (m, k)), Buffer("B", (k, n)), Buffer("C", (m, n))
+    c_frag = Buffer("C_frag", (m, n), scope="local")
+    a_frag = Buffer("A_frag", (m, k), scope="local")
+    b_frag = Buffer("B_frag", (k, n), scope="local")
+    by, bx, sm, sn, ko = Var("by"), Var("bx"), Var("sm"), Var("sn"), Var("ko")
+    row0, col0 = by * bm + sm * (fm * 8), bx * bn + sn * (fn * 8)
+
+    def loop(var: Var, extent: int, body: Stmt, kind: ForKind, tag: str | None = None) -> For:
+        return For(var, IntImm(0), IntImm(extent), kind, body, tag)
+
+    def tiles(body: Callable[[Expr, Expr], Stmt]) -> Stmt:
+        i, j = Var("i"), Var("j")
+        inner = loop(j, fn, body(row0 + i * 8, col0 + j * 8), ForKind.UNROLLED)
+        return loop(i, fm, inner, ForKind.UNROLLED)
+
+    def line(body: Callable[[Expr], Stmt], count: int, base: Expr) -> Stmt:
+        i = Var("i")
+        return loop(i, count, body(base + i * 8), ForKind.UNROLLED)
+
+    kk = ko * 8
+    step = seq(
+        [
+            line(lambda r: simdgroup_load(a_frag.address(r, kk), a.address(r, kk), k), fm, row0),
+            line(lambda q: simdgroup_load(b_frag.address(kk, q), b.address(kk, q), n), fn, col0),
+            tiles(
+                lambda r, q: simdgroup_mma(
+                    c_frag.address(r, q),
+                    a_frag.address(r, kk),
+                    b_frag.address(kk, q),
+                    c_frag.address(r, q),
+                )
+            ),
+        ]
+    )
+    body = seq(
+        [
+            tiles(lambda r, q: simdgroup_fill(c_frag.address(r, q), FloatImm(0.0))),
+            loop(ko, k // 8, step, ForKind.SERIAL),
+            tiles(lambda r, q: simdgroup_store(c_frag.address(r, q), c.address(r, q), n)),
+        ]
+    )
+    bound = ForKind.THREAD_BINDING
+    nest = loop(
+        by,
+        m // bm,
+        loop(
+            bx,
+            n // bn,
+            loop(sm, gm, loop(sn, gn, body, bound, "thread.y"), bound, "thread.z"),
+            bound,
+            "threadgroup.x",
+        ),
+        bound,
+        "threadgroup.y",
+    )
+    root = Block("root", (), (), (BufferRegion.full(c),), nest, None, (c_frag, a_frag, b_frag))
+    return PrimFunc("matmul_simdgroup", (a, b, c), BlockRealize((), TRUE, root))
+
+
+SHAPE_SIZES = (1024, 2048)
+SHAPE_GROUPS = ((1, 2), (2, 1), (2, 2))
+
+
+def bench_shape() -> dict[str, Any]:
+    """The same SIMD-group matmul kernels launched with flat and shaped threadgroups."""
+    rows: list[dict[str, Any]] = []
+    for size in SHAPE_SIZES:
+        for groups in SHAPE_GROUPS:
+            func = simdgroup_matmul(size, size, size, groups=groups)
+            flat = generate(func)
+            shaped = generate(func, flat=False)
+            rows.append(
+                {
+                    "size": size,
+                    "groups": list(groups),
+                    "threads": list(shaped.threads),
+                    "flops": 2 * size**3,
+                    "flat_seconds": measure_kernel(flat, min_seconds=0.2),
+                    "shaped_seconds": measure_kernel(shaped, min_seconds=0.2),
+                }
+            )
+    return {"kernels": rows}
+
+
+def shape_markdown(data: dict[str, Any], env: dict[str, Any]) -> str:
+    table = [
+        [
+            f"{r['size']}³",
+            f"{r['groups'][0]} x {r['groups'][1]}",
+            " x ".join(str(t) for t in r["threads"]),
+            f"{r['flops'] / r['shaped_seconds'] / 1e9:.0f}",
+            f"{r['flops'] / r['flat_seconds'] / 1e9:.0f}",
+            f"{r['shaped_seconds'] / r['flat_seconds']:.2f}",
+        ]
+        for r in data["kernels"]
+    ]
+    return "\n".join(
+        [
+            report.header("Metal: threadgroup shape", env, COMMANDS["shape"]),
+            "One SIMD-group matrix multiply kernel (each SIMD group holds 2 x 4 accumulator "
+            "tiles of 8 x 8,",
+            "loads A and B from device memory), generated twice: with the threadgroup "
+            "shaped like its thread",
+            "loops (32 lanes x SIMD-group columns x SIMD-group rows), and launched flat "
+            "with the positions",
+            "computed from the thread index. GFLOPS from GPU time.",
+            "",
+            report.markdown_table(
+                ["Size", "SIMD groups", "Shape", "Shaped (GFLOPS)", "Flat (GFLOPS)", "Speedup"],
+                table,
+            ),
+        ]
+    )
+
+
 # -- ResNet-50 convolutions --------------------------------------------------------------
 
 MODELS = Path("data/models")
@@ -499,6 +645,7 @@ def conv_markdown(data: dict[str, Any], env: dict[str, Any]) -> str:
 COMMANDS = {
     "launch": "uv run python -m tessera.backend.metal.bench launch",
     "warmup": "uv run python -m tessera.backend.metal.bench warmup",
+    "shape": "uv run python -m tessera.backend.metal.bench shape",
     "gemm": "uv run --group bench python -m tessera.backend.metal.bench gemm",
     "conv": "uv run --group bench python -m tessera.backend.metal.bench conv",
 }
@@ -509,6 +656,7 @@ BENCHMARKS: dict[
 ] = {
     "launch": (lambda trials: bench_launch(), launch_markdown),
     "warmup": (lambda trials: bench_warmup(), warmup_markdown),
+    "shape": (lambda trials: bench_shape(), shape_markdown),
     "gemm": (bench_gemm, gemm_markdown),
     "conv": (bench_conv, conv_markdown),
 }

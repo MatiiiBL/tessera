@@ -1,0 +1,111 @@
+{
+  "environment": {
+    "commit": "e854764",
+    "cores": 10,
+    "date": "2026-11-12T05:57:00Z",
+    "load_average": [
+      7.07,
+      6.83,
+      6.23
+    ],
+    "machine": "Apple M4",
+    "memory_gb": 16,
+    "numpy": "2.5.4",
+    "os": "Darwin 27.0.0",
+    "performance_cores": 4,
+    "provisional": true,
+    "python": "3.13.7"
+  },
+  "kernels": [
+    {
+      "flat_seconds": 0.0010900208332844028,
+      "flops": 2147483648,
+      "groups": [
+        1,
+        2
+      ],
+      "shaped_seconds": 0.001130627976246095,
+      "size": 1024,
+      "threads": [
+        32,
+        2,
+        1
+      ]
+    },
+    {
+      "flat_seconds": 0.0016655604838653685,
+      "flops": 2147483648,
+      "groups": [
+        2,
+        1
+      ],
+      "shaped_seconds": 0.0015369449404585925,
+      "size": 1024,
+      "threads": [
+        32,
+        1,
+        2
+      ]
+    },
+    {
+      "flat_seconds": 0.0014597083330348444,
+      "flops": 2147483648,
+      "groups": [
+        2,
+        2
+      ],
+      "shaped_seconds": 0.001333792261877014,
+      "size": 1024,
+      "threads": [
+        32,
+        2,
+        2
+      ]
+    },
+    {
+      "flat_seconds": 0.011084468749686494,
+      "flops": 17179869184,
+      "groups": [
+        1,
+        2
+      ],
+      "shaped_seconds": 0.01120711805560859,
+      "size": 2048,
+      "threads": [
+        32,
+        2,
+        1
+      ]
+    },
+    {
+      "flat_seconds": 0.012374479166586147,
+      "flops": 17179869184,
+      "groups": [
+        2,
+        1
+      ],
+      "shaped_seconds": 0.01241827777812432,
+      "size": 2048,
+      "threads": [
+        32,
+        1,
+        2
+      ]
+    },
+    {
+      "flat_seconds": 0.012276666666972838,
+      "flops": 17179869184,
+      "groups": [
+        2,
+        2
+      ],
+      "shaped_seconds": 0.011863319443970491,
+      "size": 2048,
+      "threads": [
+        32,
+        2,
+        2
+      ]
+    }
+  ]
+}

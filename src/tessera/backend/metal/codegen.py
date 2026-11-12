@@ -10,10 +10,8 @@ but the thread's position on one grid axis:
   the same axis may have different extents: the launch uses the largest and
   the smaller loop is guarded. Threadgroups are launched one-dimensional and
   each axis position is computed from ``thread_index_in_threadgroup`` (x
-  fastest): a SIMD-group matrix multiply runs about 1.35 times faster in a
-  64 x 1 x 1 threadgroup than in the same 64 threads shaped 32 x 2 x 1, and
-  scalar kernels run the same either way (``python -m
-  tessera.backend.metal.bench shape``).
+  fastest); ``results/metal/shape.md`` compares this with threadgroups shaped
+  like the thread loops.
 
 Buffers allocated inside the function become ``threadgroup`` arrays
 (``shared``), thread-private arrays (``local``) or scratch device buffers
@@ -171,8 +169,10 @@ using namespace metal;
 """
 
 
-def generate(func: PrimFunc, *, max_threadgroup_memory: int = 32768) -> Kernel:
-    """Generate the MSL kernel of ``func`` and its launch configuration."""
+def generate(func: PrimFunc, *, max_threadgroup_memory: int = 32768, flat: bool = True) -> Kernel:
+    """Generate the MSL kernel of ``func`` and its launch configuration. ``flat``
+    launches one-dimensional threadgroups (see the module docstring); without it
+    the threadgroup has the thread loops' shape, for comparison."""
     from tessera.backend.metal.lower import (
         ReductionError,
         compact_buffers,
@@ -184,7 +184,7 @@ def generate(func: PrimFunc, *, max_threadgroup_memory: int = 32768) -> Kernel:
     except ReductionError as error:
         raise CodegenError(str(error)) from error
     func = compact_buffers(func, intrinsic_extents)
-    return _KernelWriter(func, max_threadgroup_memory).write()
+    return _KernelWriter(func, max_threadgroup_memory, flat).write()
 
 
 def launch_extents(body: Stmt) -> dict[str, int]:
@@ -777,7 +777,7 @@ _RESERVED_WORDS = """
     exp log sqrt rsqrt tanh erf abs fabs floor ceil fma min max pow powr fmod copysign
     clamp select precise fast simd_sum simd_max simd_min simd_shuffle_down
     simdgroup_barrier threadgroup_barrier mem_flags INFINITY NAN
-    threadgroup_pos thread_index simd_lane simd_group group offset
+    threadgroup_pos thread_index thread_pos simd_lane simd_group group offset
     group_x group_y group_z thread_x thread_y thread_z
 """
 RESERVED = frozenset(_RESERVED_WORDS.split())
@@ -1014,9 +1014,10 @@ class _Analysis:
 
 
 class _KernelWriter:
-    def __init__(self, func: PrimFunc, max_threadgroup_memory: int) -> None:
+    def __init__(self, func: PrimFunc, max_threadgroup_memory: int, flat: bool = True) -> None:
         self.func = func
         self.max_threadgroup_memory = max_threadgroup_memory
+        self.flat = flat
         self.namer = _Namer()
         self.lines: list[str] = []
         self.indent = 1
@@ -1177,6 +1178,8 @@ class _KernelWriter:
             signature.append("    uint3 threadgroup_pos [[threadgroup_position_in_grid]]")
         if "thread_index" in self.uses:
             signature.append("    uint thread_index [[thread_index_in_threadgroup]]")
+        if "thread_pos" in self.uses:
+            signature.append("    uint3 thread_pos [[thread_position_in_threadgroup]]")
         for builtin, attr in (
             ("simd_lane", "thread_index_in_simdgroup"),
             ("simd_group", "simdgroup_index_in_threadgroup"),
@@ -1197,7 +1200,7 @@ class _KernelWriter:
             params=tuple(params),
             scratch=tuple(scratch_buffers),
             grid=grid,
-            threads=(num_threads, 1, 1),
+            threads=(num_threads, 1, 1) if self.flat else threads,
             shape=threads,
             threadgroup_memory=threadgroup_memory,
             index_type=self.index_type,
@@ -1210,6 +1213,9 @@ class _KernelWriter:
 
     def thread_position(self, axis: str) -> str:
         """The position on thread axis ``axis`` from the flat thread index."""
+        if not self.flat:
+            self.uses.add("thread_pos")
+            return f"thread_pos.{axis}"
         self.uses.add("thread_index")
         x, y, z = self.shape
         if axis == "x":

@@ -126,3 +126,24 @@ def test_the_interpreter_runs_simdgroup_calls() -> None:
     result = np.zeros((32, 64), np.float32)
     tir.interpret(case.func, [*case.inputs, result])
     assert_close(result, case.inputs[0].astype(np.float64) @ case.inputs[1], rtol=1e-5, atol=1e-5)
+
+
+@gpu
+def test_shaped_threadgroups_compute_the_same() -> None:
+    from tessera.backend.metal import runtime
+    from tessera.backend.metal.codegen import module_source
+
+    case = matmul_simdgroup(32, 64, 16, np.random.default_rng(6), groups=(2, 2), frags=(1, 2))
+    kernel = generate(case.func, flat=False)
+    assert kernel.threads == (32, 2, 2)
+    assert "uint3 thread_pos [[thread_position_in_threadgroup]]" in kernel.source
+    device = runtime.device()
+    pipeline = device.compile(module_source([kernel])).pipeline(kernel.name)
+    buffers = [device.buffer(4 * x.size) for x in (*case.inputs, np.zeros((32, 64)))]
+    for buffer, x in zip(buffers, case.inputs, strict=False):
+        buffer.view(np.float32, x.shape)[...] = x
+    program = device.program()
+    program.add(pipeline, kernel.grid, kernel.threads, [(b, 0) for b in buffers])
+    program.run()
+    result = buffers[2].view(np.float32, (32, 64))
+    assert_close(result, case.inputs[0].astype(np.float64) @ case.inputs[1], rtol=1e-4, atol=1e-4)
