@@ -87,11 +87,11 @@ _STORAGE = {
 }
 
 _MATH_F32 = {
-    "exp": "expf",
-    "log": "logf",
+    "exp": "tsr_expf",
+    "log": "tsr_logf",
     "sqrt": "sqrtf",
-    "tanh": "tanhf",
-    "erf": "erff",
+    "tanh": "tsr_tanhf",
+    "erf": "tsr_erff",
     "abs": "fabsf",
     "floor": "floorf",
     "ceil": "ceilf",

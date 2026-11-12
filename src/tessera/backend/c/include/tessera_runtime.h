@@ -76,8 +76,130 @@ static inline int64_t tsr_powi(int64_t a, int64_t b) {
   return r;
 }
 
-static inline float tsr_sigmoidf(float x) { return 1.0f / (1.0f + expf(-x)); }
 static inline float tsr_rsqrtf(float x) { return 1.0f / sqrtf(x); }
+
+/* ---- vectorizable math -------------------------------------------------- */
+
+/*
+ * exp, log, tanh and erf without branches or calls, so that clang vectorizes
+ * the loops that use them (libm calls keep a loop scalar). Every case is
+ * computed and the answer picked with selects. The polynomials are Cephes'
+ * single-precision ones (expf, logf, tanhf) and the erfc approximation of
+ * Numerical Recipes (fractional error below 1.2e-7); tests/c checks the
+ * error of each against float64 over its whole range.
+ */
+
+static inline float tsr_bits_float(int32_t bits) {
+  union { int32_t i; float f; } u = {bits};
+  return u.f;
+}
+
+static inline int32_t tsr_float_bits(float x) {
+  union { float f; int32_t i; } u = {x};
+  return u.i;
+}
+
+static inline float tsr_expf(float x) {
+  /* x = n ln2 + r with |r| <= ln2 / 2; exp(x) = 2^n exp(r). */
+  float xc = fminf(fmaxf(x, -104.0f), 88.7228394f);
+  float n = rintf(xc * 1.44269504088896341f);
+  float r = fmaf(n, -0.693359375f, xc);
+  r = fmaf(n, 2.12194440e-4f, r);
+  float p = 1.9875691500e-4f;
+  p = fmaf(p, r, 1.3981999507e-3f);
+  p = fmaf(p, r, 8.3334519073e-3f);
+  p = fmaf(p, r, 4.1665795894e-2f);
+  p = fmaf(p, r, 1.6666665459e-1f);
+  p = fmaf(p, r, 5.0000001201e-1f);
+  p = fmaf(p, r * r, r) + 1.0f;
+  /* Multiply by 2^n by adding n to the exponent of p (in [0.7, 1.42]): one
+   * integer add, which reassociation cannot turn into an overflowing 2^128.
+   * Results below the normal range are made 2^64 times larger, then scaled
+   * by one multiplication, which underflows gradually. */
+  int32_t ni = (int32_t)n;
+  bool deep = ni < -125;
+  float y = tsr_bits_float(tsr_float_bits(p) + ((deep ? ni + 64 : ni) << 23));
+  y = deep ? y * 5.42101086e-20f : y;
+  y = x > 88.7228394f ? INFINITY : y;
+  y = x < -104.0f ? 0.0f : y;
+  return x != x ? x : y;
+}
+
+static inline float tsr_logf(float x) {
+  /* x = m 2^e with m in [sqrt(1/2), sqrt(2)); log(x) = e ln2 + log(m). */
+  bool tiny = x < 1.17549435e-38f;
+  float xs = tiny ? x * 8388608.0f : x; /* subnormals: scale by 2^23 */
+  int32_t bits = tsr_float_bits(xs);
+  float e = (float)(((bits >> 23) & 0xff) - 126) - (tiny ? 23.0f : 0.0f);
+  float m = tsr_bits_float((bits & 0x007fffff) | 0x3f000000); /* in [0.5, 1) */
+  bool low = m < 0.707106781186547524f;
+  e = low ? e - 1.0f : e;
+  float f = (low ? m + m : m) - 1.0f;
+  float z = f * f;
+  float p = 7.0376836292e-2f;
+  p = fmaf(p, f, -1.1514610310e-1f);
+  p = fmaf(p, f, 1.1676998740e-1f);
+  p = fmaf(p, f, -1.2420140846e-1f);
+  p = fmaf(p, f, 1.4249322787e-1f);
+  p = fmaf(p, f, -1.6668057665e-1f);
+  p = fmaf(p, f, 2.0000714765e-1f);
+  p = fmaf(p, f, -2.4999993993e-1f);
+  p = fmaf(p, f, 3.3333331174e-1f);
+  float y = f * z * p;
+  y = fmaf(e, -2.12194440e-4f, y);
+  y = fmaf(z, -0.5f, y);
+  y = f + y;
+  y = fmaf(e, 0.693359375f, y);
+  y = x == INFINITY ? INFINITY : y;
+  y = x == 0.0f ? -INFINITY : y;
+  return x < 0.0f || x != x ? NAN : y;
+}
+
+static inline float tsr_tanhf(float x) {
+  float a = fabsf(x);
+  /* Small |x|: odd polynomial; otherwise 1 - 2 / (exp(2|x|) + 1). */
+  float z = x * x;
+  float p = -5.70498872745e-3f;
+  p = fmaf(p, z, 2.06390887954e-2f);
+  p = fmaf(p, z, -5.37397155531e-2f);
+  p = fmaf(p, z, 1.33314422036e-1f);
+  p = fmaf(p, z, -3.33332819422e-1f);
+  float small = fmaf(x * z, p, x);
+  float large = 1.0f - 2.0f / (tsr_expf(a + a) + 1.0f);
+  large = x < 0.0f ? -large : large;
+  return a < 0.625f ? small : large;
+}
+
+static inline float tsr_erff(float x) {
+  float a = fabsf(x);
+  /* Small |x|: Taylor series of erf; otherwise 1 - erfc(|x|) with
+   * erfc(a) = t exp(-a^2 + P(t)), t = 1 / (1 + a / 2). */
+  float z = x * x;
+  float s = 1.0f / 9360.0f;
+  s = fmaf(s, z, -1.0f / 1320.0f);
+  s = fmaf(s, z, 1.0f / 216.0f);
+  s = fmaf(s, z, -1.0f / 42.0f);
+  s = fmaf(s, z, 1.0f / 10.0f);
+  s = fmaf(s, z, -1.0f / 3.0f);
+  s = fmaf(s, z, 1.0f);
+  float small = 1.12837916709551257f * x * s;
+  float t = 1.0f / fmaf(0.5f, a, 1.0f);
+  float q = 0.17087277f;
+  q = fmaf(q, t, -0.82215223f);
+  q = fmaf(q, t, 1.48851587f);
+  q = fmaf(q, t, -1.13520398f);
+  q = fmaf(q, t, 0.27886807f);
+  q = fmaf(q, t, -0.18628806f);
+  q = fmaf(q, t, 0.09678418f);
+  q = fmaf(q, t, 0.37409196f);
+  q = fmaf(q, t, 1.00002368f);
+  q = fmaf(q, t, -1.26551223f);
+  float large = 1.0f - t * tsr_expf(q - z);
+  large = x < 0.0f ? -large : large;
+  return a < 0.5f ? small : large;
+}
+
+static inline float tsr_sigmoidf(float x) { return 1.0f / (1.0f + tsr_expf(-x)); }
 
 /* ---- memory and time ---------------------------------------------------- */
 
