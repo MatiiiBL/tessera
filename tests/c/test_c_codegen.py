@@ -181,3 +181,12 @@ def test_reduction_block_with_reordered_loops_still_inits_once() -> None:
     text = generate_kernel(PrimFunc("rowsum", (a, c), root(loop(k, 8, loop(i, 4, block))))).text
     assert text.index("for (int64_t k") < text.index("for (int64_t i")
     assert "if (vk == 0) {" in text
+
+
+def test_one_iteration_loops_become_values() -> None:
+    x, y = Buffer("X", (8,)), Buffer("Y", (8,))
+    i, unit, vi = Var("i"), Var("unit"), Var("vi")
+    block = realize("Y", [(vi, 8, S, i + unit)], BufferStore(y, x[vi], (vi,)))
+    text = generate_kernel(PrimFunc("unit", (x, y), root(loop(i, 8, loop(unit, 1, block))))).text
+    assert "unit" not in text.replace("static void unit(", "")
+    assert "const int64_t vi = i;" in text

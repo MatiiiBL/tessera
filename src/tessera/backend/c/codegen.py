@@ -24,6 +24,7 @@ The output depends only on the function, so equal functions give equal text
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -221,6 +222,35 @@ def fold(e: Expr) -> Expr:
     return e
 
 
+def substitute(e: Expr, mapping: Mapping[Var, Expr]) -> Expr:
+    """``e`` with every variable in ``mapping`` replaced by its value."""
+    if isinstance(e, Var):
+        return mapping.get(e, e)
+    if isinstance(e, Binary):
+        return Binary(e.op, substitute(e.a, mapping), substitute(e.b, mapping))
+    if isinstance(e, Compare):
+        return Compare(e.op, substitute(e.a, mapping), substitute(e.b, mapping))
+    if isinstance(e, Logical):
+        return Logical(e.op, substitute(e.a, mapping), substitute(e.b, mapping))
+    if isinstance(e, Not):
+        return Not(substitute(e.a, mapping))
+    if isinstance(e, Select):
+        return Select(
+            substitute(e.cond, mapping),
+            substitute(e.true_value, mapping),
+            substitute(e.false_value, mapping),
+        )
+    if isinstance(e, Cast):
+        return Cast(e.type, substitute(e.value, mapping))
+    if isinstance(e, Call):
+        return Call(e.name, tuple(substitute(a, mapping) for a in e.args), e.type)
+    if isinstance(e, BufferLoad):
+        return BufferLoad(e.buffer, tuple(substitute(i, mapping) for i in e.indices))
+    if isinstance(e, AddressOf):
+        return AddressOf(e.buffer, tuple(substitute(i, mapping) for i in e.indices))
+    return e
+
+
 def _fold_ints(op: str, a: int, b: int) -> int | None:
     if op == "add":
         return a + b
@@ -309,6 +339,7 @@ class _Emitter:
         self.refs: dict[Var | Buffer, None] = {}
         self.defined: set[Var | Buffer] = set()
         self.nonneg: set[Var] = set()
+        self.subst: dict[Var, Expr] = {}  # variables of one-iteration loops
 
     # -- driver ---------------------------------------------------------------
 
@@ -419,8 +450,15 @@ class _Emitter:
     def for_(self, s: For, path: Path) -> None:
         if s.kind is ForKind.THREAD_BINDING:
             raise CodegenError(f"loop {s.loop_var.name} is bound to {s.thread_tag} (Metal only)")
-        lo = fold(s.min)
-        extent = fold(s.extent)
+        lo = fold(self.substitute(s.min))
+        extent = fold(self.substitute(s.extent))
+        if isinstance(extent, IntImm) and extent.value == 1:
+            # A loop of one iteration (left by splits): its variable is a value.
+            self.subst[s.loop_var] = lo
+            if self.is_nonneg(lo):
+                self.nonneg.add(s.loop_var)
+            self.stmt(s.body, (*path, 0))
+            return
         if s.kind is ForKind.PARALLEL and not self.in_parallel:
             self.parallel(s, lo, extent, path)
             return
@@ -430,14 +468,6 @@ class _Emitter:
         if self.is_nonneg(lo):
             self.nonneg.add(s.loop_var)
         ctype = self.scalar_type(s.loop_var.dtype)
-        if isinstance(extent, IntImm) and extent.value == 1:
-            self.line("{")
-            self.depth += 1
-            self.line(f"const {ctype} {name} = {lo_text};")
-            self.stmt(s.body, (*path, 0))
-            self.depth -= 1
-            self.line("}")
-            return
         if s.kind is ForKind.VECTORIZED:
             self.line("#pragma clang loop vectorize(enable) interleave(enable)")
         elif s.kind is ForKind.UNROLLED:
@@ -466,7 +496,11 @@ class _Emitter:
         self.nested(s.body, (*path, 0))
         self.line("}")
         body = self.lines
-        captured = [r for r in self.refs if r not in self.defined]
+        # Kernel parameters first, in their order; then everything else in
+        # order of first use.
+        free = [r for r in self.refs if r not in self.defined]
+        first = [p for p in self.func.params if p in free]
+        captured: list[Var | Buffer] = [*first, *(r for r in free if r not in first)]
         self.lines, self.depth, self.refs, self.defined = outer
         self.in_parallel = False
 
@@ -577,7 +611,10 @@ class _Emitter:
     # -- expressions ----------------------------------------------------------
 
     def expr(self, e: Expr) -> str:
-        return self.emit(fold(e))[0]
+        return self.emit(fold(self.substitute(e)))[0]
+
+    def substitute(self, e: Expr) -> Expr:
+        return substitute(e, self.subst) if self.subst else e
 
     def operand(self, e: Expr, min_prec: int) -> str:
         text, prec = self.emit(e)
@@ -590,6 +627,8 @@ class _Emitter:
             text = float_literal(e.value, e.type)
             return text, (_UNARY if text.startswith(("-", "(")) else _PRIMARY)
         if isinstance(e, Var):
+            if e in self.subst:
+                return self.emit(fold(self.subst[e]))
             return self.var(e), _PRIMARY
         if isinstance(e, BufferLoad):
             return self.element(e.buffer, e.indices), _PRIMARY
@@ -697,7 +736,8 @@ class _Emitter:
         for dim in reversed(range(buf.ndim)):
             index = fold(indices[dim])
             if compact is not None:
-                index = fold(compacted_index(compact, dim, index, self.plan))
+                index = compacted_index(compact, dim, index, self.plan)
+            index = fold(self.substitute(index))
             term = fold(Binary("mul", index, IntImm(stride, index.dtype)))
             flat = term if flat is None else fold(Binary("add", term, flat))
             stride *= shape[dim]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import platform
+import random
 import re
 import subprocess
 from collections.abc import Callable
@@ -50,6 +51,7 @@ from tessera.tir.stmt import (
     PrimFunc,
     seq,
 )
+from tessera.tune.synthetic import SyntheticMatmul
 
 rng = np.random.default_rng(0)
 
@@ -367,3 +369,15 @@ def test_vectorized_loop_compiles_to_simd_instructions(tmp_path: Path) -> None:
         assert re.search(r"fmla(\.4s|\s+v\d+\.4s)", asm)
     else:
         assert re.search(r"(mulps|vfmadd\w*ps|addps)", asm)
+
+
+def test_tiled_matmuls_from_the_tuners_synthetic_task() -> None:
+    """The loop nests the tuner's synthetic matmul builds (splits, reordered K,
+    unrolling, vectorization, a parallel outer loop) compile and compute A @ B."""
+    task = SyntheticMatmul(m=48, n=64, k=40)
+    configs = [task.space.default(), *(task.space.sample(random.Random(s)) for s in range(5))]
+    a, b = _rand(48, 40), _rand(40, 64)
+    for config in configs:
+        c = np.zeros((48, 64), np.float32)
+        run_kernel(task.schedule(config), [a, b, c], Target(num_threads=4))
+        np.testing.assert_allclose(c, a @ b, rtol=1e-5, atol=1e-5)
