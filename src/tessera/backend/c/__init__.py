@@ -23,6 +23,12 @@ class CBackend:
 
     name = "c"
 
+    def lowering_options(self, target: Target) -> Mapping[str, object]:
+        """Lower matmuls with each operand a prologue computes as a block of its
+        own, which the matmul template computes once into a plain matrix (or
+        inlines back when it is a strided matrix of its source)."""
+        return {"operand_blocks": True}
+
     def templates(self, target: Target | None = None) -> Mapping[str, Template]:
         """One schedule template per pattern of ``tessera.plan.PATTERNS``,
         specialized for ``target`` (the host when None)."""

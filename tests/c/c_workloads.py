@@ -37,9 +37,15 @@ class Workload:
         return np.full(out.shape, np.nan, out.dtype.numpy)
 
 
-def lowered(build: Callable[[Graph, np.random.Generator], Value], seed: int = 0) -> Workload:
+def lowered(
+    build: Callable[[Graph, np.random.Generator], Value],
+    seed: int = 0,
+    *,
+    operand_blocks: bool = False,
+) -> Workload:
     """Build a graph, fuse it, and lower its one kernel group (view groups
-    aside); the graph's inputs get random values."""
+    aside); the graph's inputs get random values. ``operand_blocks`` is the
+    lowering option the C backend asks for (``CBackend.lowering_options``)."""
     rng = np.random.default_rng(seed)
     g = Graph("workload")
     g.set_outputs([build(g, rng)])
@@ -50,7 +56,7 @@ def lowered(build: Callable[[Graph, np.random.Generator], Value], seed: int = 0)
     feeds = {v.name: rng.standard_normal(v.type.shape).astype(v.type.dtype.numpy) for v in g.inputs}
     expected = interpret(g, feeds)[g.outputs[0].name]
     args = [feeds[v.name] if v.data is None else np.asarray(v.data) for v in group.inputs]
-    return Workload(compute.lower_group(group), args, expected)
+    return Workload(compute.lower_group(group, operand_blocks=operand_blocks), args, expected)
 
 
 def _const(g: Graph, rng: np.random.Generator, shape: tuple[int, ...], name: str) -> Value:
@@ -72,7 +78,7 @@ def matmul(m: int, n: int, k: int, *, batch: int = 0, epilogue: bool = True) -> 
     return lowered(build)
 
 
-def attention_scores(heads: int, seq: int, dim: int) -> Workload:
+def attention_scores(heads: int, seq: int, dim: int, *, operand_blocks: bool = False) -> Workload:
     """Q @ K^T * scale: the transpose of K is a prologue of the matmul."""
 
     def build(g: Graph, rng: np.random.Generator) -> Value:
@@ -81,7 +87,23 @@ def attention_scores(heads: int, seq: int, dim: int) -> Workload:
         scale = g.add_constant(np.float32([dim**-0.5]), "scale")
         return g.op("Mul", g.op("MatMul", q, kt), scale)
 
-    return lowered(build)
+    return lowered(build, operand_blocks=operand_blocks)
+
+
+def merged_heads(heads: int, seq: int, dim: int, n: int) -> Workload:
+    """The attention output projection: heads [1, H, S, D] transposed and merged
+    into [S, H * D], times W, plus a bias. Lowered with operand blocks, the
+    merged operand reads x[k // D, m, k % D]."""
+
+    def build(g: Graph, rng: np.random.Generator) -> Value:
+        x = g.add_input("heads", TensorType((1, heads, seq, dim), F32))
+        merged = g.op(
+            "Reshape", g.op("Transpose", x, perm=(0, 2, 1, 3)), shape=(1, seq, heads * dim)
+        )
+        y = g.op("MatMul", merged, _const(g, rng, (heads * dim, n), "W"))
+        return g.op("Add", y, _const(g, rng, (n,), "b"))
+
+    return lowered(build, operand_blocks=True)
 
 
 def conv2d(

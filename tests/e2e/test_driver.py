@@ -210,8 +210,8 @@ def test_backend_lowering_options_reach_every_group(
     from tessera.backend.base import LoweringOptions, get_backend
     from tessera.compute import lower_group as real_lower_group
 
-    class Padding:
-        """The C backend, plus a lowering option."""
+    class Plain:
+        """The C backend's templates and builder, without lowering options."""
 
         def __init__(self) -> None:
             self.inner = get_backend("c")
@@ -223,6 +223,9 @@ def test_backend_lowering_options_reach_every_group(
         def build(self, plan: object, target: Target) -> object:
             return self.inner.build(plan, target)
 
+    class Padding(Plain):
+        """The C backend, with a lowering option of its own."""
+
         def lowering_options(self, target: Target) -> dict[str, object]:
             return {"pad_block": True, "isa": target.isa}
 
@@ -232,7 +235,7 @@ def test_backend_lowering_options_reach_every_group(
         calls.append(options)
         return real_lower_group(group)
 
-    backend = Padding() if capable else get_backend("c")
+    backend = Padding() if capable else Plain()
     assert isinstance(backend, LoweringOptions) is capable
     monkeypatch.setattr(driver, "get_backend", lambda kind: backend)
     monkeypatch.setattr(driver, "lower_group", recording_lower_group)

@@ -122,7 +122,7 @@ The printer follows the loop IR without restructuring it:
   allocation (such as `t >> 3` when the tile loops are fused into `t`) are
   constant while the buffer lives and drop out of the shrunk index. Buffers
   above 64 KiB live in storage each thread allocates once and reuses (the
-  calling thread runs the first chunk of every parallel loop, and Python
+  calling thread works on every parallel loop, and Python
   threads other than the main one have 512 KiB stacks).
 - **Global intermediates** (a main block's result that an epilogue could not
   be fused into) live in storage each calling thread allocates once and
@@ -160,14 +160,16 @@ everything in it is `static`, so each loaded model has its own pool.
 
 **Thread pool.** `TSR_NUM_THREADS - 1` persistent workers (the thread
 count is part of the source, so single- and multi-threaded builds of a model
-are different libraries). `tsr_parallel_for(begin, end, task, args)` splits
-the range into one contiguous chunk per thread (static partitioning: the
-templates parallelize loops of equal-cost tiles) and the calling thread runs
-the first chunk. A loop is published by writing the job and incrementing a
-generation counter; workers poll the counter for 0.5 ms (a model's kernels
-follow each other within microseconds, so workers stay awake through a run)
-and then sleep on a condition variable. On SME targets they sleep at once
-(`TSR_SPIN_SECONDS` 0, see "Threads on SME targets" below). The publisher takes the mutex only
+are different libraries). `tsr_parallel_for(begin, end, task, args)` runs
+the range on every thread, the caller included: threads claim iterations
+from a shared counter an eighth of an even share at a time (one iteration
+when there are few, as for the tiles the templates parallelize), so a
+thread that runs slower than the others takes fewer. A loop is published by
+writing the job and incrementing a generation counter; workers poll the
+counter for 0.5 ms (a model's kernels follow each other within
+microseconds, so workers stay awake through a run) and then sleep on a
+condition variable. On SME targets they sleep at once (`TSR_SPIN_SECONDS`
+0, see "Threads on SME targets" below). The publisher takes the mutex only
 when some worker sleeps; the sleeper registers itself before rechecking the
 counter under the mutex, so a wakeup cannot be lost. Every worker
 acknowledges every job, so the job fields are never rewritten while a
@@ -176,33 +178,52 @@ threads (the others acknowledge and stay idle). On macOS the workers ask for
 `QOS_CLASS_USER_INTERACTIVE`, which keeps them on the performance cores (the
 default thread count is the number of performance cores), and so does every
 exported entry point for its calling thread, once: the caller runs the
-serial parts and the first chunk of every loop, and a kernel that never
-starts the pool (single-threaded SME) otherwise ran at the caller's default
-class, which macOS may move to an efficiency core. A second
-thread starting a loop while the pool is busy runs it serially, and after
-`fork()` the child runs every loop serially. `test_thread_pool` checks
-2000 loops of varied sizes for exactly-once execution, wakeups after
-sleeping, nesting, concurrent callers and fork.
+serial parts and works on every loop, and a kernel that never starts the
+pool (single-threaded SME) otherwise ran at the caller's default class,
+which macOS may move to an efficiency core. A worker that wakes up on an
+efficiency core for a loop leaves the loop to the others and sleeps until
+the next one (on Apple silicon the efficiency cores are the first
+`hw.perflevel1.logicalcpu` logical CPUs; `pthread_cpu_number_np` says which
+one a thread is on). A second thread starting a loop while the pool is busy
+runs it serially, and after `fork()` the child runs every loop serially.
+`test_thread_pool` checks 2000 loops of varied sizes for exactly-once
+execution, wakeups after sleeping, nesting, concurrent callers and fork.
 
 **Threads on SME targets.** The performance cores share one SME unit, and
 the efficiency cluster has its own. When several threads keep SME busy,
 macOS moves some of them to the efficiency cluster (its scheduler spreads
 users of a cluster's shared unit across clusters), whatever their QoS
-class. There an SME chunk takes about three times as long: a 128 x 2304 x
-768 product split in three chunks took 165 µs per chunk on a performance
-core and 465 µs on an efficiency core, and the static partitioning waits
-for the slowest chunk. A worker that polls never blocks, so it stays where
-it was moved for the rest of the run, NEON kernels included. Instrumented
-runs of ResNet-50 (untuned, c:sme) fell into three groups by the share of
-loop chunks that ran on efficiency cores: none, 12–14 ms; a quarter (one
-thread), 17.5–18.5 ms; half, 24.5–25 ms. That is the spread of its
-untuned latency. NEON kernels alone never moved. On SME targets idle
-workers therefore sleep at once, and each wakeup lets the scheduler place
-them again: the same model then ran in 11.8–15 ms with no chunk on an
-efficiency core. Polling stays on NEON and generic targets, where a wakeup
-(3–7 µs) would cost more than the loops it parallelizes (MobileNetV2 on
-c:neon: 3.0 ms polling, 4.2 ms sleeping). `runtime_defines(target)` in
-`build.py` writes these settings into every generated source.
+class; NEON kernels alone never moved a thread. There an SME chunk takes
+about three times as long: a 128 x 2304 x 768 product split in three
+chunks took 165 µs per chunk on a performance core and 465 µs on an
+efficiency core, and a loop split into one chunk per thread waits for the
+slowest. Instrumented runs of ResNet-50 (untuned, c:sme) with polling
+workers fell into three groups by the share of chunks that ran on
+efficiency cores: none, 12–14 ms; a quarter (one thread), 17.5–18.5 ms;
+half, 24.5–25 ms. That was the spread of its untuned latency (18.0 to 24.7
+ms from p10 to p90). Three changes answer it:
+
+- On SME targets idle workers sleep at once instead of polling: a polling
+  worker never blocks, so it stayed where it was moved for the rest of the
+  run, NEON kernels included, while every wakeup lets the scheduler place a
+  sleeping worker again. Polling stays on NEON and generic targets, where a
+  wakeup (3–7 µs) would cost more than the loops it parallelizes
+  (MobileNetV2 on c:neon: 3.0 ms polling, 4.2 ms sleeping).
+  `runtime_defines(target)` in `build.py` writes these settings into every
+  generated source.
+- A worker woken on an efficiency core skips the loop, so it is never the
+  chunk everyone waits for.
+- Iterations are claimed, not split in advance, so the threads that work
+  share the loop between them.
+
+Sleeping alone left about half the runs of some processes with a thread on
+an efficiency core (medians 13.6 and 18.5 ms in two of three processes);
+with all three, three processes ran ResNet-50 in 11.8–11.9 ms (p90 at most
+12.2 ms) with no chunk on an efficiency core. The scheduler can still keep
+one worker on the efficiency cluster for a whole process, waking it there
+for every loop; the model then runs on three threads, 15.5 ms instead of
+11.8 ms (and instead of 17.5–25 ms before). NEON targets are unchanged
+(MobileNetV2, ResNet-50 and BERT on c:neon within 1 percent).
 
 **Memory and time.** `tsr_alloc` returns 128-byte-aligned memory (the cache
 line of Apple's performance cores); `tsr_now` reads `mach_absolute_time`
@@ -315,6 +336,33 @@ vectorizing.
 | `reduce` | over the last axes: one accumulator per output element, the contiguous loop vectorized by clang; over middle axes (a global average pool): a `tile` of the innermost output axis accumulated while the reduction streams over contiguous rows | `tile` (the whole axis, or one tile per thread when the outer axes are too few) |
 | `softmax`, `layernorm` | every statistics stage computed per row inside the final stage's row loop, reductions decomposed so clang vectorizes them, the final stage's row loop vectorized | `vector` (16) |
 | `injective` | stages inlined into the output's, its innermost loop vectorized | `vector` (16) |
+
+A matmul operand that prologue operators compute is lowered as a block of
+its own (`CBackend.lowering_options` asks `compute.lower_group` for
+`operand_blocks`). The matmul template inlines it back when it copies a
+strided matrix of its source (a slice, a transpose of axes: the loads stay
+affine and the microkernels read the source in place) and otherwise computes
+it once, element by element, in a nest of its own before the product (no
+knobs, vectorized, parallel). The attention output projection of BERT and
+GPT-2 reads its operand as `x[k // 64, m, k % 64]` (heads transposed and
+merged); inlined, that index arithmetic ran once per multiply-add in the
+generated loops, since the microkernels need a plain matrix. Staged, the
+twelve projections of GPT-2 take 1835 µs instead of 5616 µs (1862 µs for
+the unfused transpose, reshape, product and additions), and fusion stopped
+costing time on c:sme:
+
+| c:sme, untuned | fused before | fused | fusion off |
+|---|---:|---:|---:|
+| GPT-2 | 37.4 ms | 32.3 ms | 32.2 ms |
+| BERT | 26.8 ms | 22.0 ms | 22.5 ms |
+| ResNet-50 | | 12.0 ms | 11.9 ms |
+| MobileNetV2 | | 3.34 ms | 3.32 ms |
+
+(medians of 40 runs in interleaved rounds; ResNet-50 in a process with no
+thread on an efficiency core). ResNet-50's convolution groups are a few
+percent slower fused than their parts, but so are its convolutions without
+an epilogue, whose code is the same in both: the difference comes from
+their surroundings, not from fusion.
 
 An epilogue is inlined into the block that stores the tile (the copy out of
 the accumulator); when that is impossible it is computed under the tile
@@ -550,18 +598,22 @@ that.
   quantized kernels.
 - **Microkernel coverage.** The GEMM microkernel needs unit stride along the
   reduction in A and along the columns in C; the convolution microkernel an
-  NHWC image, HWIO weights and `groups == 1`. Depthwise convolutions, the
+  NHWC image, HWIO weights and `groups == 1`. Depthwise convolutions and the
   first convolution of the image models (its NCHW input is transposed by a
-  prologue inlined into the load) and products with an elementwise prologue
-  use generated loops on every target.
+  prologue inlined into the load) use generated loops on every target; a
+  matmul operand with a prologue does too unless the prologue is staged
+  (above) or copies a strided matrix.
 - **Convolution parallelism.** A convolution call covers the whole output
   plane of an image, because a clamped padding index differs from its
   tile-relative form by more than an offset and tensorize matches indices up
   to offsets. Threads share the work by output-channel strips, so a layer
   with 64 output channels has at most four strips of 16.
-- **Static partitioning.** The pool gives each thread one equal chunk of a
-  parallel loop; with no work stealing, a thread delayed by other work on the
-  machine delays the whole loop. Thread placement on Linux is left to the
+- **Coarse loops and slow threads.** Threads claim the iterations of a
+  loop, but a loop with no more iterations than threads (most SME tiles)
+  still waits for its slowest iteration. On SME targets macOS may keep one
+  worker on the efficiency cluster for a whole process; that worker then
+  skips every loop, and models run on three threads (ResNet-50 untuned:
+  15.5 ms instead of 11.8 ms). Thread placement on Linux is left to the
   scheduler.
 - **Memory for packed weights.** The microkernels keep a packed copy of
   every constant weight they multiply, as large as the weights themselves,

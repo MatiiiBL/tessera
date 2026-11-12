@@ -21,6 +21,7 @@ from tessera.backend.c.templates.common import (
     parallelize,
     place_epilogue,
     read_index,
+    realize,
     register_options,
     schedule_alone,
     tile_options,
@@ -28,9 +29,11 @@ from tessera.backend.c.templates.common import (
     vectorize_inside,
 )
 from tessera.backend.c.templates.micro import GemmLayout, gemm_intrinsic, gemm_layout, is_constant
+from tessera.compute.anchor import ROLE
 from tessera.plan import LoweredGroup
-from tessera.tir.expr import Var
+from tessera.tir.expr import Binary, BufferLoad, Expr, IntImm, Var
 from tessera.tir.schedule import Schedule
+from tessera.tir.stmt import BufferStore
 from tessera.tune.space import Config
 
 
@@ -46,9 +49,14 @@ def schedule_matmul(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: 
     uses it; batches and column strips run in parallel. This is what weight
     matrices larger than the caches need (a strip is packed only if it fits
     the stack, see ``PACK_LIMIT``). "mn" walks row tiles outside and runs
-    every tile in parallel."""
+    every tile in parallel.
+
+    An operand that its prologue computes (``operand_blocks`` lowering) is
+    loaded in place when it is a strided matrix of its source, and otherwise
+    computed once into a matrix of its own first (``stage_operands``)."""
     main = group.main_block
     assert main is not None
+    stage_operands(sch)
     loops = sch.get_loops(main)
     kinds = loop_kinds(sch, main)
     spatial = [v for v, k in zip(loops, kinds, strict=True) if k == "S"]
@@ -94,6 +102,47 @@ def schedule_matmul(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: 
         sch.reorder(io, jo, *reduce, ii, ji)
         tile_loops(sch, main, group.epilogue_block, jo, reduce[0], ii, ji)
         parallelize(sch, [*batch, io, jo], enabled)
+
+
+def stage_operands(sch: Schedule) -> None:
+    """Inline the operand blocks (role ``operand``) that copy a strided matrix
+    of their source: the main block then loads the source in place, as the
+    microkernels and the generated loops do with any input. Any other operand
+    (the merged heads in front of an attention output projection, read as
+    ``x[k // 64, m, k % 64]``) is computed once, element by element, in a nest
+    of its own before the product, which then reads a plain matrix: the index
+    arithmetic runs once per element instead of once per multiply-add, and
+    the GEMM microkernels apply."""
+    for block in sch.blocks():
+        if dict(realize(sch, block).block.annotations).get(ROLE) != "operand":
+            continue
+        if _strided_copy(sch, block):
+            sch.compute_inline(block)
+        else:
+            schedule_alone(sch, block)
+
+
+def _strided_copy(sch: Schedule, block: str) -> bool:
+    """Whether ``block`` stores a load of one buffer at indices that are sums of
+    its iteration variables times constants (a slice, or a transpose of axes)."""
+    body = realize(sch, block).block.body
+    return (
+        isinstance(body, BufferStore)
+        and isinstance(body.value, BufferLoad)
+        and all(_linear(i) for i in body.value.indices)
+    )
+
+
+def _linear(e: Expr) -> bool:
+    if isinstance(e, Var | IntImm):
+        return True
+    if isinstance(e, Binary) and e.op in ("add", "sub"):
+        return _linear(e.a) and _linear(e.b)
+    if isinstance(e, Binary) and e.op == "mul":
+        return (isinstance(e.a, IntImm) and _linear(e.b)) or (
+            isinstance(e.b, IntImm) and _linear(e.a)
+        )
+    return False
 
 
 @dataclass(frozen=True)

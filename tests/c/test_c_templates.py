@@ -27,6 +27,8 @@ WORKLOADS: dict[str, Callable[[], Workload]] = {
     "matmul_batched": lambda: W.matmul(6, 16, 9, batch=3, epilogue=False),
     "matmul_odd": lambda: W.matmul(7, 10, 5),
     "attention_scores": lambda: W.attention_scores(2, 8, 16),
+    "attention_scores_blocks": lambda: W.attention_scores(2, 8, 16, operand_blocks=True),
+    "merged_heads": lambda: W.merged_heads(3, 8, 8, 16),
     "shared_operands": lambda: W.shared_operands(12, 16),
     "conv2d_3x3": lambda: W.conv2d(1, 6, 8, 4, 16),
     "conv2d_strided": lambda: W.conv2d(2, 9, 9, 3, 8, (7, 7), (2, 2), (3, 3, 3, 3)),
@@ -113,7 +115,14 @@ def test_random_schedules(name: str, isa: CpuIsa) -> None:
         _check(w, _scheduled(w, target, space.get(index)), target, interpret=False)
 
 
-GEMMS = ["matmul", "matmul_batched", "attention_scores", "shared_operands"]
+GEMMS = [
+    "matmul",
+    "matmul_batched",
+    "attention_scores",
+    "attention_scores_blocks",
+    "merged_heads",
+    "shared_operands",
+]
 CONVS = ["conv2d_3x3", "conv2d_strided", "conv2d_1x1", "conv2d_dilated", "conv2d_wide"]
 
 
@@ -199,3 +208,17 @@ def test_sme_matmul_threads_follow_the_tile_count() -> None:
     many = _space(W.matmul(12, 5000, 20), target).default()
     assert few["micro_threads"] == 4
     assert many["micro_threads"] == 1
+
+
+@pytest.mark.parametrize("isa", ISAS)
+def test_operands_are_inlined_or_staged(isa: CpuIsa) -> None:
+    # A transposed K is a strided matrix of its input: loaded in place. Merged
+    # heads are not (k // 8, k % 8): computed once into a matrix of their own.
+    target = Target(isa=isa, num_threads=4)
+    strided = WORKLOADS["attention_scores_blocks"]()
+    sch = _scheduled(strided, target, _space(strided, target).default())
+    assert sum(line.startswith("compute_inline(") for line in sch.trace) == 1
+    merged = WORKLOADS["merged_heads"]()
+    sch = _scheduled(merged, target, _space(merged, target).default())
+    assert not any(line.startswith("compute_inline(") for line in sch.trace)
+    assert f"{merged.lowered.main_block}_a" in sch.blocks()
