@@ -114,6 +114,26 @@ def loop_kinds(sch: Schedule, block: str) -> list[str]:
     return out
 
 
+def read_index(sch: Schedule, block: str, *, uses: Var, avoids: Var) -> int | None:
+    """The position in ``block``'s reads of the one buffer whose region
+    depends on loop ``uses`` and not on loop ``avoids`` (B of a matmul: it
+    depends on the column loop, not the row loop)."""
+    r = realize(sch, block)
+    bound: dict[Var, set[Var]] = {}
+    for iv, value in zip(r.block.iter_vars, r.iter_values, strict=True):
+        bound[iv.var] = {e for e in sub_exprs(value) if isinstance(e, Var)}
+    found = []
+    for index, region in enumerate(r.block.reads):
+        loops: set[Var] = set()
+        for rng in region.region:
+            for e in (*sub_exprs(rng.min), *sub_exprs(rng.extent)):
+                if isinstance(e, Var):
+                    loops |= bound.get(e, {e})
+        if uses in loops and avoids not in loops:
+            found.append(index)
+    return found[0] if len(found) == 1 else None
+
+
 def output_block(sch: Schedule) -> str:
     """The block that stores into the function's last parameter (its output)."""
     out = sch.func.params[-1]
