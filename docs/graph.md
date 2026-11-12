@@ -112,7 +112,9 @@ because the output shape would depend on data. Other conversions:
 - `LayerNormalization` gets its scale and bias broadcast to the normalized
   shape, and a zero bias when it has none.
 
-Input and output names are the ONNX names (made identifiers). An output
+Each node takes its ONNX node's name, or its first output's name when it
+has none, so kernels are named after the model's layers. Input and output
+names are the ONNX names (made identifiers). An output
 whose value cannot take its name, because it is a constant, a graph input
 or the same value as another output, is returned through a same-shape
 Reshape view that carries the name. The memory plan turns that view into a
