@@ -1,0 +1,217 @@
+"""The single-command-buffer executor, on plans built by hand."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from metal_funcs import block, bound, gpu, prim_func, spatial
+
+from tessera.backend.base import get_backend
+from tessera.backend.metal import backend
+from tessera.backend.metal.executor import MetalModel, _Span, plan_barriers
+from tessera.dtype import DType
+from tessera.ir.graph import TensorType
+from tessera.plan import BufferRef, ExecutionPlan, KernelLaunch, MemoryPlan, StorageKind
+from tessera.target import Target
+from tessera.tir.expr import Expr, Var, call, maximum
+from tessera.tir.stmt import Buffer, BufferStore, PrimFunc
+
+N = 1000
+F32 = TensorType((N,), DType.float32)
+
+
+def elementwise(name: str, arity: int, fn: object) -> PrimFunc:
+    """``out[i] = fn(in0[i], ...)`` over N elements, 256 threads per threadgroup."""
+    ins = [Buffer(f"{name}_in{k}", (N,)) for k in range(arity)]
+    out = Buffer(f"{name}_out", (N,))
+    bx, tx, vi = Var("bx"), Var("tx"), Var("vi")
+    from tessera.tir.expr import lt
+
+    index = bx * 256 + tx
+    value: Expr = fn(*(b[vi] for b in ins))  # type: ignore[operator]
+    body = bound(
+        bx,
+        4,
+        "threadgroup.x",
+        bound(
+            tx,
+            256,
+            "thread.x",
+            block(
+                name,
+                [spatial(vi, N, index)],
+                BufferStore(out, value, (vi,)),
+                predicate=lt(index, N),
+            ),
+        ),
+    )
+    return prim_func(name, [*ins, out], body)
+
+
+def ref(kind: StorageKind, offset: int = 0, index: int = -1) -> BufferRef:
+    return BufferRef(kind, offset, N * 4, index)
+
+
+def residual_plan() -> ExecutionPlan:
+    """x -> relu(x + bias) -> {exp, scale} -> add: two independent middle kernels."""
+    bias = np.linspace(-1, 1, N).astype(np.float32)
+    constants = np.zeros(8192, np.uint8)
+    constants[256 : 256 + N * 4] = bias.view(np.uint8)
+    funcs = {
+        "add_relu": elementwise("add_relu", 2, lambda a, b: maximum(a + b, 0.0)),
+        "exp": elementwise("exp", 1, lambda a: call("exp", a)),
+        "scale": elementwise("scale", 1, lambda a: a * 3.0),
+        "add": elementwise("add", 2, lambda a, b: a + b),
+    }
+    x = ref(StorageKind.INPUT, index=0)
+    y = ref(StorageKind.ARENA, 0)
+    e = ref(StorageKind.ARENA, 4096)
+    s = ref(StorageKind.ARENA, 8192)
+    launches = [
+        KernelLaunch("add_relu", (x, ref(StorageKind.CONSTANT, 256), y)),
+        KernelLaunch("exp", (y, e)),
+        KernelLaunch("scale", (y, s)),
+        KernelLaunch("add", (e, s, ref(StorageKind.OUTPUT, index=0))),
+    ]
+    memory = MemoryPlan({}, 12288, constants)
+    return ExecutionPlan("residual", launches, memory, [("x", F32)], [("y", F32)], funcs)
+
+
+def expected(x: np.ndarray) -> np.ndarray:
+    bias = np.linspace(-1, 1, N).astype(np.float32)
+    y = np.maximum(x + bias, 0)
+    return np.exp(y) + 3 * y
+
+
+@gpu
+def test_model_runs_every_launch_in_one_command_buffer() -> None:
+    model = backend().build(residual_plan(), Target.parse("metal"))
+    assert isinstance(model, MetalModel)
+    x = np.random.default_rng(0).standard_normal(N).astype(np.float32)
+    out = model.run({"x": x})
+    np.testing.assert_allclose(out["y"], expected(x), rtol=1e-5)
+    # run() returns new arrays: the next run does not change them.
+    again = model.run({"x": x + 1})
+    np.testing.assert_allclose(out["y"], expected(x), rtol=1e-5)
+    np.testing.assert_allclose(again["y"], expected(x + 1), rtol=1e-5)
+    assert model.inputs == [("x", F32)]
+    assert model.outputs == [("y", F32)]
+    assert model.target.kind == "metal"
+
+
+@gpu
+def test_barriers_only_between_dependent_launches() -> None:
+    model = MetalModel(residual_plan(), Target.parse("metal"))
+    # exp and scale both read add_relu's output and write different bytes.
+    assert [(launch.kernel, launch.barrier) for launch in model.launches] == [
+        ("add_relu", False),
+        ("exp", True),
+        ("scale", False),
+        ("add", True),
+    ]
+    assert model.launches[0].grid == (4, 1, 1)
+    assert model.launches[0].threads == (256, 1, 1)
+
+
+@gpu
+def test_benchmark_and_profile() -> None:
+    model = MetalModel(residual_plan(), Target.parse("metal"))
+    x = np.ones(N, np.float32)
+    times = model.benchmark({"x": x}, warmup=1, repeat=5)
+    assert len(times) == 5
+    assert all(t > 0 for t in times)
+    gpu_times = model.gpu_benchmark({"x": x}, warmup=1, repeat=3)
+    assert len(gpu_times) == 3
+    profile = model.profile({"x": x}, repeat=3)
+    assert [k.kernel for k in profile] == ["add_relu", "exp", "scale", "add"]
+    assert all(k.seconds > 0 for k in profile)
+
+
+@gpu
+def test_sources_hold_every_kernel_once() -> None:
+    model = MetalModel(residual_plan(), Target.parse("metal"))
+    source = model.sources()["kernels.metal"]
+    assert source.startswith("// residual: generated by Tessera\n")
+    assert "#include <metal_stdlib>" in source
+    # A kernel named like a Metal function is renamed so that it does not shadow it.
+    assert model.kernels["exp"].name == "exp_"
+    for kernel in model.kernels.values():
+        assert source.count(f"kernel void {kernel.name}(") == 1
+    assert MetalModel(residual_plan(), Target.parse("metal")).source == source
+
+
+@gpu
+def test_inputs_can_be_written_in_place() -> None:
+    model = MetalModel(residual_plan(), Target.parse("metal"))
+    x = np.full(N, 0.5, np.float32)
+    model.input_views()["x"][:] = x
+    model.program.run(1)
+    np.testing.assert_allclose(model.output_views()["y"], expected(x), rtol=1e-5)
+
+
+@gpu
+def test_plan_errors() -> None:
+    target = Target.parse("metal")
+    model = MetalModel(residual_plan(), target)
+    with pytest.raises(ValueError, match="missing inputs"):
+        model.run({})
+    with pytest.raises(ValueError, match="has shape"):
+        model.run({"x": np.zeros(3, np.float32)})
+    plan = residual_plan()
+    plan.launches[1] = KernelLaunch(
+        "exp", (BufferRef(StorageKind.ARENA, 0, 16), ref(StorageKind.ARENA, 4096))
+    )
+    with pytest.raises(ValueError, match="needs 4000 bytes"):
+        MetalModel(plan, target)
+    plan = residual_plan()
+    plan.launches.append(KernelLaunch("missing", ()))
+    with pytest.raises(ValueError, match="does not define"):
+        MetalModel(plan, target)
+    with pytest.raises(ValueError, match="cannot build"):
+        backend().build(residual_plan(), Target.parse("c:generic"))
+
+
+def test_backend_registration() -> None:
+    metal = get_backend("metal")
+    assert metal.name == "metal"
+    assert set(metal.templates()) <= {
+        "conv2d",
+        "depthwise_conv2d",
+        "matmul",
+        "pool",
+        "reduce",
+        "softmax",
+        "layernorm",
+        "injective",
+    }
+
+
+spans = st.builds(
+    lambda b, start, size: _Span(b, start, start + size),
+    st.integers(0, 2),
+    st.integers(0, 64),
+    st.integers(1, 16),
+)
+launches = st.lists(
+    st.tuples(st.lists(spans, max_size=3), st.lists(spans, min_size=1, max_size=2)), max_size=12
+)
+
+
+@given(launches)
+@settings(max_examples=200)
+def test_barrier_placement_orders_every_conflict(
+    plan: list[tuple[list[_Span], list[_Span]]],
+) -> None:
+    """Any two launches that touch the same bytes, one of them writing, have a
+    barrier between them."""
+    barriers = plan_barriers(plan)
+    for j, (reads_j, writes_j) in enumerate(plan):
+        for i in range(j):
+            reads_i, writes_i = plan[i]
+            conflict = any(r.overlaps(w) for r in reads_j for w in writes_i) or any(
+                w.overlaps(o) for w in writes_j for o in (*reads_i, *writes_i)
+            )
+            if conflict:
+                assert any(barriers[i + 1 : j + 1])
