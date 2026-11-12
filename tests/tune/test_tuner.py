@@ -95,3 +95,18 @@ def test_time_budget() -> None:
     task = SyntheticMatmul(64, 64, 64)
     state = tune([task], RandomSearch(), trials=10_000, time_budget=0.0)[0]
     assert len(state.measured) == 0
+
+
+@dataclass(frozen=True)
+class Broken(SyntheticMatmul):
+    """Nothing builds."""
+
+    def build(self, config: Mapping[str, KnobValue]) -> dict[str, KnobValue]:
+        raise RuntimeError("template bug")
+
+
+def test_a_task_where_nothing_runs_does_not_take_the_budget() -> None:
+    broken, fine = Broken(32, 32, 32), SyntheticMatmul(32, 32, 32, threads=2)
+    states = tune([broken, fine], RandomSearch(), trials=96)
+    assert len(states[0].measured) == 16  # its first round only
+    assert len(states[1].measured) == 80

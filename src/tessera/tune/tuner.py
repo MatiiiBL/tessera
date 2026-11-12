@@ -61,7 +61,7 @@ class TaskProgress:
             return float("-inf")
         best = self.state.best()
         if best is None:
-            return self.weight * MIN_RATE  # nothing has run yet: retry rarely
+            return 0.0  # nothing has run yet: only when no other task can use the round
         if len(self.history) < 2:
             rate = OPTIMISTIC_RATE
         else:
