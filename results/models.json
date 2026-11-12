@@ -1,12 +1,12 @@
 {
   "environment": {
-    "commit": "bad21ec",
+    "commit": "b61e64e",
     "cores": 10,
-    "date": "2026-11-12T06:09:19Z",
+    "date": "2026-11-12T06:36:08Z",
     "load_average": [
-      5.99,
-      5.67,
-      5.64
+      7.64,
+      6.65,
+      6.2
     ],
     "machine": "Apple M4",
     "memory_gb": 16,
@@ -20,6 +20,75 @@
     {
       "ablations": {
         "c:sme": {
+          "full": {
+            "agreement": {
+              "max_abs": 2.384185791015625e-06,
+              "max_rel": 5.147719472762336e-07,
+              "top1": 1.0
+            },
+            "arena_bytes": 10436608,
+            "bytes_moved": 215740736,
+            "constant_bytes": 102121984,
+            "error": null,
+            "intermediate_bytes": 45266944,
+            "kernels": 56,
+            "latency": {
+              "median": 0.057745875003092806,
+              "p10": 0.05760427083441755,
+              "p90": 0.057972762501594846,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:33:13Z",
+            "system": "full",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
+          "fusion off": {
+            "agreement": {
+              "max_abs": 2.384185791015625e-06,
+              "max_rel": 5.147719472762336e-07,
+              "top1": 1.0
+            },
+            "arena_bytes": 12042240,
+            "bytes_moved": 337977472,
+            "constant_bytes": 102121984,
+            "error": null,
+            "intermediate_bytes": 106385312,
+            "kernels": 123,
+            "latency": {
+              "median": 0.06428887500078417,
+              "p10": 0.0588236625007994,
+              "p90": 0.06980194166644652,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:33:13Z",
+            "system": "fusion off",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
+          "graph rewrites off": {
+            "agreement": {
+              "max_abs": 2.384185791015625e-06,
+              "max_rel": 5.147719472762336e-07,
+              "top1": 1.0
+            },
+            "arena_bytes": 10436608,
+            "bytes_moved": 215740736,
+            "constant_bytes": 102121984,
+            "error": null,
+            "intermediate_bytes": 45266944,
+            "kernels": 56,
+            "latency": {
+              "median": 0.05775643749984738,
+              "p10": 0.05762377499850117,
+              "p90": 0.0643164416684158,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:33:13Z",
+            "system": "graph rewrites off",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
           "no schedule": {
             "agreement": {
               "max_abs": 2.7418136596679688e-06,
@@ -42,16 +111,87 @@
             "threads": 4,
             "tuned_kernels": 0
           }
+        },
+        "metal": {
+          "full": {
+            "agreement": {
+              "max_abs": 2.5033950805664062e-06,
+              "max_rel": 5.405105446400452e-07,
+              "top1": 1.0
+            },
+            "arena_bytes": 10436608,
+            "bytes_moved": 215740736,
+            "constant_bytes": 102121984,
+            "error": null,
+            "intermediate_bytes": 45266944,
+            "kernels": 56,
+            "latency": {
+              "median": 0.0645075624997844,
+              "p10": 0.06049313749936118,
+              "p90": 0.06564691249732277,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:33:13Z",
+            "system": "full",
+            "threads": null,
+            "tuned_kernels": 0
+          },
+          "fusion off": {
+            "agreement": {
+              "max_abs": 2.5033950805664062e-06,
+              "max_rel": 5.405105446400452e-07,
+              "top1": 1.0
+            },
+            "arena_bytes": 12042240,
+            "bytes_moved": 337977472,
+            "constant_bytes": 102121984,
+            "error": null,
+            "intermediate_bytes": 106385312,
+            "kernels": 123,
+            "latency": {
+              "median": 0.06525064583365747,
+              "p10": 0.05739076249737991,
+              "p90": 0.06654240416501125,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:33:13Z",
+            "system": "fusion off",
+            "threads": null,
+            "tuned_kernels": 0
+          },
+          "graph rewrites off": {
+            "agreement": {
+              "max_abs": 2.5033950805664062e-06,
+              "max_rel": 5.405105446400452e-07,
+              "top1": 1.0
+            },
+            "arena_bytes": 10436608,
+            "bytes_moved": 215740736,
+            "constant_bytes": 102121984,
+            "error": null,
+            "intermediate_bytes": 45266944,
+            "kernels": 56,
+            "latency": {
+              "median": 0.06378131249948638,
+              "p10": 0.05662810416361026,
+              "p90": 0.0646234583324258,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:33:13Z",
+            "system": "graph rewrites off",
+            "threads": null,
+            "tuned_kernels": 0
+          }
         }
       },
       "environment": {
-        "commit": "bad21ec",
+        "commit": "6e6e424",
         "cores": 10,
-        "date": "2026-11-12T06:06:02Z",
+        "date": "2026-11-12T06:33:13Z",
         "load_average": [
-          5.44,
-          4.68,
-          5.32
+          5.77,
+          5.71,
+          5.83
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
@@ -62,6 +202,42 @@
         "python": "3.13.7"
       },
       "model": "resnet50",
+      "runs": [
+        {
+          "commit": "bad21ec",
+          "cores": 10,
+          "date": "2026-11-12T06:06:02Z",
+          "load_average": [
+            5.44,
+            4.68,
+            5.32
+          ],
+          "machine": "Apple M4",
+          "memory_gb": 16,
+          "numpy": "2.5.4",
+          "os": "Darwin 27.0.0",
+          "performance_cores": 4,
+          "provisional": true,
+          "python": "3.13.7"
+        },
+        {
+          "commit": "6e6e424",
+          "cores": 10,
+          "date": "2026-11-12T06:33:13Z",
+          "load_average": [
+            5.77,
+            5.71,
+            5.83
+          ],
+          "machine": "Apple M4",
+          "memory_gb": 16,
+          "numpy": "2.5.4",
+          "os": "Darwin 27.0.0",
+          "performance_cores": 4,
+          "provisional": true,
+          "python": "3.13.7"
+        }
+      ],
       "systems": [
         {
           "agreement": {
@@ -71,11 +247,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.031904020499496255,
-            "p10": 0.028264584000135075,
-            "p90": 0.03762587980127137,
+            "median": 0.023028604498904315,
+            "p10": 0.02215030829938769,
+            "p90": 0.023695720500836615,
             "runs": 50
           },
+          "measured": "2026-11-12T06:33:13Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -87,11 +264,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.03816822949920606,
-            "p10": 0.03461382529858383,
-            "p90": 0.051588742000240016,
+            "median": 0.024071478999758256,
+            "p10": 0.02131803310185205,
+            "p90": 0.026277179499447814,
             "runs": 50
           },
+          "measured": "2026-11-12T06:33:13Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -103,19 +281,135 @@
           },
           "error": null,
           "latency": {
-            "median": 0.035801083000478684,
-            "p10": 0.02946478720077721,
-            "p90": 0.05075236639750074,
+            "median": 0.02320604150008876,
+            "p10": 0.02095397080120165,
+            "p90": 0.024705324701426435,
             "runs": 50
           },
+          "measured": "2026-11-12T06:33:13Z",
           "system": "pytorch-mps",
           "threads": 4
+        },
+        {
+          "agreement": {
+            "max_abs": 3.2782554626464844e-06,
+            "max_rel": 6.532199945177028e-07,
+            "top1": 1.0
+          },
+          "arena_bytes": 10436608,
+          "bytes_moved": 215740736,
+          "constant_bytes": 102121984,
+          "error": null,
+          "intermediate_bytes": 45266944,
+          "kernels": 56,
+          "latency": {
+            "median": 0.07617872916671331,
+            "p10": 0.07418115833315823,
+            "p90": 0.07738719166773081,
+            "runs": 50
+          },
+          "measured": "2026-11-12T06:33:13Z",
+          "system": "tessera-c:sme-untuned",
+          "threads": 4,
+          "tuned_kernels": 0
+        },
+        {
+          "agreement": {
+            "max_abs": 3.069639205932617e-06,
+            "max_rel": 6.057130858255061e-07,
+            "top1": 1.0
+          },
+          "arena_bytes": 10436608,
+          "bytes_moved": 215740736,
+          "constant_bytes": 102121984,
+          "error": null,
+          "intermediate_bytes": 45266944,
+          "kernels": 56,
+          "latency": {
+            "median": 0.06451739583462768,
+            "p10": 0.062356904167972974,
+            "p90": 0.06584052083489951,
+            "runs": 50
+          },
+          "measured": "2026-11-12T06:33:13Z",
+          "system": "tessera-metal-untuned",
+          "threads": null,
+          "tuned_kernels": 0
         }
       ]
     },
     {
       "ablations": {
         "c:sme": {
+          "full": {
+            "agreement": {
+              "max_abs": 9.059906005859375e-06,
+              "max_rel": 2.5058572765248454e-06,
+              "top1": 1.0
+            },
+            "arena_bytes": 6823936,
+            "bytes_moved": 68858048,
+            "constant_bytes": 13955072,
+            "error": null,
+            "intermediate_bytes": 26717568,
+            "kernels": 54,
+            "latency": {
+              "median": 0.0076451041641121265,
+              "p10": 0.0068222458321542945,
+              "p90": 0.010559312500117813,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:32:40Z",
+            "system": "full",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
+          "fusion off": {
+            "agreement": {
+              "max_abs": 8.58306884765625e-06,
+              "max_rel": 2.3739700514445906e-06,
+              "top1": 1.0
+            },
+            "arena_bytes": 10436608,
+            "bytes_moved": 120647680,
+            "constant_bytes": 13955072,
+            "error": null,
+            "intermediate_bytes": 52612384,
+            "kernels": 101,
+            "latency": {
+              "median": 0.007396583332592854,
+              "p10": 0.006670920832038974,
+              "p90": 0.0078009249999013265,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:32:40Z",
+            "system": "fusion off",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
+          "graph rewrites off": {
+            "agreement": {
+              "max_abs": 9.059906005859375e-06,
+              "max_rel": 2.5058572765248454e-06,
+              "top1": 1.0
+            },
+            "arena_bytes": 6823936,
+            "bytes_moved": 68858048,
+            "constant_bytes": 13955072,
+            "error": null,
+            "intermediate_bytes": 26717568,
+            "kernels": 54,
+            "latency": {
+              "median": 0.005354208333301358,
+              "p10": 0.004647987502539763,
+              "p90": 0.005637120837127441,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:32:40Z",
+            "system": "graph rewrites off",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
           "no schedule": {
             "agreement": {
               "max_abs": 5.364418029785156e-06,
@@ -138,16 +432,87 @@
             "threads": 4,
             "tuned_kernels": 0
           }
+        },
+        "metal": {
+          "full": {
+            "agreement": {
+              "max_abs": 8.106231689453125e-06,
+              "max_rel": 2.2420828263643354e-06,
+              "top1": 1.0
+            },
+            "arena_bytes": 6823936,
+            "bytes_moved": 68858048,
+            "constant_bytes": 13955072,
+            "error": null,
+            "intermediate_bytes": 26717568,
+            "kernels": 54,
+            "latency": {
+              "median": 0.005819604164571501,
+              "p10": 0.005564033333939733,
+              "p90": 0.005980829164764145,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:32:40Z",
+            "system": "full",
+            "threads": null,
+            "tuned_kernels": 0
+          },
+          "fusion off": {
+            "agreement": {
+              "max_abs": 8.106231689453125e-06,
+              "max_rel": 2.2420828263643354e-06,
+              "top1": 1.0
+            },
+            "arena_bytes": 10436608,
+            "bytes_moved": 120647680,
+            "constant_bytes": 13955072,
+            "error": null,
+            "intermediate_bytes": 52612384,
+            "kernels": 101,
+            "latency": {
+              "median": 0.006131875001301523,
+              "p10": 0.005928874999153777,
+              "p90": 0.006321349998688675,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:32:40Z",
+            "system": "fusion off",
+            "threads": null,
+            "tuned_kernels": 0
+          },
+          "graph rewrites off": {
+            "agreement": {
+              "max_abs": 8.106231689453125e-06,
+              "max_rel": 2.2420828263643354e-06,
+              "top1": 1.0
+            },
+            "arena_bytes": 6823936,
+            "bytes_moved": 68858048,
+            "constant_bytes": 13955072,
+            "error": null,
+            "intermediate_bytes": 26717568,
+            "kernels": 54,
+            "latency": {
+              "median": 0.00576970833390078,
+              "p10": 0.005633762498837314,
+              "p90": 0.0060263124985795,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:32:40Z",
+            "system": "graph rewrites off",
+            "threads": null,
+            "tuned_kernels": 0
+          }
         }
       },
       "environment": {
-        "commit": "bad21ec",
+        "commit": "6e6e424",
         "cores": 10,
-        "date": "2026-11-12T06:05:35Z",
+        "date": "2026-11-12T06:32:40Z",
         "load_average": [
-          4.18,
-          4.4,
-          5.24
+          5.46,
+          5.65,
+          5.81
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
@@ -158,6 +523,42 @@
         "python": "3.13.7"
       },
       "model": "mobilenet_v2",
+      "runs": [
+        {
+          "commit": "bad21ec",
+          "cores": 10,
+          "date": "2026-11-12T06:05:35Z",
+          "load_average": [
+            4.18,
+            4.4,
+            5.24
+          ],
+          "machine": "Apple M4",
+          "memory_gb": 16,
+          "numpy": "2.5.4",
+          "os": "Darwin 27.0.0",
+          "performance_cores": 4,
+          "provisional": true,
+          "python": "3.13.7"
+        },
+        {
+          "commit": "6e6e424",
+          "cores": 10,
+          "date": "2026-11-12T06:32:40Z",
+          "load_average": [
+            5.46,
+            5.65,
+            5.81
+          ],
+          "machine": "Apple M4",
+          "memory_gb": 16,
+          "numpy": "2.5.4",
+          "os": "Darwin 27.0.0",
+          "performance_cores": 4,
+          "provisional": true,
+          "python": "3.13.7"
+        }
+      ],
       "systems": [
         {
           "agreement": {
@@ -167,11 +568,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.004844104001676897,
-            "p10": 0.004186003600989352,
-            "p90": 0.00563306669901067,
+            "median": 0.004055270997923799,
+            "p10": 0.0031630125005904118,
+            "p90": 0.004369358999610995,
             "runs": 50
           },
+          "measured": "2026-11-12T06:32:40Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -183,11 +585,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.03690931249911955,
-            "p10": 0.03472552889979852,
-            "p90": 0.039045725301184574,
+            "median": 0.0381271869991906,
+            "p10": 0.033444308400066805,
+            "p90": 0.043511537500671695,
             "runs": 50
           },
+          "measured": "2026-11-12T06:32:40Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -199,19 +602,135 @@
           },
           "error": null,
           "latency": {
-            "median": 0.0235300210006244,
-            "p10": 0.016394208999190595,
-            "p90": 0.02878682080190629,
+            "median": 0.013491812000211212,
+            "p10": 0.013117558401063434,
+            "p90": 0.013883808297396171,
             "runs": 50
           },
+          "measured": "2026-11-12T06:32:40Z",
           "system": "pytorch-mps",
           "threads": 4
+        },
+        {
+          "agreement": {
+            "max_abs": 9.059906005859375e-06,
+            "max_rel": 2.5058572765248454e-06,
+            "top1": 1.0
+          },
+          "arena_bytes": 6823936,
+          "bytes_moved": 68858048,
+          "constant_bytes": 13955072,
+          "error": null,
+          "intermediate_bytes": 26717568,
+          "kernels": 54,
+          "latency": {
+            "median": 0.005919916666243807,
+            "p10": 0.00571430416603107,
+            "p90": 0.006389808331368841,
+            "runs": 50
+          },
+          "measured": "2026-11-12T06:32:40Z",
+          "system": "tessera-c:sme-untuned",
+          "threads": 4,
+          "tuned_kernels": 0
+        },
+        {
+          "agreement": {
+            "max_abs": 8.106231689453125e-06,
+            "max_rel": 2.2420828263643354e-06,
+            "top1": 1.0
+          },
+          "arena_bytes": 6823936,
+          "bytes_moved": 68858048,
+          "constant_bytes": 13955072,
+          "error": null,
+          "intermediate_bytes": 26717568,
+          "kernels": 54,
+          "latency": {
+            "median": 0.006356874999255524,
+            "p10": 0.006198095833315165,
+            "p90": 0.00673497500247322,
+            "runs": 50
+          },
+          "measured": "2026-11-12T06:32:40Z",
+          "system": "tessera-metal-untuned",
+          "threads": null,
+          "tuned_kernels": 0
         }
       ]
     },
     {
       "ablations": {
         "c:sme": {
+          "full": {
+            "agreement": {
+              "max_abs": 1.537799835205078e-05,
+              "max_rel": 1.7703183971158467e-06,
+              "top1": null
+            },
+            "arena_bytes": 2424832,
+            "bytes_moved": 605891769,
+            "constant_bytes": 434776320,
+            "error": null,
+            "intermediate_bytes": 75563008,
+            "kernels": 134,
+            "latency": {
+              "median": 0.1591002083332569,
+              "p10": 0.1506507166654046,
+              "p90": 0.17898769583298418,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:34:10Z",
+            "system": "full",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
+          "fusion off": {
+            "agreement": {
+              "max_abs": 1.1920928955078125e-05,
+              "max_rel": 1.3723398427254626e-06,
+              "top1": null
+            },
+            "arena_bytes": 4014592,
+            "bytes_moved": 825339577,
+            "constant_bytes": 434776320,
+            "error": null,
+            "intermediate_bytes": 185286912,
+            "kernels": 320,
+            "latency": {
+              "median": 0.15042608333351382,
+              "p10": 0.1443622000006144,
+              "p90": 0.17412292916596925,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:34:10Z",
+            "system": "fusion off",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
+          "graph rewrites off": {
+            "agreement": {
+              "max_abs": 1.3709068298339844e-05,
+              "max_rel": 1.5781908191342819e-06,
+              "top1": null
+            },
+            "arena_bytes": 3997696,
+            "bytes_moved": 662515017,
+            "constant_bytes": 434788352,
+            "error": null,
+            "intermediate_bytes": 94437376,
+            "kernels": 146,
+            "latency": {
+              "median": 0.16576979166529782,
+              "p10": 0.16168072916516393,
+              "p90": 0.18898096666489436,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:34:10Z",
+            "system": "graph rewrites off",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
           "no schedule": {
             "agreement": {
               "max_abs": 1.2151896953582764e-05,
@@ -234,16 +753,87 @@
             "threads": 4,
             "tuned_kernels": 0
           }
+        },
+        "metal": {
+          "full": {
+            "agreement": {
+              "max_abs": 1.6450881958007812e-05,
+              "max_rel": 1.8938289829611383e-06,
+              "top1": null
+            },
+            "arena_bytes": 2424832,
+            "bytes_moved": 605891769,
+            "constant_bytes": 434776320,
+            "error": null,
+            "intermediate_bytes": 75563008,
+            "kernels": 134,
+            "latency": {
+              "median": 0.048930020831903676,
+              "p10": 0.04113817916368134,
+              "p90": 0.05020864166799584,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:34:10Z",
+            "system": "full",
+            "threads": null,
+            "tuned_kernels": 0
+          },
+          "fusion off": {
+            "agreement": {
+              "max_abs": 1.9073486328125e-05,
+              "max_rel": 2.19574374836074e-06,
+              "top1": null
+            },
+            "arena_bytes": 4014592,
+            "bytes_moved": 825339577,
+            "constant_bytes": 434776320,
+            "error": null,
+            "intermediate_bytes": 185286912,
+            "kernels": 320,
+            "latency": {
+              "median": 0.0522613333305344,
+              "p10": 0.047763275000761496,
+              "p90": 0.08779140416554583,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:34:10Z",
+            "system": "fusion off",
+            "threads": null,
+            "tuned_kernels": 0
+          },
+          "graph rewrites off": {
+            "agreement": {
+              "max_abs": 2.193450927734375e-05,
+              "max_rel": 2.5251053106148512e-06,
+              "top1": null
+            },
+            "arena_bytes": 3997696,
+            "bytes_moved": 662515017,
+            "constant_bytes": 434788352,
+            "error": null,
+            "intermediate_bytes": 94437376,
+            "kernels": 146,
+            "latency": {
+              "median": 0.053867729167905054,
+              "p10": 0.04417710833331512,
+              "p90": 0.05634224999921571,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:34:10Z",
+            "system": "graph rewrites off",
+            "threads": null,
+            "tuned_kernels": 0
+          }
         }
       },
       "environment": {
-        "commit": "bad21ec",
+        "commit": "b61e64e",
         "cores": 10,
-        "date": "2026-11-12T06:07:37Z",
+        "date": "2026-11-12T06:34:10Z",
         "load_average": [
-          6.43,
-          5.45,
-          5.56
+          6.57,
+          6.01,
+          5.94
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
@@ -254,6 +844,42 @@
         "python": "3.13.7"
       },
       "model": "bert",
+      "runs": [
+        {
+          "commit": "bad21ec",
+          "cores": 10,
+          "date": "2026-11-12T06:07:37Z",
+          "load_average": [
+            6.43,
+            5.45,
+            5.56
+          ],
+          "machine": "Apple M4",
+          "memory_gb": 16,
+          "numpy": "2.5.4",
+          "os": "Darwin 27.0.0",
+          "performance_cores": 4,
+          "provisional": true,
+          "python": "3.13.7"
+        },
+        {
+          "commit": "b61e64e",
+          "cores": 10,
+          "date": "2026-11-12T06:34:10Z",
+          "load_average": [
+            6.57,
+            6.01,
+            5.94
+          ],
+          "machine": "Apple M4",
+          "memory_gb": 16,
+          "numpy": "2.5.4",
+          "os": "Darwin 27.0.0",
+          "performance_cores": 4,
+          "provisional": true,
+          "python": "3.13.7"
+        }
+      ],
       "systems": [
         {
           "agreement": {
@@ -263,11 +889,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.04705633300000045,
-            "p10": 0.043467904199133045,
-            "p90": 0.059627145799822756,
+            "median": 0.03686904200185381,
+            "p10": 0.03385690479917684,
+            "p90": 0.03929725419911847,
             "runs": 50
           },
+          "measured": "2026-11-12T06:34:10Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -279,11 +906,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.06342441650122055,
-            "p10": 0.05141057939981693,
-            "p90": 0.06908323370225844,
+            "median": 0.05484791649905674,
+            "p10": 0.049422317001517516,
+            "p90": 0.056335886899614704,
             "runs": 50
           },
+          "measured": "2026-11-12T06:34:10Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -295,19 +923,135 @@
           },
           "error": null,
           "latency": {
-            "median": 0.02106172899766534,
-            "p10": 0.02041881659970386,
-            "p90": 0.021967358597976272,
+            "median": 0.022436187498897198,
+            "p10": 0.021000870801435666,
+            "p90": 0.023997479500030748,
             "runs": 50
           },
+          "measured": "2026-11-12T06:34:10Z",
           "system": "pytorch-mps",
           "threads": 4
+        },
+        {
+          "agreement": {
+            "max_abs": 1.537799835205078e-05,
+            "max_rel": 1.7703183971158467e-06,
+            "top1": null
+          },
+          "arena_bytes": 2424832,
+          "bytes_moved": 605891769,
+          "constant_bytes": 434776320,
+          "error": null,
+          "intermediate_bytes": 75563008,
+          "kernels": 134,
+          "latency": {
+            "median": 0.14425375000064378,
+            "p10": 0.14033053333187126,
+            "p90": 0.15442364166556216,
+            "runs": 50
+          },
+          "measured": "2026-11-12T06:34:10Z",
+          "system": "tessera-c:sme-untuned",
+          "threads": 4,
+          "tuned_kernels": 0
+        },
+        {
+          "agreement": {
+            "max_abs": 1.6450881958007812e-05,
+            "max_rel": 1.8938289829611383e-06,
+            "top1": null
+          },
+          "arena_bytes": 2424832,
+          "bytes_moved": 605891769,
+          "constant_bytes": 434776320,
+          "error": null,
+          "intermediate_bytes": 75563008,
+          "kernels": 134,
+          "latency": {
+            "median": 0.04876510416579549,
+            "p10": 0.04679466250127007,
+            "p90": 0.05019332083465997,
+            "runs": 50
+          },
+          "measured": "2026-11-12T06:34:10Z",
+          "system": "tessera-metal-untuned",
+          "threads": null,
+          "tuned_kernels": 0
         }
       ]
     },
     {
       "ablations": {
         "c:sme": {
+          "full": {
+            "agreement": {
+              "max_abs": 0.0003204345703125,
+              "max_rel": 1.1912783449082098e-06,
+              "top1": null
+            },
+            "arena_bytes": 3538944,
+            "bytes_moved": 852076080,
+            "constant_bytes": 649462016,
+            "error": null,
+            "intermediate_bytes": 76283904,
+            "kernels": 111,
+            "latency": {
+              "median": 0.40784383333084406,
+              "p10": 0.3548266624999087,
+              "p90": 0.5647181916654518,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:36:08Z",
+            "system": "full",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
+          "fusion off": {
+            "agreement": {
+              "max_abs": 0.00042724609375,
+              "max_rel": 1.5883711265442796e-06,
+              "top1": null
+            },
+            "arena_bytes": 3932160,
+            "bytes_moved": 1112385072,
+            "constant_bytes": 649462016,
+            "error": null,
+            "intermediate_bytes": 199360512,
+            "kernels": 304,
+            "latency": {
+              "median": 0.355444812499627,
+              "p10": 0.3285345166666957,
+              "p90": 0.5675702791671938,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:36:08Z",
+            "system": "fusion off",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
+          "graph rewrites off": {
+            "agreement": {
+              "max_abs": 0.000270843505859375,
+              "max_rel": 1.0069138391486057e-06,
+              "top1": null
+            },
+            "arena_bytes": 5898240,
+            "bytes_moved": 922068768,
+            "constant_bytes": 649480192,
+            "error": null,
+            "intermediate_bytes": 99483648,
+            "kernels": 134,
+            "latency": {
+              "median": 0.385539979166424,
+              "p10": 0.3575462291657459,
+              "p90": 0.4005951791656116,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:36:08Z",
+            "system": "graph rewrites off",
+            "threads": 4,
+            "tuned_kernels": 0
+          },
           "no schedule": {
             "agreement": {
               "max_abs": 0.0005645751953125,
@@ -330,16 +1074,87 @@
             "threads": 4,
             "tuned_kernels": 0
           }
+        },
+        "metal": {
+          "full": {
+            "agreement": {
+              "max_abs": 0.00030517578125,
+              "max_rel": 1.1345508046744855e-06,
+              "top1": null
+            },
+            "arena_bytes": 3538944,
+            "bytes_moved": 852076080,
+            "constant_bytes": 649462016,
+            "error": null,
+            "intermediate_bytes": 76283904,
+            "kernels": 111,
+            "latency": {
+              "median": 0.10085070833156351,
+              "p10": 0.09598506666407047,
+              "p90": 0.11437631250046251,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:36:08Z",
+            "system": "full",
+            "threads": null,
+            "tuned_kernels": 0
+          },
+          "fusion off": {
+            "agreement": {
+              "max_abs": 0.00034332275390625,
+              "max_rel": 1.2763696552587962e-06,
+              "top1": null
+            },
+            "arena_bytes": 3932160,
+            "bytes_moved": 1112385072,
+            "constant_bytes": 649462016,
+            "error": null,
+            "intermediate_bytes": 199360512,
+            "kernels": 304,
+            "latency": {
+              "median": 0.09956522916581889,
+              "p10": 0.09785294166722451,
+              "p90": 0.115151991667517,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:36:08Z",
+            "system": "fusion off",
+            "threads": null,
+            "tuned_kernels": 0
+          },
+          "graph rewrites off": {
+            "agreement": {
+              "max_abs": 0.00029754638671875,
+              "max_rel": 1.1061870345576233e-06,
+              "top1": null
+            },
+            "arena_bytes": 5898240,
+            "bytes_moved": 922068768,
+            "constant_bytes": 649480192,
+            "error": null,
+            "intermediate_bytes": 99483648,
+            "kernels": 134,
+            "latency": {
+              "median": 0.08705691666546045,
+              "p10": 0.08438081250133109,
+              "p90": 0.0935761166674638,
+              "runs": 50
+            },
+            "measured": "2026-11-12T06:36:08Z",
+            "system": "graph rewrites off",
+            "threads": null,
+            "tuned_kernels": 0
+          }
         }
       },
       "environment": {
-        "commit": "bad21ec",
+        "commit": "b61e64e",
         "cores": 10,
-        "date": "2026-11-12T06:09:19Z",
+        "date": "2026-11-12T06:36:08Z",
         "load_average": [
-          5.99,
-          5.67,
-          5.64
+          7.64,
+          6.65,
+          6.2
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
@@ -350,6 +1165,42 @@
         "python": "3.13.7"
       },
       "model": "gpt2",
+      "runs": [
+        {
+          "commit": "bad21ec",
+          "cores": 10,
+          "date": "2026-11-12T06:09:19Z",
+          "load_average": [
+            5.99,
+            5.67,
+            5.64
+          ],
+          "machine": "Apple M4",
+          "memory_gb": 16,
+          "numpy": "2.5.4",
+          "os": "Darwin 27.0.0",
+          "performance_cores": 4,
+          "provisional": true,
+          "python": "3.13.7"
+        },
+        {
+          "commit": "b61e64e",
+          "cores": 10,
+          "date": "2026-11-12T06:36:08Z",
+          "load_average": [
+            7.64,
+            6.65,
+            6.2
+          ],
+          "machine": "Apple M4",
+          "memory_gb": 16,
+          "numpy": "2.5.4",
+          "os": "Darwin 27.0.0",
+          "performance_cores": 4,
+          "provisional": true,
+          "python": "3.13.7"
+        }
+      ],
       "systems": [
         {
           "agreement": {
@@ -359,11 +1210,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.06574937550067261,
-            "p10": 0.06128500359991449,
-            "p90": 0.06855403360168566,
+            "median": 0.0501830625016737,
+            "p10": 0.04761632880108664,
+            "p90": 0.05980963749971125,
             "runs": 50
           },
+          "measured": "2026-11-12T06:36:08Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -375,11 +1227,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.0854840210013208,
-            "p10": 0.08227440000082424,
-            "p90": 0.09460156689892756,
+            "median": 0.07097252100174956,
+            "p10": 0.061954463100482825,
+            "p90": 0.0742733714003407,
             "runs": 50
           },
+          "measured": "2026-11-12T06:36:08Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -391,13 +1244,60 @@
           },
           "error": null,
           "latency": {
-            "median": 0.04042116650089156,
-            "p10": 0.034709191698493666,
-            "p90": 0.04741985799992108,
+            "median": 0.03910385400013183,
+            "p10": 0.030623079502765906,
+            "p90": 0.046015770802841874,
             "runs": 50
           },
+          "measured": "2026-11-12T06:36:08Z",
           "system": "pytorch-mps",
           "threads": 4
+        },
+        {
+          "agreement": {
+            "max_abs": 0.0003204345703125,
+            "max_rel": 1.1912783449082098e-06,
+            "top1": null
+          },
+          "arena_bytes": 3538944,
+          "bytes_moved": 852076080,
+          "constant_bytes": 649462016,
+          "error": null,
+          "intermediate_bytes": 76283904,
+          "kernels": 111,
+          "latency": {
+            "median": 0.32491083333479764,
+            "p10": 0.3104045833330019,
+            "p90": 0.45298002916824776,
+            "runs": 50
+          },
+          "measured": "2026-11-12T06:36:08Z",
+          "system": "tessera-c:sme-untuned",
+          "threads": 4,
+          "tuned_kernels": 0
+        },
+        {
+          "agreement": {
+            "max_abs": 0.00030517578125,
+            "max_rel": 1.1345508046744855e-06,
+            "top1": null
+          },
+          "arena_bytes": 3538944,
+          "bytes_moved": 852076080,
+          "constant_bytes": 649462016,
+          "error": null,
+          "intermediate_bytes": 76283904,
+          "kernels": 111,
+          "latency": {
+            "median": 0.12113308333391615,
+            "p10": 0.09955462916550459,
+            "p90": 0.14098959583097895,
+            "runs": 50
+          },
+          "measured": "2026-11-12T06:36:08Z",
+          "system": "tessera-metal-untuned",
+          "threads": null,
+          "tuned_kernels": 0
         }
       ]
     }
