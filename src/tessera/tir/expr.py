@@ -13,7 +13,7 @@ operator overloads, because ``==`` must stay structural equality: use
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from tessera.dtype import INDEX, DType
 
@@ -23,7 +23,15 @@ if TYPE_CHECKING:
 type BinaryOp = Literal["add", "sub", "mul", "div", "floordiv", "floormod", "min", "max", "pow"]
 type CompareOp = Literal["lt", "le", "eq", "ne", "gt", "ge"]
 type LogicalOp = Literal["and", "or"]
-type ExprLike = Expr | int | float | bool
+type ExprLike = Expr | int | float | bool | HasExpr
+
+
+@runtime_checkable
+class HasExpr(Protocol):
+    """Objects that stand for an expression (``IterVar`` stands for its variable)."""
+
+    def as_expr(self) -> Expr: ...
+
 
 # Math intrinsics every backend implements for float32 (Call.name).
 MATH_INTRINSICS = frozenset(
@@ -224,6 +232,8 @@ def as_expr(value: ExprLike, dtype: DType = INDEX) -> Expr:
         return FloatImm(float(value), dtype) if dtype.is_float else IntImm(value, dtype)
     if isinstance(value, float):
         return FloatImm(value, dtype if dtype.is_float else DType.float32)
+    if isinstance(value, HasExpr):
+        return value.as_expr()
     raise TypeError(f"cannot make an expression from {value!r}")
 
 

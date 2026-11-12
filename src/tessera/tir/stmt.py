@@ -87,9 +87,39 @@ class IterKind(enum.StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class IterVar:
+    """A block iteration variable with its domain. In expressions (``te`` bodies,
+    ``k * 2 + i``) it stands for ``var``."""
+
     var: Var
     dom: Range
     kind: IterKind = IterKind.SPATIAL
+
+    def as_expr(self) -> Var:
+        return self.var
+
+    def __add__(self, other: ExprLike) -> Expr:
+        return self.var + other
+
+    def __radd__(self, other: ExprLike) -> Expr:
+        return as_expr(other, self.var.dtype) + self.var
+
+    def __sub__(self, other: ExprLike) -> Expr:
+        return self.var - other
+
+    def __rsub__(self, other: ExprLike) -> Expr:
+        return as_expr(other, self.var.dtype) - self.var
+
+    def __mul__(self, other: ExprLike) -> Expr:
+        return self.var * other
+
+    def __rmul__(self, other: ExprLike) -> Expr:
+        return as_expr(other, self.var.dtype) * self.var
+
+    def __floordiv__(self, other: ExprLike) -> Expr:
+        return self.var // other
+
+    def __mod__(self, other: ExprLike) -> Expr:
+        return self.var % other
 
 
 class ForKind(enum.StrEnum):
