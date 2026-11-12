@@ -154,3 +154,26 @@ def test_validation_measures_top_configs_and_default_interleaved() -> None:
     )
     assert order == [0, 1]
     assert len(log.records()) == 20 + 2 * 4  # top 3 (the default among the 20) or 3 + default
+
+
+def test_two_rounds_without_progress_do_not_starve_a_task() -> None:
+    from tessera.tune.search import TaskState
+    from tessera.tune.tuner import TaskProgress
+
+    def progress(task: SyntheticMatmul, weight: float, times: list[float]) -> TaskProgress:
+        state = TaskState(task)
+        for i, t in enumerate(times):
+            state.record(task.space.get(i), t)
+        return TaskProgress(state, weight)
+
+    # Twelve kernels of 1 ms each, two rounds (32 measurements) without progress.
+    stalled = progress(SyntheticMatmul(64, 64, 64), 12, [1e-3] * 32)
+    stalled.history = [1e-3, 1e-3]
+    # One 10 ms kernel after 87 rounds, still improving by 1% a round.
+    busy = progress(SyntheticMatmul(128, 128, 128), 1, [10e-3] * 1392)
+    busy.history = [10.2e-3, 10.1e-3, 10e-3]
+    assert stalled.priority() > busy.priority()
+    # Once the stalled task has had as many rounds, the improving one goes first.
+    stalled_long = progress(SyntheticMatmul(64, 64, 64), 12, [1e-3] * 1392)
+    stalled_long.history = [1e-3, 1e-3, 1e-3]
+    assert busy.priority() > stalled_long.priority()

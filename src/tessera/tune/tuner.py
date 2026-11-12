@@ -8,10 +8,15 @@ cost model on all measurements of all tasks.
 
 The round goes to the task with the largest expected saving of model time:
 ``weight * best_seconds * rate``, where ``weight`` is how many groups of the
-model share the task and ``rate`` is the task's relative improvement per
-round over its last two rounds (optimistically 0.5 until it has had two,
-and at least 0.005 so a stalled task can still be revisited). Tasks with
-nothing measured go first; tasks whose space is exhausted are skipped.
+model share the task and ``rate`` is the task's expected relative
+improvement per round: the larger of what its last two rounds achieved and
+an optimistic ``0.5 / rounds``, where ``rounds`` counts the rounds of
+measurements the task has had (from the log too). Two rounds without
+progress say little about a large space, so the optimistic term keeps every
+task in the running for a number of rounds proportional to its share of
+the model's time before the budget concentrates where improvements are
+still being found. Tasks with nothing measured go first; tasks whose space
+is exhausted are skipped.
 
 The budget counts the log: a run with ``trials=500`` that finds 300 of its
 tasks' measurements already logged measures 200 more, so an interrupted
@@ -54,7 +59,7 @@ class TaskProgress:
     history: list[float] = field(default_factory=list)  # best seconds after each round
     stalled: bool = False  # the strategy found nothing left to propose
 
-    def priority(self) -> float:
+    def priority(self, batch_size: int = 16) -> float:
         if not self.state.measured:
             return float("inf")
         if self.state.exhausted or self.stalled:
@@ -62,11 +67,11 @@ class TaskProgress:
         best = self.state.best()
         if best is None:
             return 0.0  # nothing has run yet: only when no other task can use the round
-        if len(self.history) < 2:
-            rate = OPTIMISTIC_RATE
-        else:
+        rounds = max(1, -(-len(self.state.measured) // batch_size))
+        rate = OPTIMISTIC_RATE / rounds
+        if len(self.history) >= 2:
             before = self.history[-3] if len(self.history) >= 3 else self.history[0]
-            rate = (before - self.history[-1]) / before / 2.0
+            rate = max(rate, (before - self.history[-1]) / before / 2.0)
         return self.weight * best[1] * max(rate, MIN_RATE)
 
 
@@ -99,8 +104,8 @@ def tune(
             break
         if time_budget is not None and time.monotonic() - started >= time_budget:
             break
-        p = max(progress, key=lambda p: p.priority())
-        if p.priority() == float("-inf"):
+        p = max(progress, key=lambda p: p.priority(batch_size))
+        if p.priority(batch_size) == float("-inf"):
             break
         configs = _batch(p.state, strategy, min(batch_size, trials - total), rng)
         if not configs:
