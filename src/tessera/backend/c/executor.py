@@ -95,10 +95,12 @@ def model_sources(plan: ExecutionPlan, target: Target) -> ModelSource:
     out.append(f"TSR_EXPORT int32_t tessera_abi(void) {{ return {ABI_VERSION}; }}")
     out.append("")
     out.append(f"TSR_EXPORT void tessera_run({_RUN_PARAMS}) {{")
+    out.append("  tsr_prefer_performance_cores();")
     out += [f"  {c}" for c in calls]
     out.append("}")
     out.append("")
     out.append(f"TSR_EXPORT void tessera_profile({_RUN_PARAMS}, double* seconds) {{")
+    out.append("  tsr_prefer_performance_cores();")
     out.append("  double start;")
     for i, c in enumerate(calls):
         out += ["  start = tsr_now();", f"  {c}", f"  seconds[{i}] = tsr_now() - start;"]
@@ -290,6 +292,7 @@ def kernel_sources(func: PrimFunc, target: Target) -> dict[str, str]:
             f"TSR_EXPORT int32_t tessera_abi(void) {{ return {ABI_VERSION}; }}",
             "",
             "TSR_EXPORT void tessera_kernel(void* const* args) {",
+            "  tsr_prefer_performance_cores();",
             f"  {code.name}({casts});",
             "}",
             "",

@@ -51,6 +51,7 @@ def harness_sources(func: PrimFunc, target: Target) -> dict[str, str]:
         "  int repeat = argc > 1 ? atoi(argv[1]) : 5;",
         "  double min_seconds = argc > 2 ? atof(argv[2]) : 0.05;",
         "  if (repeat < 1) repeat = 1;",
+        "  tsr_prefer_performance_cores();",
     ]
     args = []
     for i, buf in enumerate(func.params):

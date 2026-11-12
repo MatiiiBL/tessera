@@ -318,12 +318,23 @@ static void tsr_after_fork(void) {
   pthread_mutex_init(&tsr_pool.owner, NULL);
 }
 
+/* Ask the scheduler to keep the calling thread on the performance cores
+ * (macOS places threads by QoS class). Every entry point of a generated
+ * library calls it, once per thread: the caller runs the serial parts of a
+ * model and the first chunk of every parallel loop. */
+static void tsr_prefer_performance_cores(void) {
+#if defined(__APPLE__)
+  static _Thread_local bool done = false;
+  if (!done) {
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+    done = true;
+  }
+#endif
+}
+
 static void tsr_pool_start(void) {
   int n = TSR_NUM_THREADS < TSR_MAX_THREADS ? TSR_NUM_THREADS : TSR_MAX_THREADS;
-#if defined(__APPLE__)
-  /* The caller runs a chunk too; keep it off the efficiency cores. */
-  pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
-#endif
+  tsr_prefer_performance_cores();
   pthread_attr_t attr;
   pthread_attr_init(&attr);
   pthread_attr_setstacksize(&attr, (size_t)8 << 20);
