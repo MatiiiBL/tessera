@@ -196,6 +196,99 @@ def markdown(results: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# Light and dark values of each role; the categorical slots follow one fixed order.
+_COLORS = {
+    "surface": ("#fcfcfb", "#1a1a19"),
+    "text": ("#0b0b0b", "#f0efec"),
+    "muted": ("#52514e", "#c3c2b7"),
+    "grid": ("#e4e3df", "#33332f"),
+    "s1": ("#2a78d6", "#3987e5"),
+    "s2": ("#eb6834", "#d95926"),
+    "s3": ("#1baf7a", "#199e70"),
+}
+
+
+def memory_chart(results: dict[str, Any]) -> str:
+    """A grouped bar chart (SVG, light and dark) of intermediates against arena size."""
+    series: list[tuple[str, str, Callable[[dict[str, Any]], int]]] = [
+        ("s1", "Intermediates, fusion off", lambda m: int(m["unfused"]["intermediate_bytes"])),
+        ("s2", "Intermediates, fused", lambda m: int(m["fused"]["intermediate_bytes"])),
+        ("s3", "Arena, fused", lambda m: int(m["fused"]["arena_bytes"])),
+    ]
+    models = results["models"]
+    bar, gap, group_gap = 14, 2, 22
+    left, right, top = 112, 64, 76
+    width = 720
+    plot = width - left - right
+    peak: float = max(fn(m) for m in models.values() for _, _, fn in series) / 2**20
+    step = 50 if peak > 100 else 10
+    limit = step * -(-peak // step)
+    group = len(series) * bar + (len(series) - 1) * gap
+    height = top + len(models) * (group + group_gap) + 24
+
+    def x(mib: float) -> float:
+        return left + plot * mib / limit
+
+    css = ["".join(f"--{k}:{v[i]};" for k, v in _COLORS.items()) for i in (0, 1)]
+    out = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" role="img" aria-labelledby="t d">',
+        "<title id='t'>Intermediate tensors and arena size of the benchmark models</title>",
+        "<desc id='d'>For each model, megabytes of intermediate tensors with fusion off and "
+        "on, and the size of the arena that holds the fused model's intermediates.</desc>",
+        "<style>",
+        f"svg{{{css[0]}}}",
+        f"@media (prefers-color-scheme: dark){{svg{{{css[1]}}}}}",
+        "text{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;font-size:12px}",
+        ".title{font-size:14px;font-weight:600;fill:var(--text)}",
+        ".label{fill:var(--text)}.value,.tick{fill:var(--muted)}",
+        "</style>",
+        f'<rect width="{width}" height="{height}" fill="var(--surface)"/>',
+        '<text class="title" x="16" y="24">Intermediate tensors and arena size (MiB)</text>',
+    ]
+    legend_x = 16
+    for key, name, _ in series:
+        out.append(
+            f'<rect x="{legend_x}" y="38" width="10" height="10" rx="2" fill="var(--{key})"/>'
+        )
+        out.append(f'<text class="label" x="{legend_x + 16}" y="47">{name}</text>')
+        legend_x += 16 + int(6.5 * len(name)) + 28
+    axis_bottom = height - 24
+    tick = 0.0
+    while tick <= limit:
+        tx = x(tick)
+        out.append(
+            f'<line x1="{tx:.1f}" y1="{top - 8}" x2="{tx:.1f}" y2="{axis_bottom}" '
+            'stroke="var(--grid)" stroke-width="1"/>'
+        )
+        out.append(
+            f'<text class="tick" x="{tx:.1f}" y="{axis_bottom + 16}" text-anchor="middle">'
+            f"{tick:g}</text>"
+        )
+        tick += step
+    y = top
+    for name, m in models.items():
+        out.append(
+            f'<text class="label" x="{left - 12}" y="{y + group / 2 + 4:.1f}" '
+            f'text-anchor="end">{name}</text>'
+        )
+        for key, _, fn in series:
+            mib = fn(m) / 2**20
+            x0, x1 = left, max(x(mib), left + 4)
+            r = min(4, (x1 - x0) / 2)
+            # Square at the baseline, 4px rounded corners at the data end.
+            d = (
+                f"M{x0},{y} H{x1 - r:.1f} Q{x1:.1f},{y} {x1:.1f},{y + r} V{y + bar - r} "
+                f"Q{x1:.1f},{y + bar} {x1 - r:.1f},{y + bar} H{x0} Z"
+            )
+            out.append(f'<path d="{d}" fill="var(--{key})"/>')
+            out.append(f'<text class="value" x="{x1 + 6:.1f}" y="{y + bar - 3}">{mib:.1f}</text>')
+            y += bar + gap
+        y += group_gap - gap
+    out.append("</svg>")
+    return "\n".join(out) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("--models", type=Path, default=ROOT / "data" / "models")
@@ -224,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "models.json").write_text(json.dumps(results, indent=2) + "\n")
     (args.out / "models.md").write_text(markdown(results))
+    (args.out / "memory.svg").write_text(memory_chart(results))
     return 0
 
 

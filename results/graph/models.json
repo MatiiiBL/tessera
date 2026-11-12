@@ -1,0 +1,291 @@
+{
+  "date": "2026-11-12",
+  "machine": "arm64 macOS-27.0.1",
+  "note": "Times are provisional: the machine was running other work; counts and sizes do not depend on it.",
+  "models": {
+    "resnet50": {
+      "onnx_nodes": 122,
+      "onnx_ops": {
+        "Conv": 53,
+        "Relu": 49,
+        "Add": 16,
+        "MaxPool": 1,
+        "GlobalAveragePool": 1,
+        "Flatten": 1,
+        "Gemm": 1
+      },
+      "imported_nodes": 122,
+      "optimized_nodes": 124,
+      "optimized_nodes_no_fold": 125,
+      "optimized_ops": {
+        "Conv2d": 53,
+        "Relu": 49,
+        "Add": 17,
+        "Transpose": 1,
+        "MaxPool2d": 1,
+        "ReduceMean": 1,
+        "Reshape": 1,
+        "MatMul": 1
+      },
+      "kernels": 56,
+      "views": 0,
+      "kernels_no_fusion": 123,
+      "kernels_no_fold": 56,
+      "kernels_rule_off": {
+        "no_epilogue": 72,
+        "no_prologue": 57,
+        "no_injective": 56,
+        "no_duplicate": 56
+      },
+      "patterns": {
+        "conv2d": 53,
+        "pool": 1,
+        "reduce": 1,
+        "matmul": 1
+      },
+      "fused": {
+        "arena_bytes": 10436608,
+        "intermediate_bytes": 45266944,
+        "arena_buffers": 31,
+        "constant_bytes": 102121984,
+        "read_bytes": 170469792,
+        "write_bytes": 45270944
+      },
+      "unfused": {
+        "arena_bytes": 12042240,
+        "intermediate_bytes": 106385312,
+        "arena_buffers": 41,
+        "constant_bytes": 102121984,
+        "read_bytes": 231588160,
+        "write_bytes": 106389312
+      },
+      "seconds": {
+        "import": 0.00981,
+        "optimize": 0.041,
+        "fuse": 0.00039,
+        "plan_memory": 0.00562
+      }
+    },
+    "mobilenet_v2": {
+      "onnx_nodes": 170,
+      "onnx_ops": {
+        "Constant": 70,
+        "Conv": 52,
+        "Clip": 35,
+        "Add": 10,
+        "GlobalAveragePool": 1,
+        "Flatten": 1,
+        "Gemm": 1
+      },
+      "imported_nodes": 100,
+      "optimized_nodes": 102,
+      "optimized_nodes_no_fold": 103,
+      "optimized_ops": {
+        "Conv2d": 52,
+        "Clip": 35,
+        "Add": 11,
+        "Transpose": 1,
+        "ReduceMean": 1,
+        "Reshape": 1,
+        "MatMul": 1
+      },
+      "kernels": 54,
+      "views": 0,
+      "kernels_no_fusion": 101,
+      "kernels_no_fold": 54,
+      "kernels_rule_off": {
+        "no_epilogue": 56,
+        "no_prologue": 55,
+        "no_injective": 54,
+        "no_duplicate": 54
+      },
+      "patterns": {
+        "conv2d": 35,
+        "depthwise_conv2d": 17,
+        "reduce": 1,
+        "matmul": 1
+      },
+      "fused": {
+        "arena_bytes": 6823936,
+        "intermediate_bytes": 26717568,
+        "arena_buffers": 45,
+        "constant_bytes": 13955072,
+        "read_bytes": 42136480,
+        "write_bytes": 26721568
+      },
+      "unfused": {
+        "arena_bytes": 10436608,
+        "intermediate_bytes": 52612384,
+        "arena_buffers": 66,
+        "constant_bytes": 13955072,
+        "read_bytes": 68031296,
+        "write_bytes": 52616384
+      },
+      "seconds": {
+        "import": 0.00414,
+        "optimize": 0.00969,
+        "fuse": 0.00025,
+        "plan_memory": 0.00138
+      }
+    },
+    "bert": {
+      "onnx_nodes": 547,
+      "onnx_ops": {
+        "Add": 123,
+        "Constant": 110,
+        "MatMul": 96,
+        "Reshape": 50,
+        "Transpose": 48,
+        "Mul": 38,
+        "LayerNormalization": 25,
+        "Softmax": 12,
+        "Div": 12,
+        "Erf": 12,
+        "Gather": 5,
+        "Cast": 3,
+        "ConstantOfShape": 2,
+        "And": 2,
+        "Shape": 2,
+        "Where": 2,
+        "GreaterOrEqual": 1,
+        "Flatten": 1,
+        "Concat": 1,
+        "Equal": 1,
+        "Expand": 1
+      },
+      "imported_nodes": 420,
+      "optimized_nodes": 370,
+      "optimized_nodes_no_fold": 420,
+      "optimized_ops": {
+        "Add": 110,
+        "MatMul": 96,
+        "Reshape": 50,
+        "Transpose": 48,
+        "LayerNorm": 25,
+        "Mul": 12,
+        "Softmax": 12,
+        "Gelu": 12,
+        "Gather": 2,
+        "Where": 2,
+        "Cast": 1
+      },
+      "kernels": 134,
+      "views": 0,
+      "kernels_no_fusion": 320,
+      "kernels_no_fold": 146,
+      "kernels_rule_off": {
+        "no_epilogue": 146,
+        "no_prologue": 183,
+        "no_injective": 137,
+        "no_duplicate": 134
+      },
+      "patterns": {
+        "matmul": 96,
+        "layernorm": 25,
+        "softmax": 12,
+        "injective": 1
+      },
+      "fused": {
+        "arena_bytes": 2424832,
+        "intermediate_bytes": 75563008,
+        "arena_buffers": 13,
+        "constant_bytes": 434776320,
+        "read_bytes": 529935545,
+        "write_bytes": 75956224
+      },
+      "unfused": {
+        "arena_bytes": 4014592,
+        "intermediate_bytes": 185286912,
+        "arena_buffers": 31,
+        "constant_bytes": 434776320,
+        "read_bytes": 639659449,
+        "write_bytes": 185680128
+      },
+      "seconds": {
+        "import": 0.04406,
+        "optimize": 0.01759,
+        "fuse": 0.00097,
+        "plan_memory": 0.02964
+      }
+    },
+    "gpt2": {
+      "onnx_nodes": 735,
+      "onnx_ops": {
+        "Constant": 243,
+        "Reshape": 148,
+        "Add": 61,
+        "Mul": 61,
+        "Gemm": 48,
+        "Transpose": 48,
+        "LayerNormalization": 25,
+        "MatMul": 25,
+        "Cast": 15,
+        "Split": 12,
+        "Softmax": 12,
+        "Pow": 12,
+        "Tanh": 12,
+        "Gather": 3,
+        "ConstantOfShape": 2,
+        "And": 2,
+        "Where": 2,
+        "LessOrEqual": 1,
+        "Flatten": 1,
+        "Equal": 1,
+        "Expand": 1
+      },
+      "imported_nodes": 486,
+      "optimized_nodes": 352,
+      "optimized_nodes_no_fold": 534,
+      "optimized_ops": {
+        "Add": 85,
+        "MatMul": 73,
+        "Reshape": 48,
+        "Transpose": 48,
+        "Slice": 36,
+        "LayerNorm": 25,
+        "Mul": 12,
+        "Softmax": 12,
+        "Gelu": 12,
+        "Gather": 1
+      },
+      "kernels": 111,
+      "views": 0,
+      "kernels_no_fusion": 304,
+      "kernels_no_fold": 134,
+      "kernels_rule_off": {
+        "no_epilogue": 146,
+        "no_prologue": 159,
+        "no_injective": 112,
+        "no_duplicate": 111
+      },
+      "patterns": {
+        "matmul": 73,
+        "layernorm": 25,
+        "softmax": 12,
+        "injective": 1
+      },
+      "fused": {
+        "arena_bytes": 3538944,
+        "intermediate_bytes": 76283904,
+        "arena_buffers": 7,
+        "constant_bytes": 649462016,
+        "read_bytes": 750060592,
+        "write_bytes": 102015488
+      },
+      "unfused": {
+        "arena_bytes": 3932160,
+        "intermediate_bytes": 199360512,
+        "arena_buffers": 18,
+        "constant_bytes": 649462016,
+        "read_bytes": 887292976,
+        "write_bytes": 225092096
+      },
+      "seconds": {
+        "import": 0.06707,
+        "optimize": 0.02307,
+        "fuse": 0.00092,
+        "plan_memory": 0.17382
+      }
+    }
+  }
+}

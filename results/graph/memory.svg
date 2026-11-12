@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="372" viewBox="0 0 720 372" role="img" aria-labelledby="t d">
+<title id='t'>Intermediate tensors and arena size of the benchmark models</title>
+<desc id='d'>For each model, megabytes of intermediate tensors with fusion off and on, and the size of the arena that holds the fused model's intermediates.</desc>
+<style>
+svg{--surface:#fcfcfb;--text:#0b0b0b;--muted:#52514e;--grid:#e4e3df;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;}
+@media (prefers-color-scheme: dark){svg{--surface:#1a1a19;--text:#f0efec;--muted:#c3c2b7;--grid:#33332f;--s1:#3987e5;--s2:#d95926;--s3:#199e70;}}
+text{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;font-size:12px}
+.title{font-size:14px;font-weight:600;fill:var(--text)}
+.label{fill:var(--text)}.value,.tick{fill:var(--muted)}
+</style>
+<rect width="720" height="372" fill="var(--surface)"/>
+<text class="title" x="16" y="24">Intermediate tensors and arena size (MiB)</text>
+<rect x="16" y="38" width="10" height="10" rx="2" fill="var(--s1)"/>
+<text class="label" x="32" y="47">Intermediates, fusion off</text>
+<rect x="222" y="38" width="10" height="10" rx="2" fill="var(--s2)"/>
+<text class="label" x="238" y="47">Intermediates, fused</text>
+<rect x="396" y="38" width="10" height="10" rx="2" fill="var(--s3)"/>
+<text class="label" x="412" y="47">Arena, fused</text>
+<line x1="112.0" y1="68" x2="112.0" y2="348" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="112.0" y="364" text-anchor="middle">0</text>
+<line x1="248.0" y1="68" x2="248.0" y2="348" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="248.0" y="364" text-anchor="middle">50</text>
+<line x1="384.0" y1="68" x2="384.0" y2="348" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="384.0" y="364" text-anchor="middle">100</text>
+<line x1="520.0" y1="68" x2="520.0" y2="348" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="520.0" y="364" text-anchor="middle">150</text>
+<line x1="656.0" y1="68" x2="656.0" y2="348" stroke="var(--grid)" stroke-width="1"/>
+<text class="tick" x="656.0" y="364" text-anchor="middle">200</text>
+<text class="label" x="100" y="103.0" text-anchor="end">resnet50</text>
+<path d="M112,76 H384.0 Q388.0,76 388.0,80 V86 Q388.0,90 384.0,90 H112 Z" fill="var(--s1)"/>
+<text class="value" x="394.0" y="87">101.5</text>
+<path d="M112,92 H225.4 Q229.4,92 229.4,96 V102 Q229.4,106 225.4,106 H112 Z" fill="var(--s2)"/>
+<text class="value" x="235.4" y="103">43.2</text>
+<path d="M112,108 H135.1 Q139.1,108 139.1,112 V118 Q139.1,122 135.1,122 H112 Z" fill="var(--s3)"/>
+<text class="value" x="145.1" y="119">10.0</text>
+<text class="label" x="100" y="171.0" text-anchor="end">mobilenet_v2</text>
+<path d="M112,144 H244.5 Q248.5,144 248.5,148 V154 Q248.5,158 244.5,158 H112 Z" fill="var(--s1)"/>
+<text class="value" x="254.5" y="155">50.2</text>
+<path d="M112,160 H177.3 Q181.3,160 181.3,164 V170 Q181.3,174 177.3,174 H112 Z" fill="var(--s2)"/>
+<text class="value" x="187.3" y="171">25.5</text>
+<path d="M112,176 H125.7 Q129.7,176 129.7,180 V186 Q129.7,190 125.7,190 H112 Z" fill="var(--s3)"/>
+<text class="value" x="135.7" y="187">6.5</text>
+<text class="label" x="100" y="239.0" text-anchor="end">bert</text>
+<path d="M112,212 H588.6 Q592.6,212 592.6,216 V222 Q592.6,226 588.6,226 H112 Z" fill="var(--s1)"/>
+<text class="value" x="598.6" y="223">176.7</text>
+<path d="M112,228 H304.0 Q308.0,228 308.0,232 V238 Q308.0,242 304.0,242 H112 Z" fill="var(--s2)"/>
+<text class="value" x="314.0" y="239">72.1</text>
+<path d="M112,244 H115.1 Q118.3,244 118.3,247.145 V254.855 Q118.3,258 115.1,258 H112 Z" fill="var(--s3)"/>
+<text class="value" x="124.3" y="255">2.3</text>
+<text class="label" x="100" y="307.0" text-anchor="end">gpt2</text>
+<path d="M112,280 H625.1 Q629.1,280 629.1,284 V290 Q629.1,294 625.1,294 H112 Z" fill="var(--s1)"/>
+<text class="value" x="635.1" y="291">190.1</text>
+<path d="M112,296 H305.9 Q309.9,296 309.9,300 V306 Q309.9,310 305.9,310 H112 Z" fill="var(--s2)"/>
+<text class="value" x="315.9" y="307">72.8</text>
+<path d="M112,312 H117.2 Q121.2,312 121.2,316 V322 Q121.2,326 117.2,326 H112 Z" fill="var(--s3)"/>
+<text class="value" x="127.2" y="323">3.4</text>
+</svg>
