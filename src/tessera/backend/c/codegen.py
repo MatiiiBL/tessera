@@ -549,7 +549,14 @@ class _Emitter:
         self.line(f"{{  // {block.name}")
         self.depth += 1
         for iv, value in zip(block.iter_vars, s.iter_values, strict=True):
-            text = self.expr(fold(value))
+            bound = fold(self.substitute(value))
+            if isinstance(bound, IntImm):
+                # A constant (a dimension of extent one): use the value itself.
+                self.subst[iv.var] = bound
+                if bound.value >= 0:
+                    self.nonneg.add(iv.var)
+                continue
+            text = self.expr(bound)
             name = self.define(iv.var)
             if self.is_nonneg(value):
                 self.nonneg.add(iv.var)
@@ -560,7 +567,7 @@ class _Emitter:
             self.depth += 1
         if block.init is not None:
             first = [
-                f"{self.var(iv.var)} == {self.expr(fold(iv.dom.min))}"
+                f"{self.expr(iv.var)} == {self.expr(fold(iv.dom.min))}"
                 for iv in block.iter_vars
                 if iv.kind is IterKind.REDUCE
             ]
@@ -732,16 +739,18 @@ class _Emitter:
             raise CodegenError(f"{buf.name} has {buf.ndim} dimensions, indexed with {len(indices)}")
         compact = self.compacted.get(buf)
         shape = buf.shape if compact is None else compact.shape
+        strides = [1] * buf.ndim
+        for dim in reversed(range(buf.ndim - 1)):
+            strides[dim] = strides[dim + 1] * shape[dim + 1]
+        # Outermost dimension first, so the sum prints without parentheses.
         flat: Expr | None = None
-        stride = 1
-        for dim in reversed(range(buf.ndim)):
+        for dim in range(buf.ndim):
             index = fold(indices[dim])
             if compact is not None:
                 index = compacted_index(compact, dim, index, self.plan)
             index = fold(self.substitute(index))
-            term = fold(Binary("mul", index, IntImm(stride, index.dtype)))
-            flat = term if flat is None else fold(Binary("add", term, flat))
-            stride *= shape[dim]
+            term = fold(Binary("mul", index, IntImm(strides[dim], index.dtype)))
+            flat = term if flat is None else fold(Binary("add", flat, term))
         return flat if flat is not None else IntImm(0)
 
     # -- facts ------------------------------------------------------------------
