@@ -14,6 +14,7 @@ import numpy.typing as npt
 from tessera import compute, ir, passes
 from tessera.dtype import DType
 from tessera.ir import Graph, TensorType
+from tessera.ir.graph import Value
 from tessera.plan import LoweredGroup
 from tessera.tir.schedule import Schedule
 from tessera.tir.stmt import PrimFunc
@@ -179,3 +180,79 @@ def configs(
     rng = random.Random(seed)
     for _ in range(samples):
         yield sp.sample(rng)
+
+
+def conv2d_pad_block(
+    shape: tuple[int, int, int, int], out_channels: int, kernel: int, *, pad: int = 1
+) -> Workload:
+    """A stride-1 NHWC convolution whose padding is its own block (``pad``) that the
+    main block reads without a select, with a bias + ReLU epilogue."""
+    from tessera import te
+    from tessera.plan import FusedGroup
+    from tessera.tir.expr import Expr, ge, logical_and, lt, maximum, minimum, select
+
+    n, h, w, c = shape
+    oh, ow = h + 2 * pad - kernel + 1, w + 2 * pad - kernel + 1
+    rng = np.random.default_rng(sum(shape) + out_channels)
+    x = te.placeholder(shape, F32, "x")
+    wt = te.placeholder((kernel, kernel, c, out_channels), F32, "w")
+    bias = te.placeholder((out_channels,), F32, "b")
+
+    def clamp(e: Expr, size: int) -> Expr:
+        return minimum(maximum(e, 0), size - 1)
+
+    def padded(b: Expr, i: Expr, j: Expr, ch: Expr) -> Expr:
+        inside = logical_and(
+            logical_and(ge(i, pad), lt(i, h + pad)), logical_and(ge(j, pad), lt(j, w + pad))
+        )
+        return select(inside, x[b, clamp(i - pad, h), clamp(j - pad, w), ch], 0.0)
+
+    padt = te.compute((n, h + 2 * pad, w + 2 * pad, c), padded, "pad", ["n", "h", "w", "c"])
+    kh, kw, ic = te.reduce_axis(kernel, "kh"), te.reduce_axis(kernel, "kw"), te.reduce_axis(c, "ic")
+    conv = te.compute(
+        (n, oh, ow, out_channels),
+        lambda b, i, j, o: te.sum(
+            padt[b, i + kh, j + kw, ic] * wt[kh, kw, ic, o], axis=[kh, kw, ic]
+        ),
+        "conv",
+        ["n", "oh", "ow", "o"],
+    )
+    out = te.compute(
+        (n, oh, ow, out_channels),
+        lambda *idx: maximum(conv[idx] + bias[idx[-1]], 0.0),
+        "relu",
+        ["n", "oh", "ow", "o"],
+    )
+    func = te.create_prim_func([x, wt, bias, out], "conv_pad_block")
+    xs = rng.standard_normal(shape).astype(np.float32)
+    ws = (rng.standard_normal((kernel, kernel, c, out_channels)) * 0.3).astype(np.float32)
+    bs = (rng.standard_normal(out_channels) * 0.3).astype(np.float32)
+    xp = np.pad(xs.astype(np.float64), ((0, 0), (pad, pad), (pad, pad), (0, 0)))
+    ref = np.zeros((n, oh, ow, out_channels))
+    for i in range(kernel):
+        for j in range(kernel):
+            ref += xp[:, i : i + oh, j : j + ow, :] @ ws[i, j]
+    value = Value(out.buffer.name, TensorType((n, oh, ow, out_channels), F32))
+    group = FusedGroup("conv_pad_block", [], [], value, None, "conv2d")
+    dims = {
+        "N": n,
+        "H": h,
+        "W": w,
+        "C": c,
+        "KH": kernel,
+        "KW": kernel,
+        "O": out_channels,
+        "OH": oh,
+        "OW": ow,
+        "SH": 1,
+        "SW": 1,
+        "DH": 1,
+        "DW": 1,
+        "G": 1,
+        "PT": pad,
+        "PL": pad,
+        "PB": pad,
+        "PR": pad,
+    }
+    lowered = LoweredGroup(group, func, "conv", "relu", dims)
+    return Workload(lowered, [xs, ws, bs], np.maximum(ref + bs, 0))

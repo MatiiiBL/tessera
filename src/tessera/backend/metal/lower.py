@@ -277,7 +277,12 @@ class _Collector:
         region = regions.get(buf)
         starts: tuple[Expr, ...]
         extents: tuple[int | None, ...]
-        bounds = None if region is None else [_upper_bound(r.extent) for r in region]
+        ranges = {
+            loop.var: (loop.lo, loop.hi)
+            for loop in loops
+            if loop.lo is not None and loop.hi is not None
+        }
+        bounds = None if region is None else [_upper_bound(r.extent, ranges) for r in region]
         if region is not None and bounds is not None and all(b is not None for b in bounds):
             # An edge tile's extent is min(rest, tile): the tile bounds it.
             starts = tuple(self.subst(r.min) for r in region)
@@ -296,14 +301,17 @@ class _Collector:
         return substitute(expr, self.bindings) if self.bindings else expr
 
 
-def _upper_bound(extent: Expr) -> int | None:
-    """A constant no smaller than ``extent``, when one is evident (``min(e, 64)``)."""
+def _upper_bound(extent: Expr, ranges: dict[Var, tuple[int, int]]) -> int | None:
+    """A constant no smaller than ``extent`` (an edge tile's ``min(N - start, 64)``,
+    or ``8 - start`` once simplified), from the ranges of the loops around it."""
     if isinstance(extent, IntImm):
         return extent.value
     if isinstance(extent, Binary) and extent.op == "min":
-        bounds = [b for b in (_upper_bound(extent.a), _upper_bound(extent.b)) if b is not None]
-        return min(bounds) if bounds else None
-    return None
+        bounds = [b for b in (_upper_bound(extent.a, ranges), _upper_bound(extent.b, ranges)) if b]
+        if bounds:
+            return min(bounds)
+    found = interval(substitute(extent, {}), ranges)
+    return None if found is None else found[1]
 
 
 def _vars(expr: Expr) -> set[Var]:
