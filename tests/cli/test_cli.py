@@ -142,7 +142,17 @@ def test_tune_shares_one_budget_across_models(tmp_path: Path) -> None:
         onnx.save(model, paths[-1])
     log = tmp_path / "c-generic.jsonl"
     args = ["tune", *map(str, paths), "-t", "c:generic", "--trials", "24", "--batch", "8"]
-    out = invoke(*args, "--log", str(log), "--strategy", "random", "--validate-rounds", "0")
+    out = invoke(
+        *args,
+        "--log",
+        str(log),
+        "--strategy",
+        "random",
+        "--validate-rounds",
+        "0",
+        "--model-rounds",
+        "0",
+    )
     assert "of 2 models" in out
     records = TuningLog(log).records()
     assert len(records) == 24
@@ -153,3 +163,8 @@ def test_tune_shares_one_budget_across_models(tmp_path: Path) -> None:
     validated = TuningLog(log).records()[24:]
     assert validated
     assert all(r.ok for r in validated)
+    assert {r.validation.split(" ", 1)[1] for r in validated if r.validation} <= {
+        "measured alone",
+        "in the model",
+    }
+    assert "inside the models" in again

@@ -305,6 +305,13 @@ def tune_command(
         ),
     ] = 3,
     validate_top: Annotated[int, typer.Option(help="Configurations validated per task.")] = 3,
+    model_rounds: Annotated[
+        int,
+        typer.Option(
+            help="Finally, profile each model tuned and untuned this many times and keep, per "
+            "task, whichever configuration is faster inside the model (0: skip)."
+        ),
+    ] = 3,
 ) -> None:
     """Tune every kernel of the MODELS on TARGET and append the measurements to a log.
 
@@ -371,6 +378,19 @@ def tune_command(
                 tasks, runner=runner, log=TuningLog(path), top=validate_top, rounds=validate_rounds
             )
         build_s, measure_s = runner.build_seconds, runner.measure_seconds
+    if model_rounds:
+        from tessera.tune.inmodel import validate_in_model
+
+        console.print("validating the tuned configurations inside the models")
+        verdicts = validate_in_model(
+            models, target, TuningLog(path), rounds=model_rounds, progress=console.print
+        )
+        slower = sorted(k for k, (default, tuned) in verdicts.items() if tuned > default)
+        console.print(
+            f"{len(verdicts)} tasks compared in the models; the default stays for "
+            f"{len(slower)} whose tuned configuration is slower there"
+            + (f": {', '.join(slower)}" if slower else "")
+        )
     records = TuningLog(path).records()
     chosen = BestConfigs(records)
     table = Table("task", "groups", "trials", "default us", "best us", "speedup")

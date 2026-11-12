@@ -168,12 +168,12 @@ def validate(
     """Measure each task's ``top`` fastest logged configurations and its default
     again, ``rounds`` times, interleaved, appending every measurement to ``log``.
 
-    The search measures each candidate once, so noise can make a configuration
-    look faster than the default when it is not. ``compile`` takes the fastest
-    record; after this pass the contenders and the default each have several
-    measurements taken side by side, so the choice is the minimum over
-    interleaved runs, and a configuration that is really slower than the
-    default loses to it.
+    The search measures each candidate once, and measurements taken minutes
+    apart are not comparable: noise only slows a measurement, and a machine
+    that warms up slows everything. The pass's records carry its label, and
+    ``compile`` (``BestConfigs``) decides each task by its latest pass alone,
+    by the minimum over these interleaved runs, so a configuration that is
+    really slower than the default loses to it.
     """
     candidates: dict[str, list[Point]] = {}
     for task in tasks:
@@ -189,11 +189,19 @@ def validate(
         if config_json(default) not in {config_json(p) for p in ranked}:
             ranked.append(default)
         candidates[task.key] = ranked
+    label = f"{now()} measured alone"
     for r in range(rounds):
         for task in tasks:
             for result in runner.run(task, candidates[task.key]):
                 log.append(
-                    Record(task.target_key, task.key, result.config, result.seconds, result.error)
+                    Record(
+                        task.target_key,
+                        task.key,
+                        result.config,
+                        result.seconds,
+                        result.error,
+                        validation=label,
+                    )
                 )
             if on_round is not None:
                 on_round(r, task)

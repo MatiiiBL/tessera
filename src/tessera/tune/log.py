@@ -36,22 +36,24 @@ class Record:
     seconds: float | None
     error: str | None = None
     time: str = ""
+    validation: str | None = None  # the validation pass this measurement belongs to
 
     @property
     def ok(self) -> bool:
         return self.seconds is not None and self.error is None
 
     def to_json(self) -> str:
-        return json.dumps(
-            {
-                "target": self.target,
-                "task": self.task,
-                "config": json.loads(config_json(self.config)),
-                "seconds": self.seconds,
-                "error": self.error,
-                "time": self.time or now(),
-            }
-        )
+        fields: dict[str, object] = {
+            "target": self.target,
+            "task": self.task,
+            "config": json.loads(config_json(self.config)),
+            "seconds": self.seconds,
+            "error": self.error,
+            "time": self.time or now(),
+        }
+        if self.validation is not None:
+            fields["validation"] = self.validation
+        return json.dumps(fields)
 
     @classmethod
     def from_json(cls, line: str) -> Record:
@@ -64,6 +66,7 @@ class Record:
             seconds=float(seconds) if seconds is not None else None,
             error=raw.get("error"),
             time=str(raw.get("time", "")),
+            validation=raw.get("validation"),
         )
 
 
@@ -128,16 +131,28 @@ class BestConfigs:
     """The fastest logged configurations, for ``compile()``.
 
     Built from any number of logs (files, or directories of ``*.jsonl``
-    files). Only successful measurements count.
+    files). Only successful measurements count. A task that went through a
+    validation pass is decided by its latest pass alone: the configurations
+    measured in it, ranked by their fastest measurement in it. Measurements
+    taken far apart in time are not comparable (a machine that warms up over
+    a long run slows everything down), while a pass measures its contenders
+    side by side. A task never validated is decided by its fastest record.
     """
 
     def __init__(self, records: Iterable[Record] = ()) -> None:
-        self._by_task: dict[tuple[str, str], list[Record]] = {}
+        by_task: dict[tuple[str, str], list[Record]] = {}
         for r in records:
             if r.ok:
-                self._by_task.setdefault((r.target, r.task), []).append(r)
-        for rs in self._by_task.values():
-            rs.sort(key=lambda r: r.seconds if r.seconds is not None else float("inf"))
+                by_task.setdefault((r.target, r.task), []).append(r)
+        self._by_task: dict[tuple[str, str], list[Record]] = {}
+        for key, rs in by_task.items():
+            passes = [r.validation for r in rs if r.validation is not None]
+            if passes:
+                latest = max(passes)
+                rs = [r for r in rs if r.validation == latest]
+            self._by_task[key] = sorted(
+                rs, key=lambda r: r.seconds if r.seconds is not None else float("inf")
+            )
 
     @classmethod
     def load(cls, *paths: str | os.PathLike[str]) -> BestConfigs:

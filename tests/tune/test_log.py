@@ -76,3 +76,30 @@ def test_best_configs_skips_failures_and_rejected_configs(tmp_path: Path) -> Non
     assert fallback.config == {"x": 1}
     assert best.lookup("t", "missing") is None
     assert BestConfigs.load(tmp_path / "a.jsonl").lookup("t", "b") is None
+
+
+def test_the_latest_validation_pass_decides() -> None:
+    from tessera.tune.log import BestConfigs
+
+    early = Record("t", "a", {"x": 1}, 0.5)  # measured early, when everything ran faster
+    records = [
+        early,
+        Record("t", "a", {"x": 2}, 0.9),
+        Record("t", "a", {"x": 1}, 1.2, validation="2026-11-12T10:00:00Z measured alone"),
+        Record("t", "a", {"x": 2}, 1.0, validation="2026-11-12T10:00:00Z measured alone"),
+        Record("t", "a", {"x": 1}, 0.8, validation="2026-11-12T11:00:00Z in the model"),
+        Record("t", "a", {"x": 2}, 0.9, validation="2026-11-12T11:00:00Z in the model"),
+        Record("t", "b", {"x": 3}, 2.0),
+        Record("t", "b", {"x": 4}, 1.0),
+    ]
+    best = BestConfigs(records)
+    found = best.lookup("t", "a")
+    assert found is not None
+    assert found.config == {"x": 1}
+    assert found.seconds == 0.8
+    assert BestConfigs(records[:4]).lookup("t", "a").config == {"x": 2}  # type: ignore[union-attr]
+    assert best.lookup("t", "b").config == {"x": 4}  # type: ignore[union-attr]
+    line = records[2].to_json()
+    assert json.loads(line)["validation"] == "2026-11-12T10:00:00Z measured alone"
+    assert Record.from_json(line).validation == records[2].validation
+    assert "validation" not in json.loads(early.to_json())
