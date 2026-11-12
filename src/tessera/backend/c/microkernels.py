@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from importlib import resources
 
-from tessera.target import CpuIsa
+from tessera.target import CpuIsa, host_isa
 
 ISA_LEVEL: dict[CpuIsa, int] = {"generic": 0, "neon": 1, "sme": 2}
 
@@ -42,6 +42,31 @@ def register_microkernel(kernel: Microkernel) -> Microkernel:
 
 def get_microkernel(name: str) -> Microkernel | None:
     return _REGISTRY.get(name)
+
+
+def host_supports(isa: CpuIsa) -> bool:
+    """Whether this machine can run code built for ``isa``."""
+    return ISA_LEVEL[host_isa()] >= ISA_LEVEL[isa]
+
+
+# GEMM on one tile, ``C[0:m, 0:n] (+)= A[0:m, 0:k] B[0:k, 0:n]``, with arguments
+# ``(m, n, k, A, lda, B, ldb, C, ldc, accumulate)``: row-major operands with
+# leading dimensions in elements; ``accumulate`` 0 overwrites C. The ``_bt``
+# variants read B transposed, ``B[p, j]`` at ``B[j * ldb + p]``.
+SGEMM_KERNELS = {
+    isa: {
+        transposed: register_microkernel(
+            Microkernel(
+                f"c.{isa}_sgemm{'_bt' if transposed else ''}",
+                f"tsr_{isa}_sgemm{'_bt' if transposed else ''}",
+                f"tessera_{isa}.h",
+                isa,
+            )
+        )
+        for transposed in (False, True)
+    }
+    for isa in ("neon", "sme")
+}
 
 
 def header_text(name: str) -> str:
