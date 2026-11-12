@@ -179,6 +179,11 @@ class Importer:
             outputs.append(value)
         g.set_outputs(outputs)
         g.name_outputs(output_names)
+        originals = [i.name for i in graph.input if i.name not in initializers]
+        for value, original in zip(g.inputs, originals, strict=True):
+            g.io_names[value.name] = original
+        for value, proto in zip(g.outputs, graph.output, strict=True):
+            g.io_names[value.name] = proto.name
         g.verify()
         return g
 

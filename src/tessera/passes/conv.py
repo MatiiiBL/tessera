@@ -23,6 +23,7 @@ def _fold_batchnorm(rw: Rewriter, node: Node) -> Value | None:
     if w is None or bias is None or any(p is None for p in params):
         return None
     gamma, beta, mean, var = (np.asarray(p, np.float64) for p in params)
+    rw.graph.release_name(conv.name)  # the folded convolution replaces it (its only reader is us)
     k = gamma / np.sqrt(var + node.float_attr("epsilon"))
     dtype = w.dtype
     weight = rw.const((w * k[:, None, None, None]).astype(dtype), f"{conv.name}_weight")

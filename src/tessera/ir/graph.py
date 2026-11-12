@@ -169,6 +169,9 @@ class Graph:
         self.inputs: list[Value] = []
         self.outputs: list[Value] = []
         self.nodes: list[Node] = []
+        # The model's own name of each input and output, by value name (an importer
+        # makes names identifiers: ONNX "input.1" is "input_1" here).
+        self.io_names: dict[str, str] = {}
         self._names: set[str] = set()
         self._suffixes: dict[str, int] = {}  # next suffix to try per base name
 
@@ -266,17 +269,13 @@ class Graph:
                     raise ValueError(f"output name {name!r} is the name of a graph input")
                 # Another value holds the name: it takes a fresh one.
                 owner.name = self.fresh_name(name)
-                if owner.producer is not None and len(owner.producer.outputs) == 1:
-                    owner.producer.name = owner.name
                 live[owner.name] = owner
             renamable = value.producer is not None and value not in outputs
             if not renamable:
                 value = self.op("Reshape", value, shape=value.shape)
             live.pop(value.name, None)
             self._names.add(name)
-            value.name = name
-            if value.producer is not None and len(value.producer.outputs) == 1:
-                value.producer.name = name
+            value.name = name  # the node keeps its own name, which kernels are named after
             live[name] = value
             outputs.append(value)
         self.outputs = outputs
@@ -424,6 +423,7 @@ class Graph:
         out = Graph(self.name)
         out._names = set(self._names)
         out._suffixes = dict(self._suffixes)
+        out.io_names = dict(self.io_names)
         mapping: dict[int, Value] = {}
 
         def get(v: Value) -> Value:

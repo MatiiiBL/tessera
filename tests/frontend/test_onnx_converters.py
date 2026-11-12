@@ -355,3 +355,19 @@ def test_inputs_and_outputs_keep_their_onnx_names(case: str) -> None:
         assert list(got) == list(outputs)
         for name in outputs:
             np.testing.assert_array_equal(got[name], expected[name])
+
+
+def test_original_names_are_kept_for_the_driver() -> None:
+    nodes = [node("Relu", ["input.1"], ["/head/out.0"]), node("Neg", ["mask"], ["mask"])]
+    nodes[1].output[0] = "neg"
+    model = model_of(nodes, {"input.1": f32(3), "mask": f32(3)}, outputs=("/head/out.0", "neg"))
+    imported = onnx_frontend.load(model)
+    for g in (imported, optimize(imported)):
+        assert [v.name for v in g.inputs] == ["input_1", "mask"]
+        assert [v.name for v in g.outputs] == ["head_out_0", "neg"]
+        assert g.io_names == {
+            "input_1": "input.1",
+            "mask": "mask",
+            "head_out_0": "/head/out.0",
+            "neg": "neg",
+        }
