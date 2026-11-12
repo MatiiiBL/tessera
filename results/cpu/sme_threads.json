@@ -1,0 +1,209 @@
+{
+  "machine": {
+    "cpu": "Apple M4",
+    "performance_cores": 4,
+    "system": "Darwin 27.0.0",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
+    "numpy": "2.5.4",
+    "load_average": 6.33154296875,
+    "date": "2026-11-12T06:55:17+00:00"
+  },
+  "rows": [
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "sme t1",
+      "seconds": 0.001622083335,
+      "gflops": 1323.9046365025383
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "neon t1",
+      "seconds": 0.017865625,
+      "gflops": 120.20198834353683
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "sme t2",
+      "seconds": 0.001487416666,
+      "gflops": 1443.7673700235387
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "neon t2",
+      "seconds": 0.009191041667,
+      "gflops": 233.6496477554267
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "sme t3",
+      "seconds": 0.001605500001,
+      "gflops": 1337.5793501478797
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "neon t3",
+      "seconds": 0.006794499997,
+      "gflops": 316.0620573917413
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "sme t4",
+      "seconds": 0.001604875,
+      "gflops": 1338.1002557831607
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "neon t4",
+      "seconds": 0.005688500001,
+      "gflops": 377.5131664977563
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "sme t1 + neon t3, 70% of rows on sme",
+      "seconds": 0.002793249998,
+      "gflops": 768.811831929696
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "sme t1 + neon t3, 75% of rows on sme",
+      "seconds": 0.002413208334,
+      "gflops": 889.8873825951242
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "sme t1 + neon t3, 80% of rows on sme",
+      "seconds": 0.002425041668,
+      "gflops": 885.5450511788897
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "sme t1 + neon t3, 85% of rows on sme",
+      "seconds": 0.002347541667,
+      "gflops": 914.7797792847441
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "sme t1 + neon t3, 90% of rows on sme",
+      "seconds": 0.002419833334,
+      "gflops": 887.4510561643499
+    },
+    {
+      "study": "sme_threads",
+      "case": "1024x1024x1024",
+      "variant": "sme t1 + neon t3, 95% of rows on sme",
+      "seconds": 0.002581624998,
+      "gflops": 831.8340772434681
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "sme t1",
+      "seconds": 0.001055500001,
+      "gflops": 572.2214831149015
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "neon t1",
+      "seconds": 0.007907083331,
+      "gflops": 76.38464788047395
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "sme t2",
+      "seconds": 0.0008478749987,
+      "gflops": 712.3453067091835
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "neon t2",
+      "seconds": 0.004324166668,
+      "gflops": 139.67541548978983
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "sme t3",
+      "seconds": 0.001030416668,
+      "gflops": 586.1510151736016
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "neon t3",
+      "seconds": 0.00492979167,
+      "gflops": 122.51628799559394
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "sme t4",
+      "seconds": 0.000737958333,
+      "gflops": 818.4469894725072
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "neon t4",
+      "seconds": 0.002656624998,
+      "gflops": 227.3485254617031
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "sme t1 + neon t3, 70% of rows on sme",
+      "seconds": 0.002082416668,
+      "gflops": 290.03790897432447
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "sme t1 + neon t3, 75% of rows on sme",
+      "seconds": 0.001740541669,
+      "gflops": 347.0067891836263
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "sme t1 + neon t3, 80% of rows on sme",
+      "seconds": 0.00170325,
+      "gflops": 354.6043011889036
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "sme t1 + neon t3, 85% of rows on sme",
+      "seconds": 0.001737958337,
+      "gflops": 347.5225862103046
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "sme t1 + neon t3, 90% of rows on sme",
+      "seconds": 0.001717958334,
+      "gflops": 351.56834950340533
+    },
+    {
+      "study": "sme_threads",
+      "case": "128x3072x768",
+      "variant": "sme t1 + neon t3, 95% of rows on sme",
+      "seconds": 0.001742666664,
+      "gflops": 346.5836516397608
+    }
+  ]
+}

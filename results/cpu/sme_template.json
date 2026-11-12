@@ -1,0 +1,76 @@
+{
+  "machine": {
+    "cpu": "Apple M4",
+    "performance_cores": 4,
+    "system": "Darwin 27.0.0",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
+    "numpy": "2.5.4",
+    "load_average": 7.98583984375,
+    "date": "2026-11-12T07:01:22+00:00"
+  },
+  "rows": [
+    {
+      "study": "sme_template",
+      "case": "128x768x768",
+      "variant": "t1",
+      "seconds": 0.0003386520832,
+      "gflops": 445.87041241032597
+    },
+    {
+      "study": "sme_template",
+      "case": "128x768x768",
+      "variant": "t2",
+      "seconds": 0.0002409196429,
+      "gflops": 626.7440138232083
+    },
+    {
+      "study": "sme_template",
+      "case": "128x768x768",
+      "variant": "t4",
+      "seconds": 0.0001990330882,
+      "gflops": 758.6424215468712
+    },
+    {
+      "study": "sme_template",
+      "case": "128x768x3072",
+      "variant": "t1",
+      "seconds": 0.001371591667,
+      "gflops": 440.34955193410343
+    },
+    {
+      "study": "sme_template",
+      "case": "128x768x3072",
+      "variant": "t2",
+      "seconds": 0.0008998035716,
+      "gflops": 671.235139604996
+    },
+    {
+      "study": "sme_template",
+      "case": "128x768x3072",
+      "variant": "t4",
+      "seconds": 0.0006868958335,
+      "gflops": 879.2887458968697
+    },
+    {
+      "study": "sme_template",
+      "case": "128x3072x768",
+      "variant": "t1",
+      "seconds": 0.001282944445,
+      "gflops": 470.77625095449866
+    },
+    {
+      "study": "sme_template",
+      "case": "128x3072x768",
+      "variant": "t2",
+      "seconds": 0.0008922083334,
+      "gflops": 676.9492655357438
+    },
+    {
+      "study": "sme_template",
+      "case": "128x3072x768",
+      "variant": "t4",
+      "seconds": 0.0006770757576,
+      "gflops": 892.0416500228868
+    }
+  ]
+}
