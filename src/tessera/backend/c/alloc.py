@@ -52,8 +52,10 @@ from tessera.tir.stmt import (
 )
 
 type Path = tuple[int, ...]
-# An affine form: coefficient per variable, the constant under ``None``.
-type Affine = dict[Var | None, int]
+# An affine form: a coefficient per term, the constant under ``None``. A term is
+# a variable, or an expression of variables defined outside the allocation
+# point (``i_j_fused // 3``), which is constant while the allocation lives.
+type Affine = dict[Expr | None, int]
 
 
 def children(stmt: Stmt) -> list[Stmt]:
@@ -329,14 +331,14 @@ def _dim_region(
 
 
 def _start_region(index: Expr, lca: Path, plan: AllocationPlan) -> tuple[Affine, int, int] | None:
-    form = affine(index, lambda v: _expand_inner(v, lca, plan))
+    form = _affine_at(index, lca, plan)
     if form is not None:
         rest: Affine = {}
         lo = hi = form.get(None, 0)
         for var, coef in form.items():
             if var is None:
                 continue
-            if _is_inner(var, lca, plan):
+            if isinstance(var, Var) and _is_inner(var, lca, plan):
                 bounds = plan.loop_ranges.get(var)
                 if bounds is None:
                     return None
@@ -352,24 +354,45 @@ def _start_region(index: Expr, lca: Path, plan: AllocationPlan) -> tuple[Affine,
     return {}, interval[0], interval[1]
 
 
-def _expand_inner(var: Var, lca: Path, plan: AllocationPlan) -> Affine | None:
-    if _is_inner(var, lca, plan) and var in plan.bindings:
-        return affine(plan.bindings[var], lambda v: _expand_inner(v, lca, plan))
-    return {var: 1}
+def _affine_at(expr: Expr, lca: Path, plan: AllocationPlan) -> Affine | None:
+    """The affine form of ``expr`` with the block and let variables defined
+    inside the allocation point replaced by their values."""
+
+    def expand(var: Var) -> Affine | None:
+        if _is_inner(var, lca, plan) and var in plan.bindings:
+            return affine(plan.bindings[var], expand, outer)
+        return {var: 1}
+
+    def outer(e: Expr) -> bool:
+        variables = [x for x in sub_exprs(e) if isinstance(x, Var)]
+        return (
+            bool(variables)
+            and not any(isinstance(x, BufferLoad) for x in sub_exprs(e))
+            and not any(_is_inner(v, lca, plan) for v in variables)
+        )
+
+    return affine(expr, expand, outer)
 
 
-def affine(expr: Expr, expand: Callable[[Var], Affine | None]) -> Affine | None:
-    """``expr`` as a linear combination of variables plus a constant, or None.
-    ``expand`` gives the form of each variable (itself, or its binding)."""
+def affine(
+    expr: Expr,
+    expand: Callable[[Var], Affine | None],
+    opaque: Callable[[Expr], bool] | None = None,
+) -> Affine | None:
+    """``expr`` as a linear combination of terms plus a constant, or None.
+    ``expand`` gives the form of each variable (itself, or its binding);
+    expressions ``opaque`` accepts are kept whole as terms."""
     if isinstance(expr, IntImm):
         return {None: expr.value}
     if isinstance(expr, Var):
         return expand(expr)
+    if opaque is not None and opaque(expr):
+        return {expr: 1}
     if isinstance(expr, Cast) and expr.type.is_int and expr.value.dtype.is_int:
-        return affine(expr.value, expand)
+        return affine(expr.value, expand, opaque)
     if isinstance(expr, Binary) and expr.op in ("add", "sub", "mul"):
-        a = affine(expr.a, expand)
-        b = affine(expr.b, expand)
+        a = affine(expr.a, expand, opaque)
+        b = affine(expr.b, expand, opaque)
         if a is None or b is None:
             return None
         if expr.op == "mul":
@@ -436,7 +459,7 @@ def compacted_index(c: Compacted, dim: int, index: Expr, plan: AllocationPlan) -
     """Index ``dim`` of an access to the compacted buffer ``c``."""
     if not c.exact[dim]:
         return index
-    form = affine(index, lambda v: _expand_inner(v, c.path, plan))
+    form = _affine_at(index, c.path, plan)
     if form is None:
         # Bounded by interval arithmetic, so the offset is a constant.
         shift = c.offset[dim].get(None, 0)
@@ -450,10 +473,10 @@ def compacted_index(c: Compacted, dim: int, index: Expr, plan: AllocationPlan) -
 def affine_to_expr(form: Affine) -> Expr:
     """``sum(coef * var) + constant``, in the form's order."""
     expr: Expr | None = None
-    for var, coef in form.items():
-        if var is None or coef == 0:
+    for atom, coef in form.items():
+        if atom is None or coef == 0:
             continue
-        term: Expr = var if coef == 1 else Binary("mul", var, IntImm(coef, var.dtype))
+        term: Expr = atom if coef == 1 else Binary("mul", atom, IntImm(coef, atom.dtype))
         expr = term if expr is None else Binary("add", expr, term)
     const = form.get(None, 0)
     if expr is None:

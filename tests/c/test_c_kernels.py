@@ -68,9 +68,10 @@ def test_matmul(m: int, n: int, k: int) -> None:
 
 
 @pytest.mark.parametrize(("m", "threads"), [(16, 1), (16, 4), (10, 4), (3, 4), (37, 3)])
-def test_tiled_parallel_matmul(m: int, threads: int) -> None:
+@pytest.mark.parametrize("fused", [False, True])
+def test_tiled_parallel_matmul(m: int, threads: int, fused: bool) -> None:
     a, b, c = _rand(m, 24), _rand(24, 32), np.zeros((m, 32), np.float32)
-    run_kernel(tiled_matmul(m, 32, 24), [a, b, c], Target(num_threads=threads))
+    run_kernel(tiled_matmul(m, 32, 24, fused=fused), [a, b, c], Target(num_threads=threads))
     np.testing.assert_allclose(c, a @ b, rtol=1e-5, atol=1e-5)
 
 

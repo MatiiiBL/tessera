@@ -49,6 +49,14 @@ def test_parallel_loop_is_outlined_with_its_captures() -> None:
     assert "#pragma clang loop vectorize(enable)" in body
 
 
+def test_local_buffer_indexed_by_a_fused_outer_loop_is_compacted() -> None:
+    # The accumulator's indices contain t // 2 and t % 2, where t is defined
+    # outside the allocation point: those terms are constant per tile.
+    text = generate_kernel(tiled_matmul(10, 32, 8, fused=True)).text
+    assert "float C_local[64]" in text
+    assert "C_local[ii * 16 + ji] = 0.0f;" in text
+
+
 def test_kernel_without_parallel_loops_does_not_use_the_pool() -> None:
     assert not generate_kernel(matmul(4, 4, 4)).parallel
 

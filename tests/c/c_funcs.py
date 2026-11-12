@@ -79,12 +79,21 @@ def matmul(m: int, n: int, k: int, name: str = "matmul") -> PrimFunc:
 
 
 def tiled_matmul(
-    m: int, n: int, k: int, *, tile_m: int = 4, tile_n: int = 16, name: str = "tiled"
+    m: int,
+    n: int,
+    k: int,
+    *,
+    tile_m: int = 4,
+    tile_n: int = 16,
+    fused: bool = False,
+    name: str = "tiled",
 ) -> PrimFunc:
     """A scheduled matmul: rows split into tiles run in parallel, a ``local``
     accumulator of the full output shape (as ``cache_write`` makes it), the
     reduction init in its own block, the innermost column loop vectorized and
-    an imperfect split of the rows guarded by a predicate."""
+    an imperfect split of the rows guarded by a predicate. With ``fused``, the
+    row and column tile loops are one parallel loop ``t`` (tile row ``t //
+    no``, tile column ``t % no``)."""
     a, b, c = Buffer("A", (m, k)), Buffer("B", (k, n)), Buffer("C", (m, n))
     acc = Buffer("C_local", (m, n), scope="local")
     io, jo, ii, ji, r = Var("io"), Var("jo"), Var("ii"), Var("ji"), Var("k")
@@ -92,11 +101,15 @@ def tiled_matmul(
     assert n % tile_n == 0
     no = n // tile_n
 
+    t = Var("t")
+    tile_row: Expr = t // no if fused else io
+    tile_col: Expr = t % no if fused else jo
+
     def rows() -> Expr:
-        return io * tile_m + ii
+        return tile_row * tile_m + ii
 
     def cols() -> Expr:
-        return jo * tile_n + ji
+        return tile_col * tile_n + ji
 
     def guard() -> Expr:
         return lt(rows(), m) if mo * tile_m != m else TRUE
@@ -135,7 +148,11 @@ def tiled_matmul(
     # index expressions to them.
     update_nest = _rebind(update_nest, {ii: ii2, ji: ji2})
     store_nest = _rebind(store_nest, {ii: ii3, ji: ji3})
-    body = loop(io, mo, loop(jo, no, seq([init_nest, update_nest, store_nest])), ForKind.PARALLEL)
+    nests = seq([init_nest, update_nest, store_nest])
+    if fused:
+        body = loop(t, mo * no, nests, ForKind.PARALLEL)
+    else:
+        body = loop(io, mo, loop(jo, no, nests), ForKind.PARALLEL)
     return PrimFunc(name, (a, b, c), root(body, [acc]))
 
 
