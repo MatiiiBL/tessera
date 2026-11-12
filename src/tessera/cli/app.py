@@ -355,6 +355,50 @@ def tune_command(
     )
 
 
+class Suite(enum.StrEnum):
+    models = "models"
+    ops = "ops"
+    tuning = "tuning"
+    all = "all"
+
+
+@app.command("bench")
+def bench_command(
+    suite: Annotated[Suite, typer.Argument(help="What to measure.")],
+    target: Annotated[
+        list[str] | None,
+        typer.Option("--target", "-t", help="Tessera targets (default: the host's C and Metal)."),
+    ] = None,
+    model: Annotated[
+        list[str] | None, typer.Option("--model", "-m", help="Only these models (models suite).")
+    ] = None,
+    trials: Annotated[int, typer.Option(help="Trials per search (tuning suite).")] = 256,
+    seeds: Annotated[int, typer.Option(help="Seeds per strategy (tuning suite).")] = 5,
+    provisional: Annotated[
+        bool | None,
+        typer.Option(
+            "--provisional/--final",
+            help="Mark the results (default: provisional when the machine is busy).",
+        ),
+    ] = None,
+) -> None:
+    """Measure and write results/<suite>.md and .json."""
+    from tessera.bench import pages
+    from tessera.bench.zoo import MODELS
+
+    targets = list(target) if target else pages.default_targets()
+    written = []
+    if suite in (Suite.models, Suite.all):
+        names = list(model) if model else list(MODELS)
+        written.append(pages.models_page(targets, names=names, provisional=provisional))
+    if suite in (Suite.ops, Suite.all):
+        written.append(pages.ops_page(targets, provisional=provisional))
+    if suite in (Suite.tuning, Suite.all):
+        written.append(pages.tuning_page(trials=trials, seeds=seeds, provisional=provisional))
+    for path in written:
+        console.print(f"wrote {path} and {path.with_suffix('.json')}")
+
+
 def _default_key(state: object) -> str:
     from tessera.tune.search import TaskState
     from tessera.tune.space import config_json

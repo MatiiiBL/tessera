@@ -89,3 +89,32 @@ def test_shapes() -> None:
 def test_missing_model() -> None:
     result = runner.invoke(app, ["run", "nope.onnx"])
     assert result.exit_code != 0
+
+
+def test_bench_tuning_writes_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TESSERA_RESULTS", str(tmp_path))
+    out = invoke("bench", "tuning", "--trials", "16", "--seeds", "1", "--final")
+    assert "tuning.md" in out
+    page = (tmp_path / "tuning.md").read_text()
+    assert page.startswith("# Tuning")
+    assert "Provisional" not in page
+    data = json.loads((tmp_path / "tuning.json").read_text())
+    assert len(data["synthetic"]) == 3
+
+
+def test_bench_models_on_a_stand_in_zoo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bench.test_models_bench import tiny_zoo
+
+    (tmp_path / "models").mkdir()
+    zoo = tiny_zoo(tmp_path / "models")
+    monkeypatch.setenv("TESSERA_MODELS", str(zoo))
+    monkeypatch.setenv("TESSERA_RESULTS", str(tmp_path / "results"))
+    invoke("bench", "models", "--model", "resnet50", "--target", "c:generic", "--provisional")
+    page = (tmp_path / "results" / "models.md").read_text()
+    assert "**Provisional:**" in page
+    assert "| tessera-c:generic |" in page
+    assert "| c:generic | fusion off |" in page
+    data = json.loads((tmp_path / "results" / "models.json").read_text())
+    systems = {s["system"]: s for s in data["models"][0]["systems"]}
+    assert systems["tessera-c:generic"]["agreement"]["top1"] == 1.0
+    assert systems["onnxruntime-cpu"]["latency"]["runs"] >= 50
