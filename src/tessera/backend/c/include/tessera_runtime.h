@@ -342,11 +342,14 @@ static void tsr_pool_start(void) {
   pthread_atfork(NULL, NULL, tsr_after_fork);
 }
 
-/* Run task(args, lo, hi) over [begin, end) split across the pool. */
-static void tsr_parallel_for(int64_t begin, int64_t end, tsr_task task, void* args) {
+/* Run task(args, lo, hi) over [begin, end) split across at most `threads`
+ * threads of the pool (the others stay idle: SME kernels use fewer threads
+ * than there are cores, because the cores share one SME unit). */
+static void tsr_parallel_for_n(int64_t begin, int64_t end, int threads, tsr_task task,
+                               void* args) {
   int64_t n = end - begin;
   if (n <= 0) return;
-  if (TSR_NUM_THREADS <= 1 || n == 1 || tsr_in_parallel || tsr_pool.forked ||
+  if (TSR_NUM_THREADS <= 1 || threads <= 1 || n == 1 || tsr_in_parallel || tsr_pool.forked ||
       pthread_mutex_trylock(&tsr_pool.owner) != 0) {
     task(args, begin, end);
     return;
@@ -361,7 +364,8 @@ static void tsr_parallel_for(int64_t begin, int64_t end, tsr_task task, void* ar
   tsr_pool.args = args;
   tsr_pool.begin = begin;
   tsr_pool.end = end;
-  tsr_pool.nchunks = n < tsr_pool.nthreads ? (int)n : tsr_pool.nthreads;
+  int most = threads < tsr_pool.nthreads ? threads : tsr_pool.nthreads;
+  tsr_pool.nchunks = n < most ? (int)n : most;
   atomic_store_explicit(&tsr_pool.pending, tsr_pool.nthreads - 1, memory_order_relaxed);
   atomic_fetch_add(&tsr_pool.generation, 1);
   if (atomic_load(&tsr_pool.sleepers) > 0) {
@@ -374,6 +378,11 @@ static void tsr_parallel_for(int64_t begin, int64_t end, tsr_task task, void* ar
   tsr_in_parallel = false;
   while (atomic_load_explicit(&tsr_pool.pending, memory_order_acquire) > 0) tsr_pause();
   pthread_mutex_unlock(&tsr_pool.owner);
+}
+
+/* Run task(args, lo, hi) over [begin, end) split across the whole pool. */
+static void tsr_parallel_for(int64_t begin, int64_t end, tsr_task task, void* args) {
+  tsr_parallel_for_n(begin, end, TSR_NUM_THREADS, task, args);
 }
 
 #endif /* TESSERA_RUNTIME_H */

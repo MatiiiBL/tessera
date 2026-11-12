@@ -11,7 +11,8 @@ pointer per parameter. The loop nest is printed as it is scheduled:
   intermediates, storage that each running thread allocates once and keeps;
 - a ``PARALLEL`` loop is outlined into a function that runs a contiguous range
   of iterations, and the kernel hands it to the thread pool with the values
-  it captures; a parallel loop inside another runs serially;
+  it captures (on at most ``parallel.threads`` threads if the loop has that
+  annotation); a parallel loop inside another runs serially;
 - ``VECTORIZED`` and ``UNROLLED`` loops carry ``#pragma clang loop`` hints,
   which clang honours for the loops templates produce (constant trip counts,
   unit-stride innermost accesses, no predicates);
@@ -70,6 +71,9 @@ from tessera.tir.stmt import (
     SeqStmt,
     Stmt,
 )
+
+# Loop annotation: run a parallel loop on at most this many threads.
+PARALLEL_THREADS = "parallel.threads"
 
 # Local buffers up to this size live on the stack. Python threads other than
 # the main one have 512 KiB stacks on macOS, and the calling thread runs the
@@ -529,15 +533,20 @@ class _Emitter:
         helper.append("}")
         self.helpers.append("\n".join(helper))
 
+        threads = dict(s.annotations).get(PARALLEL_THREADS)
+        if isinstance(threads, int):
+            launch = f"tsr_parallel_for_n({lo_text}, {hi_text}, {threads}, {fname}"
+        else:
+            launch = f"tsr_parallel_for({lo_text}, {hi_text}, {fname}"
         if captured:
             self.line("{")
             self.depth += 1
             self.line(f"{fname}_args args = {{{', '.join(values)}}};")
-            self.line(f"tsr_parallel_for({lo_text}, {hi_text}, {fname}, &args);")
+            self.line(f"{launch}, &args);")
             self.depth -= 1
             self.line("}")
         else:
-            self.line(f"tsr_parallel_for({lo_text}, {hi_text}, {fname}, NULL);")
+            self.line(f"{launch}, NULL);")
 
     def block(self, s: BlockRealize, path: Path) -> None:
         block = s.block
