@@ -195,6 +195,48 @@ runner survives crashes, hangs and unimportable tasks
 through the C backend, and `tests/tune/test_measured.py` tunes one end to
 end with real measurements.
 
+## Results: random against model-guided search
+
+`tessera bench tuning` runs each strategy from scratch with 5 seeds and
+reports, after each number of measurements, the best throughput found so
+far relative to a reference ([results/tuning.md](../results/tuning.md)).
+Both strategies start with the same round (the default and 15 random
+points: the model has nothing to learn from yet), so they differ from the
+second round on.
+
+**Synthetic tasks** (the reference is the exhaustive optimum; deterministic,
+so not affected by machine load), mean over seeds:
+
+| task (M×N×K, space size) | trials | random | model-guided |
+|---|---|---|---|
+| 64×64×64 (43,904) | 64 / 256 | 0.73 / 0.83 | 0.92 / 0.99 |
+| 256×128×192 (181,440) | 64 / 256 | 0.81 / 0.88 | 0.88 / 0.98 |
+| 32×512×64 (64,680) | 64 / 256 | 0.72 / 0.84 | 0.88 / 0.98 |
+
+**Real tasks** (provisional: measured 2026-11-12 on a busy machine, with
+the C templates' loop path, before the NEON and SME microkernels). The
+heaviest two tasks of ResNet-50 and of BERT on `c:sme` have small spaces
+(120 to 384 configurations), so each space was measured exhaustively once
+and the searches replay those measurements: every strategy and seed sees
+the same timings, noise included, and the reference is the true optimum of
+the measured space. Exhaustively measuring the four spaces took under
+5 minutes.
+
+| task (groups sharing it, space size) | trials | random | model-guided |
+|---|---|---|---|
+| ResNet-50 3×3 conv, 14×14×256 → 256 (5, 120) | 32 / 64 | 0.86 / 0.90 | 0.96 / 1.00 |
+| ResNet-50 1×1 conv, 14×14×256 → 1024 (6, 120) | 32 / 64 | 0.89 / 0.92 | 0.98 / 1.00 |
+| BERT matmul 128×768×3072, M×N×K (12, 384) | 32 / 64 / 96 | 0.63 / 0.76 / 0.88 | 0.87 / 0.97 / 1.00 |
+| BERT matmul 128×3072×768 (12, 384) | 32 / 64 | 0.95 / 0.96 | 1.00 / 1.00 |
+
+On the real tasks the model-guided search reached the measured optimum by
+64 trials for both convolutions and by 96 for the larger matmul in every
+seed, while random search was still 4 to 12% short at 96 trials. The
+spaces are small enough here that exhaustive search is affordable, which
+is also why the comparison could use exact optima; the evolutionary search
+matters more for the larger spaces of the microkernel templates and on
+Metal.
+
 ## Limitations
 
 - The features describe loops and memory, not instructions. Two schedules
