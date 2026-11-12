@@ -297,6 +297,14 @@ def tune_command(
     time_budget: Annotated[float | None, typer.Option(help="Stop after this many seconds.")] = None,
     build_workers: Annotated[int, typer.Option(help="Parallel build processes.")] = 3,
     seed: Annotated[int, typer.Option(help="Seed of the search.")] = 0,
+    validate_rounds: Annotated[
+        int,
+        typer.Option(
+            help="Afterwards, measure each task's best configurations and its default again "
+            "this many times, interleaved (0: no validation)."
+        ),
+    ] = 3,
+    validate_top: Annotated[int, typer.Option(help="Configurations validated per task.")] = 3,
 ) -> None:
     """Tune every kernel of the MODELS on TARGET and append the measurements to a log.
 
@@ -304,11 +312,12 @@ def tune_command(
     kernels use them. The default log is results/tuning/<target>.jsonl, which
     tessera.compile reads; running the same command again resumes it.
     """
-    from tessera.tune.log import TuningLog
+    from tessera.tune.log import BestConfigs, TuningLog
     from tessera.tune.measure import LocalRunner
     from tessera.tune.search import EvolutionarySearch, RandomSearch
+    from tessera.tune.space import config_json
     from tessera.tune.task import Task
-    from tessera.tune.tuner import Round, tune
+    from tessera.tune.tuner import Round, tune, validate
 
     by_key: dict[str, Task] = {}
     kernels = 0
@@ -353,11 +362,32 @@ def tune_command(
             time_budget=time_budget,
             on_round=report,
         )
+        if validate_rounds:
+            console.print(
+                f"validating the {validate_top} best configurations and the default of each "
+                f"task, {validate_rounds} rounds"
+            )
+            validate(
+                tasks, runner=runner, log=TuningLog(path), top=validate_top, rounds=validate_rounds
+            )
         build_s, measure_s = runner.build_seconds, runner.measure_seconds
+    records = TuningLog(path).records()
+    chosen = BestConfigs(records)
     table = Table("task", "groups", "trials", "default us", "best us", "speedup")
     for state in states:
-        default = state.measured.get(_default_key(state))
-        best = state.best()
+        tuned = state.task
+        default_key = _default_key(state)
+        default_times = [
+            r.seconds
+            for r in records
+            if r.task == tuned.key
+            and r.target == tuned.target_key
+            and r.seconds is not None
+            and config_json(r.config) == default_key
+        ]
+        default = min(default_times) if default_times else None
+        record = chosen.lookup(tuned.target_key, tuned.key)
+        best = (dict(record.config), record.seconds) if record and record.seconds else None
         speed = f"{default / best[1]:.2f}x" if default and best else "-"
         table.add_row(
             state.task.key,

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from tessera.tune.log import BestConfigs, TuningLog
+from tessera.tune.measure import InlineRunner
 from tessera.tune.search import EvolutionarySearch, RandomSearch
 from tessera.tune.space import KnobValue, config_json
 from tessera.tune.synthetic import SyntheticMatmul
@@ -110,3 +111,46 @@ def test_a_task_where_nothing_runs_does_not_take_the_budget() -> None:
     states = tune([broken, fine], RandomSearch(), trials=96)
     assert len(states[0].measured) == 16  # its first round only
     assert len(states[1].measured) == 80
+
+
+def test_validation_lets_the_default_win_when_noise_slowed_it() -> None:
+    from tessera.tune.log import BestConfigs, Record
+    from tessera.tune.tuner import validate
+
+    task = SyntheticMatmul(16, 16, 16)
+    default = task.space.default()
+    base = task.cost(default)
+    # A configuration that is really slower than the default, but faster than
+    # the default's one measurement, which noise made 50% slower.
+    other = next(p for p in task.space if base < task.cost(p) < 1.5 * base)
+    log = TuningLog()
+    log.append(Record(task.target_key, task.key, default, 1.5 * base))
+    log.append(Record(task.target_key, task.key, other, task.cost(other)))
+    before = BestConfigs(log.records()).lookup(task.target_key, task.key)
+    assert before is not None
+    assert before.config == other
+    validate([task], runner=InlineRunner(), log=log, top=1, rounds=3)
+    after = BestConfigs(log.records()).lookup(task.target_key, task.key)
+    assert after is not None
+    assert after.config == default
+    per_config = Counter(config_json(r.config) for r in log.records())
+    assert per_config == {config_json(default): 4, config_json(other): 4}
+
+
+def test_validation_measures_top_configs_and_default_interleaved() -> None:
+    from tessera.tune.tuner import validate
+
+    task = SyntheticMatmul(16, 16, 16)
+    log = TuningLog()
+    tune([task], RandomSearch(), trials=20, log=log)
+    order: list[int] = []
+    validate(
+        [task],
+        runner=InlineRunner(),
+        log=log,
+        top=3,
+        rounds=2,
+        on_round=lambda r, t: order.append(r),
+    )
+    assert order == [0, 1]
+    assert len(log.records()) == 20 + 2 * 4  # top 3 (the default among the 20) or 3 + default

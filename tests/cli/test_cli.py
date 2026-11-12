@@ -142,11 +142,14 @@ def test_tune_shares_one_budget_across_models(tmp_path: Path) -> None:
         onnx.save(model, paths[-1])
     log = tmp_path / "c-generic.jsonl"
     args = ["tune", *map(str, paths), "-t", "c:generic", "--trials", "24", "--batch", "8"]
-    out = invoke(*args, "--log", str(log), "--strategy", "random")
+    out = invoke(*args, "--log", str(log), "--strategy", "random", "--validate-rounds", "0")
     assert "of 2 models" in out
     records = TuningLog(log).records()
     assert len(records) == 24
     assert {r.task.split(":")[0] for r in records} >= {"matmul"}
-    again = invoke(*args, "--log", str(log), "--strategy", "random")
+    # Resumed: the budget is spent, so only the validation measures anything.
+    again = invoke(*args, "--log", str(log), "--strategy", "random", "--validate-rounds", "1")
     assert "speedup" in again
-    assert len(TuningLog(log).records()) == 24  # resumed: the budget was already spent
+    validated = TuningLog(log).records()[24:]
+    assert validated
+    assert all(r.ok for r in validated)

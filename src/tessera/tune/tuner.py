@@ -144,3 +144,46 @@ def _batch(state: TaskState, strategy: SearchStrategy, n: int, rng: random.Rando
             seen.add(key)
             configs.append(c)
     return configs[:n]
+
+
+def validate(
+    tasks: Sequence[TuningTask],
+    *,
+    runner: Runner,
+    log: TuningLog,
+    top: int = 3,
+    rounds: int = 3,
+    on_round: Callable[[int, TuningTask], None] | None = None,
+) -> None:
+    """Measure each task's ``top`` fastest logged configurations and its default
+    again, ``rounds`` times, interleaved, appending every measurement to ``log``.
+
+    The search measures each candidate once, so noise can make a configuration
+    look faster than the default when it is not. ``compile`` takes the fastest
+    record; after this pass the contenders and the default each have several
+    measurements taken side by side, so the choice is the minimum over
+    interleaved runs, and a configuration that is really slower than the
+    default loses to it.
+    """
+    candidates: dict[str, list[Point]] = {}
+    for task in tasks:
+        fastest: dict[str, tuple[float, Point]] = {}
+        for record in log.records():
+            if record.target == task.target_key and record.task == task.key and record.ok:
+                key = config_json(record.config)
+                seconds = record.seconds if record.seconds is not None else float("inf")
+                if key not in fastest or seconds < fastest[key][0]:
+                    fastest[key] = (seconds, dict(record.config))
+        ranked = [point for _, point in sorted(fastest.values(), key=lambda sp: sp[0])][:top]
+        default = task.space.default()
+        if config_json(default) not in {config_json(p) for p in ranked}:
+            ranked.append(default)
+        candidates[task.key] = ranked
+    for r in range(rounds):
+        for task in tasks:
+            for result in runner.run(task, candidates[task.key]):
+                log.append(
+                    Record(task.target_key, task.key, result.config, result.seconds, result.error)
+                )
+            if on_round is not None:
+                on_round(r, task)
