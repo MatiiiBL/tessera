@@ -29,6 +29,7 @@ import random
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 
 from tessera.tune.log import Record, TuningLog, now
 from tessera.tune.measure import InlineRunner, MeasureResult, Runner
@@ -95,6 +96,10 @@ def tune(
     rng = random.Random(seed)
     weights = weights if weights is not None else [float(getattr(t, "weight", 1)) for t in tasks]
     progress = [TaskProgress(_resume(task, log), w) for task, w in zip(tasks, weights, strict=True)]
+    featurize = getattr(runner, "features", None)
+    if callable(featurize):
+        for p in progress:
+            p.state.featurize = partial(featurize, p.state.task)
     strategy.update([p.state for p in progress])
     started = time.monotonic()
     round_index = 0

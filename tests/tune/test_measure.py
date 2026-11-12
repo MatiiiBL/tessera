@@ -11,8 +11,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pytest
 
+from tessera.tir.stmt import PrimFunc
 from tessera.tune.measure import InlineRunner, LocalRunner
 from tessera.tune.space import KnobValue
 from tessera.tune.synthetic import SyntheticMatmul
@@ -127,3 +129,42 @@ def test_slow_worker_start_does_not_count_against_timeouts(
         [result] = runner.run(task, [task.space.default()])
     assert result.error is None
     assert result.seconds == task.cost(task.space.default())
+
+
+@dataclass(frozen=True)
+class Choosy(SyntheticMatmul):
+    """A template that rejects every point without vectorization."""
+
+    def schedule(self, config: Mapping[str, KnobValue]) -> PrimFunc:
+        if not config["vectorize"]:
+            raise ValueError("scalar code rejected")
+        return super().schedule(config)
+
+
+def test_features_are_computed_in_the_build_processes() -> None:
+    from tessera.tune.search import features_of
+
+    task = Choosy(16, 16, 16)
+    configs = [task.space.get(i) for i in range(0, task.space.size, task.space.size // 40)]
+    with LocalRunner(build_workers=2) as runner:
+        vectors = runner.features(task, configs)
+    assert len(vectors) == len(configs)
+    for config, vector in zip(configs, vectors, strict=True):
+        expected = features_of(task, config)
+        if expected is None:
+            assert vector is None
+        else:
+            assert np.array_equal(vector, expected)
+    assert any(v is None for v in vectors)
+    assert any(v is not None for v in vectors)
+
+
+def test_search_with_parallel_features_matches_the_inline_search() -> None:
+    from tessera.tune.search import EvolutionarySearch
+    from tessera.tune.tuner import tune
+
+    task = SyntheticMatmul(32, 32, 32)
+    inline = tune([task], EvolutionarySearch(), trials=64, seed=4)[0]
+    with LocalRunner(build_workers=3) as runner:
+        parallel = tune([task], EvolutionarySearch(), trials=64, seed=4, runner=runner)[0]
+    assert parallel.order == inline.order

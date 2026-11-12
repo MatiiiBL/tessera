@@ -44,7 +44,8 @@ from tessera.tune.task import Point, TuningTask
 DEFAULT_BUILD_WORKERS = 3
 STARTUP_TIMEOUT = 120.0  # seconds for a worker interpreter to import the tuner
 
-type _Op = Literal["build", "measure"]
+type _Op = Literal["build", "measure", "features"]
+FEATURE_BATCH = 32  # configurations per features job
 
 
 @dataclass(frozen=True)
@@ -121,6 +122,18 @@ class LocalRunner:
             else:
                 results[i] = MeasureResult(configs[i], None, f"measure: {value}")
         return [r for r in results if r is not None]
+
+    def features(self, task: TuningTask, configs: Sequence[Point]) -> list[Any]:
+        """Feature vectors of ``configs`` (None where the template rejects one),
+        computed in the build processes, which are idle while the search runs."""
+        batches = [
+            list(configs[i : i + FEATURE_BATCH]) for i in range(0, len(configs), FEATURE_BATCH)
+        ]
+        done = _map(self._builders, task, "features", batches, self.build_timeout)
+        out: list[Any] = []
+        for batch, (ok, value) in zip(batches, done, strict=True):
+            out.extend(value if ok else [None] * len(batch))
+        return out
 
     def close(self) -> None:
         for w in [*self._builders, self._measurer]:
@@ -289,7 +302,14 @@ def _serve(jobs: Connection, answers: Connection) -> None:
             if ident in broken:
                 raise RuntimeError(broken[ident])
             task = tasks[ident]
-            value = task.build(payload) if op == "build" else task.measure(payload)
+            if op == "build":
+                value = task.build(payload)
+            elif op == "measure":
+                value = task.measure(payload)
+            else:
+                from tessera.tune.search import features_of
+
+                value = [features_of(task, config) for config in payload]
             answers.send((job, True, value))
         except Exception as e:  # reported to the parent as this candidate's failure
             answers.send((job, False, _describe(e)))

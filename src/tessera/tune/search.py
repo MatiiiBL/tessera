@@ -16,7 +16,7 @@ proposes random configurations.
 from __future__ import annotations
 
 import random
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -36,6 +36,9 @@ class TaskState:
     measured: dict[str, float | None] = field(default_factory=dict)  # config json -> seconds
     points: dict[str, Point] = field(default_factory=dict)
     order: list[str] = field(default_factory=list)  # measurement order
+    featurize: Callable[[Sequence[Mapping[str, KnobValue]]], list[FeatureVector | None]] | None = (
+        None
+    )
     _features: dict[str, FeatureVector | None] = field(default_factory=dict, repr=False)
 
     def record(self, config: Mapping[str, KnobValue], seconds: float | None) -> None:
@@ -67,13 +70,23 @@ class TaskState:
 
     def features(self, config: Mapping[str, KnobValue]) -> FeatureVector | None:
         """Features of ``config``'s scheduled function; None if the template rejects it."""
-        key = config_json(config)
-        if key not in self._features:
-            try:
-                self._features[key] = extract(self.task.schedule(config))
-            except Exception:  # a template may reject a point of its own space
-                self._features[key] = None
-        return self._features[key]
+        return self.features_many([config])[0]
+
+    def features_many(
+        self, configs: Sequence[Mapping[str, KnobValue]]
+    ) -> list[FeatureVector | None]:
+        """Features of several configurations; the missing ones are computed by
+        ``featurize`` (in parallel processes) when it is set, else here."""
+        missing = {config_json(c): c for c in configs if config_json(c) not in self._features}
+        if missing:
+            todo = list(missing.values())
+            if self.featurize is not None:
+                vectors = self.featurize(todo)
+            else:
+                vectors = [features_of(self.task, c) for c in todo]
+            for key, vector in zip(missing, vectors, strict=True):
+                self._features[key] = vector
+        return [self._features[config_json(c)] for c in configs]
 
     def samples(self) -> list[Sample]:
         """Training samples for the cost model, in measurement order."""
@@ -83,6 +96,14 @@ class TaskState:
             if vector is not None:
                 out.append(Sample(self.task.key, vector, self.measured[key]))
         return out
+
+
+def features_of(task: TuningTask, config: Mapping[str, KnobValue]) -> FeatureVector | None:
+    """Features of ``config``'s scheduled function; None if the template rejects it."""
+    try:
+        return extract(task.schedule(config))
+    except Exception:  # a template may reject a point of its own space
+        return None
 
 
 class SearchStrategy(Protocol):
@@ -177,8 +198,10 @@ class EvolutionarySearch:
         points: dict[str, Point] = {}
 
         def score(population: list[Point]) -> list[float]:
-            fresh = [p for p in population if config_json(p) not in scores]
-            vectors = [state.features(p) for p in fresh]
+            fresh = list(
+                {config_json(p): p for p in population if config_json(p) not in scores}.values()
+            )
+            vectors = state.features_many(fresh)
             valid = [(p, v) for p, v in zip(fresh, vectors, strict=True) if v is not None]
             if valid:
                 predicted = self.model.predict(np.stack([v for _, v in valid]))
