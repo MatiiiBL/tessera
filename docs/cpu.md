@@ -273,7 +273,7 @@ vectorizing.
 | pattern | schedule | knobs (default) |
 |---|---|---|
 | `matmul` | 4 x 16 register tiles of C accumulated in a local buffer over the whole reduction (rows unrolled, columns vectorized); column strips outside row tiles, each strip of B packed once into a contiguous local copy when it fits the stack (64 KiB); epilogue on each tile | `tile_m` (4), `tile_n` (≤ 16, a multiple of 4 when one divides N), `order` (`nm`; `mn` puts row tiles outside), `pack_b` (on) |
-| `matmul`, NEON/SME | tiles of C (edge tiles allowed) computed by the GEMM microkernel, the reduction's init before each call and the epilogue after it | `kernel` (`micro`), `micro_m` (≤ 256 rows), `micro_n` (a whole number of tiles per thread, ≤ 256 columns), `micro_threads` (all) |
+| `matmul`, NEON/SME | tiles of C (edge tiles allowed) computed by the GEMM microkernel, the reduction's init before each call and the epilogue after it | `kernel` (`micro`), `micro_m` (≤ 256 rows), `micro_n` (a whole number of tiles per thread, ≤ 1024 columns; on SME sized for one thread), `micro_threads` (all; on SME all only when there are no more tiles than threads, else 1) |
 | `conv2d` | as matmul with output columns as rows: `tile_ow` columns x `tile_c` channels in registers over KH·KW·C; channel strips outside pixel tiles, each strip's weights packed when they fit the stack | `tile_ow` (4), `tile_c` (16), `order` (`co`), `pack_w` (on) |
 | `conv2d`, NEON/SME | strips of output channels computed by the implicit-GEMM microkernel over the whole output plane, bias (the reduction's init) before the call, epilogue after | `kernel` (`micro`), `micro_c` (a whole number of strips per thread, ≤ 256 channels), `micro_threads` (all) |
 | `depthwise_conv2d` | `tile_ow` columns x `tile_c` channels accumulated over the window | `tile_ow` (4), `tile_c` (16) |
@@ -315,6 +315,21 @@ that the microkernel needs are contiguous) and zero-padded to whole panels,
 so the microkernels' loads are sequential and only edge stores need care.
 Packing transposes 4 x 4 blocks with NEON `trn` instructions. B can also be
 read transposed (`*_sgemm_bt`), for attention's Q·Kᵀ.
+
+Two changes to this order matter for the skinny products of a transformer
+(128 rows of activations against a weight matrix), where each element of B
+feeds only 256 flops and packing costs about as much as multiplying:
+
+- When A is a single block of rows (m ≤ mc), the column loop runs inside
+  the reduction loop, so A is packed once per block of the reduction instead
+  of once per block of columns.
+- A B operand that is a model constant (`constant_b`, set by the templates
+  for graph constants) is packed at its first call, every block in the order
+  the driver uses them, and the packing is kept: later calls only read the
+  panels. Entries are keyed by the operand's address and geometry, and the
+  executor drops them all whenever it loads a model (as `run_kernel` does
+  before every call), so a packing is never reused for other data that came
+  to live at the same address.
 
 **NEON** (`tessera_neon.h`): an 8 x 12 block of C in 24 of the 32 vector
 registers. Per step of k it loads two registers of A and three of B and
@@ -421,56 +436,68 @@ counts addressed buffers as written.
 ## Measurements
 
 `uv run python -m tessera.backend.c.bench` writes every table below to
-`results/cpu/` as Markdown and JSON (about six minutes; `--quick` runs a few
-small cases, `--only STUDY` one study). Each kernel is timed by `measure`:
-the median of five samples on random inputs, each sample a loop of calls.
+`results/cpu/` as Markdown and JSON (about seven minutes; `--quick` runs a
+few small cases, `--only STUDY` one study; the `sme_models` study needs the
+exported models). A kernel's time is the median of five samples from
+`measure`, each a loop of calls on random inputs, unless a study says it
+keeps each variant's best time over interleaved rounds. All numbers were
+measured on 2026-11-12 with no other work on the machine; the load averages
+the files record (1.8 to 3.5) come from the benchmarks' own threads.
 
-**These numbers are provisional.** They were measured on 2026-11-12 while
-other work was running on the machine (load averages 4 to 7, including
-benchmarks that use Accelerate and the SME/AMX unit), which depresses the
-multi-threaded results most. They will be replaced by a run on a quiet
-machine with the same command.
+**GEMM** (`gemm.md`, fp32 GFLOPS). One thread: the generated loops 107 to
+117 (63 at 2048³ and 23 at 4096³, where a K x 16 strip of B is too large to
+pack and every row tile reads it with a stride of N floats), the NEON
+microkernel 116 to 123, the SME microkernel 1112 to 1496, NumPy's matmul
+(Accelerate) 1412 to 1767. Four threads: the generated loops 290 to 379, NEON
+356 to 412, NumPy 1276 to 1861. Accelerate gains little from threads, as
+expected of a library that runs on the matrix unit, and on one thread the SME
+microkernel comes within 7 to 21 percent of it.
 
-**GEMM** (`results/cpu/gemm.md`, GFLOPS, fp32): on one thread the generated
-loops reach 60 to 100 GFLOPS, the NEON microkernel 75 to 100 and the SME
-microkernel 490 to 920; NumPy's matmul (Accelerate) reaches 890 to 1470 and
-does not change between one and four threads, as expected of a library that
-runs on the matrix unit. The generated loops fall to 18 GFLOPS at 4096 x
-4096 x 4096, where a 4096 x 16 strip of B is too large to pack and every row
-tile reads it with a 16 KiB stride; the microkernels block for the caches
-themselves and keep their speed.
+**ResNet-50 convolutions** (`conv.md`, GFLOPS). On four threads the
+generated loops reach 200 to 352 and NEON (the microkernel on the deep
+layers, the loops on the 64-channel ones) 293 to 375. SME reaches 329 to
+1106 on one thread on every layer but the first (whose NCHW input keeps the
+generated loops) and less on four threads in these sustained runs.
 
-**ResNet-50 convolutions** (`results/cpu/conv.md`): on one thread the SME
-implicit GEMM reaches 200 to 560 GFLOPS on every layer but the first (whose
-NCHW input keeps the generated loops), against 30 to 70 for the generated
-loops and 45 to 60 for NEON.
+**Schedule choices** (`schedules.md`, best over interleaved rounds). On the
+transformer product with a 3072-wide weight matrix, column strips outside
+the row tiles with each strip packed give 113 GFLOPS against 95 with row
+tiles outside; where the weight fits the caches the variants are within a
+few percent. On NEON with four threads the convolution microkernel beats
+the generated loops on layer3's 3 x 3 (353 against 225 GFLOPS) and layer4's
+1 x 1 (397 against 229) and loses on layer1's 64-channel 3 x 3 (238 against
+369), where its 16-channel strips leave a third of the second 12-wide panel
+empty: this is the rule of the conv2d template's NEON default.
 
-**Schedule choices** (`results/cpu/schedules.md`, each variant's best time
-over interleaved rounds): on the transformer product with a 3072-wide weight
-matrix, walking column strips outside the row tiles and packing each strip
-gives 113 GFLOPS against 94 with row tiles outside; where the weight fits
-the caches the variants are within a few percent. On NEON with four threads
-the convolution microkernel beats the generated loops on layer3's 3 x 3
-convolution (230 against 168 GFLOPS) and loses on layer1's 64-channel one
-(240 against 367), where its 16-channel strips leave a third of the second
-12-wide panel empty; this is the rule the conv2d template's NEON default
-follows.
+**SME and threads.** The four performance cores share one SME unit, and
+how much more threads help depends on how long they keep it busy:
 
-**SME and threads** (`results/cpu/sme_threads.md`,
-`results/cpu/sme_template.md`): the four performance cores share one SME
-unit. The SME GEMM microkernel on its own gains little from more threads
-(1324 GFLOPS on one, 1444 on two, 1338 on four at 1024 x 1024 x 1024), and
-splitting the rows between one SME thread and three NEON threads is slower
-than SME alone at every split from 70 to 95 percent: the NEON part becomes
-the slowest thread. The matmul template's SME path behaves differently,
-because every tile also packs its operands and runs its init and copy on
-NEON, which other threads overlap with one thread's streaming computation:
-on the transformer products four threads reach 760 to 890 GFLOPS against
-630 to 680 on two and 440 to 470 on one. The templates therefore default to
-every thread. In the median-based tables (`gemm.md`, `conv.md`), measured
-while other work loaded the machine, SME on four threads comes out below one
-thread: a median counts the samples in which other processes took cores,
-which multi-threaded kernels feel most. The quiet re-run settles this.
+- The microkernel alone (`sme_threads.md`, rows of C split between threads):
+  at 1024³, 1342 GFLOPS on one thread, 1585 on two and 1624 on four; at
+  128 x 3072 x 768, 1103 on one and 595 on four. Giving one thread SME and
+  three NEON never beats SME alone (at best 1357 at 1024³ with 90 percent of
+  the rows on SME): the NEON part becomes the slowest thread.
+- The matmul template's tiles in short interleaved bursts (`sme_template.md`):
+  four threads 1576 to 1585 GFLOPS, one thread 962 to 1118, since other
+  threads overlap one thread's packing and epilogue with its streaming
+  computation.
+- In sustained single-kernel runs (`gemm.md`), several threads streaming
+  through the unit lose to one on most shapes.
+- On whole models (`sme_models.md`, best median latency over interleaved
+  rounds), with the thread count forced to one, to four, or chosen by the
+  matmul template's rule (every thread when a product has no more tiles
+  than threads, one thread otherwise; convolutions on every thread):
+
+  | c:sme | default | 1 thread | 4 threads |
+  |---|---:|---:|---:|
+  | ResNet-50 | 18.2 ms | 23.9 ms | 17.8 ms |
+  | BERT | 27.1 ms | 31.0 ms | 26.1 ms |
+  | GPT-2 | 38.0 ms | 44.3 ms | 55.9 ms |
+
+  The rule is within 4 percent of the better fixed choice on every model
+  and avoids the 47 percent loss of four threads on GPT-2, whose 50257-wide
+  output layer has 50 tiles that would keep all four threads contending for
+  the unit.
 
 ## Limitations
 
@@ -493,6 +520,9 @@ which multi-threaded kernels feel most. The quiet re-run settles this.
   parallel loop; with no work stealing, a thread delayed by other work on the
   machine delays the whole loop. Thread placement on Linux is left to the
   scheduler.
+- **Memory for packed weights.** The microkernels keep a packed copy of
+  every constant weight they multiply, as large as the weights themselves,
+  for as long as the model is loaded.
 - **Packing above 64 KiB.** A packed strip larger than the stack limit is not
   made at all (see Templates), so K x 16 strips of B are packed only up to
   K = 1024.

@@ -5,72 +5,72 @@
     "system": "Darwin 27.0.0",
     "compiler": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
     "numpy": "2.5.4",
-    "load_average": 7.98583984375,
-    "date": "2026-11-12T07:01:22+00:00"
+    "load_average": 3.4501953125,
+    "date": "2026-11-12T07:24:50+00:00"
   },
   "rows": [
     {
       "study": "sme_template",
       "case": "128x768x768",
       "variant": "t1",
-      "seconds": 0.0003386520832,
-      "gflops": 445.87041241032597
+      "seconds": 0.0001350791666,
+      "gflops": 1117.8255522343445
     },
     {
       "study": "sme_template",
       "case": "128x768x768",
       "variant": "t2",
-      "seconds": 0.0002409196429,
-      "gflops": 626.7440138232083
+      "seconds": 0.00011025625,
+      "gflops": 1369.491017516014
     },
     {
       "study": "sme_template",
       "case": "128x768x768",
       "variant": "t4",
-      "seconds": 0.0001990330882,
-      "gflops": 758.6424215468712
+      "seconds": 9.554528989e-05,
+      "gflops": 1580.3494256371866
     },
     {
       "study": "sme_template",
       "case": "128x768x3072",
       "variant": "t1",
-      "seconds": 0.001371591667,
-      "gflops": 440.34955193410343
+      "seconds": 0.0006279833335,
+      "gflops": 961.7767602744827
     },
     {
       "study": "sme_template",
       "case": "128x768x3072",
       "variant": "t2",
-      "seconds": 0.0008998035716,
-      "gflops": 671.235139604996
+      "seconds": 0.0004682946429,
+      "gflops": 1289.7430819617005
     },
     {
       "study": "sme_template",
       "case": "128x768x3072",
       "variant": "t4",
-      "seconds": 0.0006868958335,
-      "gflops": 879.2887458968697
+      "seconds": 0.0003832384262,
+      "gflops": 1575.9896051884998
     },
     {
       "study": "sme_template",
       "case": "128x3072x768",
       "variant": "t1",
-      "seconds": 0.001282944445,
-      "gflops": 470.77625095449866
+      "seconds": 0.000570189394,
+      "gflops": 1059.2616810406685
     },
     {
       "study": "sme_template",
       "case": "128x3072x768",
       "variant": "t2",
-      "seconds": 0.0008922083334,
-      "gflops": 676.9492655357438
+      "seconds": 0.0004513365384,
+      "gflops": 1338.2027037764867
     },
     {
       "study": "sme_template",
       "case": "128x3072x768",
       "variant": "t4",
-      "seconds": 0.0006770757576,
-      "gflops": 892.0416500228868
+      "seconds": 0.0003811536458,
+      "gflops": 1584.609730630576
     }
   ]
 }

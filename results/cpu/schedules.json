@@ -5,114 +5,114 @@
     "system": "Darwin 27.0.0",
     "compiler": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
     "numpy": "2.5.4",
-    "load_average": 4.84521484375,
-    "date": "2026-11-12T07:02:15+00:00"
+    "load_average": 3.52490234375,
+    "date": "2026-11-12T07:24:40+00:00"
   },
   "rows": [
     {
       "study": "schedules",
       "case": "128x768x768",
       "variant": "column strips outside, B packed",
-      "seconds": 0.001347325,
-      "gflops": 112.07017163639065
+      "seconds": 0.001327441666,
+      "gflops": 113.7488357247331
     },
     {
       "study": "schedules",
       "case": "128x768x768",
       "variant": "column strips outside",
-      "seconds": 0.00142885,
-      "gflops": 105.67585400846836
+      "seconds": 0.001410733333,
+      "gflops": 107.03294553826214
     },
     {
       "study": "schedules",
       "case": "128x768x768",
       "variant": "row tiles outside",
-      "seconds": 0.001391525,
-      "gflops": 108.51040692765133
+      "seconds": 0.001370658334,
+      "gflops": 110.1623506416443
     },
     {
       "study": "schedules",
       "case": "128x768x3072",
       "variant": "column strips outside, B packed",
-      "seconds": 0.005892125,
-      "gflops": 102.50627337335851
+      "seconds": 0.005839854168,
+      "gflops": 103.42377713977189
     },
     {
       "study": "schedules",
       "case": "128x768x3072",
       "variant": "column strips outside",
-      "seconds": 0.006008624998,
-      "gflops": 100.5188002581352
+      "seconds": 0.005844500001,
+      "gflops": 103.34156487238573
     },
     {
       "study": "schedules",
       "case": "128x768x3072",
       "variant": "row tiles outside",
-      "seconds": 0.005841812501,
-      "gflops": 103.38910670217692
+      "seconds": 0.005761562499,
+      "gflops": 104.82916328770698
     },
     {
       "study": "schedules",
       "case": "128x3072x768",
       "variant": "column strips outside, B packed",
-      "seconds": 0.005341541668,
-      "gflops": 113.07218281536768
+      "seconds": 0.005327416668,
+      "gflops": 113.37198001198281
     },
     {
       "study": "schedules",
       "case": "128x3072x768",
       "variant": "column strips outside",
-      "seconds": 0.006670895833,
-      "gflops": 90.53953038993586
+      "seconds": 0.006612000001,
+      "gflops": 91.34600361594889
     },
     {
       "study": "schedules",
       "case": "128x3072x768",
       "variant": "row tiles outside",
-      "seconds": 0.006420416667,
-      "gflops": 94.07174134108264
+      "seconds": 0.006359104167,
+      "gflops": 94.97875174530068
     },
     {
       "study": "schedules",
       "case": "layer1 3x3, neon t4",
       "variant": "conv: microkernel",
-      "seconds": 0.0009637916664,
-      "gflops": 239.8972890724717
+      "seconds": 0.0009711011906,
+      "gflops": 238.0915709279947
     },
     {
       "study": "schedules",
       "case": "layer1 3x3, neon t4",
       "variant": "conv: generated loops",
-      "seconds": 0.0006293598486,
-      "gflops": 367.37489452866254
+      "seconds": 0.0006260189396,
+      "gflops": 369.33548391959863
     },
     {
       "study": "schedules",
       "case": "layer3 3x3, neon t4",
       "variant": "conv: microkernel",
-      "seconds": 0.001006571429,
-      "gflops": 229.70154063452958
+      "seconds": 0.0006554015153,
+      "gflops": 352.777652480963
     },
     {
       "study": "schedules",
       "case": "layer3 3x3, neon t4",
       "variant": "conv: generated loops",
-      "seconds": 0.001378075,
-      "gflops": 167.7782471926419
+      "seconds": 0.001028220238,
+      "gflops": 224.865256931463
     },
     {
       "study": "schedules",
       "case": "layer4 1x1 reduce, neon t4",
       "variant": "conv: microkernel",
-      "seconds": 0.001333175,
-      "gflops": 154.15897837868246
+      "seconds": 0.0005170512822,
+      "gflops": 397.48648359506967
     },
     {
       "study": "schedules",
       "case": "layer4 1x1 reduce, neon t4",
       "variant": "conv: generated loops",
-      "seconds": 0.001377766667,
-      "gflops": 149.16959520258158
+      "seconds": 0.0008980468751,
+      "gflops": 228.85319430248526
     }
   ]
 }

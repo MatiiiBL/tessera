@@ -5,975 +5,975 @@
     "system": "Darwin 27.0.0",
     "compiler": "Apple clang version 21.0.0 (clang-2100.0.123.102)",
     "numpy": "2.5.4",
-    "load_average": 5.8935546875,
-    "date": "2026-11-12T07:00:01+00:00"
+    "load_average": 2.44287109375,
+    "date": "2026-11-12T07:22:56+00:00"
   },
   "rows": [
     {
       "study": "conv",
       "case": "conv1",
       "variant": "generic t1",
-      "seconds": 0.003638301724,
-      "gflops": 64.8730979190224
+      "seconds": 0.002149382653,
+      "gflops": 109.81195166461596
     },
     {
       "study": "conv",
       "case": "conv1",
       "variant": "generic t4",
-      "seconds": 0.001766021186,
-      "gflops": 133.64953142753524
+      "seconds": 0.0006713861502,
+      "gflops": 351.55313217243076
     },
     {
       "study": "conv",
       "case": "conv1",
       "variant": "neon t1",
-      "seconds": 0.005737411458,
-      "gflops": 41.138395899930245
+      "seconds": 0.002978412037,
+      "gflops": 79.24622284220241
     },
     {
       "study": "conv",
       "case": "conv1",
       "variant": "neon t4",
-      "seconds": 0.001751789651,
-      "gflops": 134.73529990616439
+      "seconds": 0.0006678682984,
+      "gflops": 353.40486225420165
     },
     {
       "study": "conv",
       "case": "conv1",
       "variant": "sme t1",
-      "seconds": 0.002071718992,
-      "gflops": 113.92853225337426
+      "seconds": 0.001118242917,
+      "gflops": 211.07033222549802
     },
     {
       "study": "conv",
       "case": "conv1",
       "variant": "sme t4",
-      "seconds": 0.002762483553,
-      "gflops": 85.44047393284156
+      "seconds": 0.001150847427,
+      "gflops": 205.09052587037675
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce",
       "variant": "generic t1",
-      "seconds": 0.0004315581897,
-      "gflops": 59.528732423913965
+      "seconds": 0.0002436814176,
+      "gflops": 105.42499404763805
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce",
       "variant": "generic t4",
-      "seconds": 0.0001664397821,
-      "gflops": 154.3507908738124
+      "seconds": 8.239461417e-05,
+      "gflops": 311.7935833402301
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce",
       "variant": "neon t1",
-      "seconds": 0.0004753114712,
-      "gflops": 54.04900482443901
+      "seconds": 0.0002769499027,
+      "gflops": 92.76086306420646
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce",
       "variant": "neon t4",
-      "seconds": 0.0001557700811,
-      "gflops": 164.92327550056083
+      "seconds": 8.198126844e-05,
+      "gflops": 313.36563203827393
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce",
       "variant": "sme t1",
-      "seconds": 0.000126036151,
-      "gflops": 203.8312959906242
+      "seconds": 7.815464502e-05,
+      "gflops": 328.70870302623507
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce",
       "variant": "sme t4",
-      "seconds": 0.0002074938039,
-      "gflops": 123.81146577456909
+      "seconds": 0.0001162923149,
+      "gflops": 220.9097997755998
     },
     {
       "study": "conv",
       "case": "layer1 3x3",
       "variant": "generic t1",
-      "seconds": 0.003412640278,
-      "gflops": 67.75135647625385
+      "seconds": 0.00226262766,
+      "gflops": 102.1869448904377
     },
     {
       "study": "conv",
       "case": "layer1 3x3",
       "variant": "generic t4",
-      "seconds": 0.001196407104,
-      "gflops": 193.25445931153547
+      "seconds": 0.0006912950617,
+      "gflops": 334.46066782455654
     },
     {
       "study": "conv",
       "case": "layer1 3x3",
       "variant": "neon t1",
-      "seconds": 0.003943052083,
-      "gflops": 58.63757392321516
+      "seconds": 0.002284818548,
+      "gflops": 101.19447262120178
     },
     {
       "study": "conv",
       "case": "layer1 3x3",
       "variant": "neon t4",
-      "seconds": 0.001379576453,
-      "gflops": 167.59564683581914
+      "seconds": 0.0006879449627,
+      "gflops": 336.0893974607484
     },
     {
       "study": "conv",
       "case": "layer1 3x3",
       "variant": "sme t1",
-      "seconds": 0.000763406622,
-      "gflops": 302.8674383178196
+      "seconds": 0.0003562952009,
+      "gflops": 648.9310196038625
     },
     {
       "study": "conv",
       "case": "layer1 3x3",
       "variant": "sme t4",
-      "seconds": 0.001123128125,
-      "gflops": 205.86342987359524
+      "seconds": 0.0004670588822,
+      "gflops": 495.0361010391679
     },
     {
       "study": "conv",
       "case": "layer1 1x1 expand",
       "variant": "generic t1",
-      "seconds": 0.001728363333,
-      "gflops": 59.45535064183174
+      "seconds": 0.001018414352,
+      "gflops": 100.90239576670854
     },
     {
       "study": "conv",
       "case": "layer1 1x1 expand",
       "variant": "generic t4",
-      "seconds": 0.00052009253,
-      "gflops": 197.5810881190699
+      "seconds": 0.0002999102564,
+      "gflops": 342.6373250234733
     },
     {
       "study": "conv",
       "case": "layer1 1x1 expand",
       "variant": "neon t1",
-      "seconds": 0.001859547872,
-      "gflops": 55.26098550476038
+      "seconds": 0.0009895794674,
+      "gflops": 103.84254260043473
     },
     {
       "study": "conv",
       "case": "layer1 1x1 expand",
       "variant": "neon t4",
-      "seconds": 0.0007182414154,
-      "gflops": 143.0722954659626
+      "seconds": 0.0003503240358,
+      "gflops": 293.3297104931331
     },
     {
       "study": "conv",
       "case": "layer1 1x1 expand",
       "variant": "sme t1",
-      "seconds": 0.0004062408293,
-      "gflops": 252.95450527970848
+      "seconds": 0.0002123213519,
+      "gflops": 483.98546392262307
     },
     {
       "study": "conv",
       "case": "layer1 1x1 expand",
       "variant": "sme t4",
-      "seconds": 0.0005250739171,
-      "gflops": 195.70663225389148
+      "seconds": 0.0002911925778,
+      "gflops": 352.8951485521002
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce (256)",
       "variant": "generic t1",
-      "seconds": 0.00170954661,
-      "gflops": 60.109766764417145
+      "seconds": 0.0009662767857,
+      "gflops": 106.3468040635554
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce (256)",
       "variant": "generic t4",
-      "seconds": 0.0006768642086,
-      "gflops": 151.81841009520326
+      "seconds": 0.0003198265278,
+      "gflops": 321.3005772437367
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce (256)",
       "variant": "neon t1",
-      "seconds": 0.002290693182,
-      "gflops": 44.85997898255411
+      "seconds": 0.001057852222,
+      "gflops": 97.14064579428563
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce (256)",
       "variant": "neon t4",
-      "seconds": 0.0006978727034,
-      "gflops": 147.24812634074434
+      "seconds": 0.0003198676633,
+      "gflops": 321.2592574686808
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce (256)",
       "variant": "sme t1",
-      "seconds": 0.0003960795,
-      "gflops": 259.4439954605073
+      "seconds": 0.0001986328858,
+      "gflops": 517.3385443509476
     },
     {
       "study": "conv",
       "case": "layer1 1x1 reduce (256)",
       "variant": "sme t4",
-      "seconds": 0.0006531363304,
-      "gflops": 157.33384167600425
+      "seconds": 0.0003250292135,
+      "gflops": 316.1575751713161
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce",
       "variant": "generic t1",
-      "seconds": 0.003419240278,
-      "gflops": 60.107181505306315
+      "seconds": 0.001944748428,
+      "gflops": 105.6799393900834
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce",
       "variant": "generic t4",
-      "seconds": 0.001378009259,
-      "gflops": 149.1433346022242
+      "seconds": 0.0006172857906,
+      "gflops": 332.942859093248
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce",
       "variant": "neon t1",
-      "seconds": 0.00355632,
-      "gflops": 57.79032707967787
+      "seconds": 0.001877592803,
+      "gflops": 109.45978045485722
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce",
       "variant": "neon t4",
-      "seconds": 0.001507307292,
-      "gflops": 136.34969928878976
+      "seconds": 0.0007044623756,
+      "gflops": 291.74147991218854
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce",
       "variant": "sme t1",
-      "seconds": 0.0005269407143,
-      "gflops": 390.0266015181967
+      "seconds": 0.0002809928215,
+      "gflops": 731.4097737546651
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce",
       "variant": "sme t4",
-      "seconds": 0.0007121880734,
-      "gflops": 288.57671684789545
+      "seconds": 0.0003490416667,
+      "gflops": 588.8147909190579
     },
     {
       "study": "conv",
       "case": "layer2 3x3 stride 2",
       "variant": "generic t1",
-      "seconds": 0.004249236667,
-      "gflops": 54.41236300053795
+      "seconds": 0.002381345644,
+      "gflops": 97.09258653087825
     },
     {
       "study": "conv",
       "case": "layer2 3x3 stride 2",
       "variant": "generic t4",
-      "seconds": 0.001466872396,
-      "gflops": 157.62175948670588
+      "seconds": 0.0007583568376,
+      "gflops": 304.88418714825866
     },
     {
       "study": "conv",
       "case": "layer2 3x3 stride 2",
       "variant": "neon t1",
-      "seconds": 0.004545232456,
-      "gflops": 50.86890719852767
+      "seconds": 0.002071651316,
+      "gflops": 111.60710599041757
     },
     {
       "study": "conv",
       "case": "layer2 3x3 stride 2",
       "variant": "neon t4",
-      "seconds": 0.002188394965,
-      "gflops": 105.65323522392588
+      "seconds": 0.0007704077135,
+      "gflops": 300.115125989065
     },
     {
       "study": "conv",
       "case": "layer2 3x3 stride 2",
       "variant": "sme t1",
-      "seconds": 0.0006671175,
-      "gflops": 346.5821358306446
+      "seconds": 0.0002980677778,
+      "gflops": 775.6994389213716
     },
     {
       "study": "conv",
       "case": "layer2 3x3 stride 2",
       "variant": "sme t4",
-      "seconds": 0.0008445156582,
-      "gflops": 273.779421085931
+      "seconds": 0.0003266538908,
+      "gflops": 707.8164825581806
     },
     {
       "study": "conv",
       "case": "layer2 1x1 expand",
       "variant": "generic t1",
-      "seconds": 0.001759175,
-      "gflops": 58.41399974419828
+      "seconds": 0.001019524775,
+      "gflops": 100.79249717104716
     },
     {
       "study": "conv",
       "case": "layer2 1x1 expand",
       "variant": "generic t4",
-      "seconds": 0.0006823447488,
-      "gflops": 150.59901637803887
+      "seconds": 0.0003202535403,
+      "gflops": 320.8721686690438
     },
     {
       "study": "conv",
       "case": "layer2 1x1 expand",
       "variant": "neon t1",
-      "seconds": 0.001872967882,
-      "gflops": 54.86503478653885
+      "seconds": 0.0009374594017,
+      "gflops": 109.61589143343487
     },
     {
       "study": "conv",
       "case": "layer2 1x1 expand",
       "variant": "neon t4",
-      "seconds": 0.0007658863994,
-      "gflops": 134.17191907377278
+      "seconds": 0.000296349288,
+      "gflops": 346.75449599865414
     },
     {
       "study": "conv",
       "case": "layer2 1x1 expand",
       "variant": "sme t1",
-      "seconds": 0.0003241717405,
-      "gflops": 316.9938497461348
+      "seconds": 0.0001709546078,
+      "gflops": 601.0978547019895
     },
     {
       "study": "conv",
       "case": "layer2 1x1 expand",
       "variant": "sme t4",
-      "seconds": 0.0003561978758,
-      "gflops": 288.49259072420335
+      "seconds": 0.0002098395706,
+      "gflops": 489.709580067164
     },
     {
       "study": "conv",
       "case": "layer2 downsample",
       "variant": "generic t1",
-      "seconds": 0.003423770833,
-      "gflops": 60.02764379528202
+      "seconds": 0.001882857456,
+      "gflops": 109.15372023786384
     },
     {
       "study": "conv",
       "case": "layer2 downsample",
       "variant": "generic t4",
-      "seconds": 0.001391392361,
-      "gflops": 147.70880001978105
+      "seconds": 0.0006119809368,
+      "gflops": 335.82891825789955
     },
     {
       "study": "conv",
       "case": "layer2 downsample",
       "variant": "neon t1",
-      "seconds": 0.003509723333,
-      "gflops": 58.55757747842969
+      "seconds": 0.001815129735,
+      "gflops": 113.22656008387192
     },
     {
       "study": "conv",
       "case": "layer2 downsample",
       "variant": "neon t4",
-      "seconds": 0.001571253109,
-      "gflops": 130.80062965208745
+      "seconds": 0.000562950932,
+      "gflops": 365.077814632697
     },
     {
       "study": "conv",
       "case": "layer2 downsample",
       "variant": "sme t1",
-      "seconds": 0.0005398700451,
-      "gflops": 380.68586665506035
+      "seconds": 0.0002491311728,
+      "gflops": 824.9505418777526
     },
     {
       "study": "conv",
       "case": "layer2 downsample",
       "variant": "sme t4",
-      "seconds": 0.0007709040404,
-      "gflops": 266.59724846345483
+      "seconds": 0.0003682954841,
+      "gflops": 558.0326256300139
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce (512)",
       "variant": "generic t1",
-      "seconds": 0.001980701797,
-      "gflops": 51.88082736918929
+      "seconds": 0.001129800379,
+      "gflops": 90.95451719617454
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce (512)",
       "variant": "generic t4",
-      "seconds": 0.0006476386946,
-      "gflops": 158.6694075829854
+      "seconds": 0.0003049435096,
+      "gflops": 336.98191555148287
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce (512)",
       "variant": "neon t1",
-      "seconds": 0.002018889167,
-      "gflops": 50.89949942754832
+      "seconds": 0.0009337416667,
+      "gflops": 110.05233210077547
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce (512)",
       "variant": "neon t4",
-      "seconds": 0.0008273214869,
-      "gflops": 124.20860527271772
+      "seconds": 0.0003464548333,
+      "gflops": 296.60561240032786
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce (512)",
       "variant": "sme t1",
-      "seconds": 0.0002621630577,
-      "gflops": 391.97150392406337
+      "seconds": 0.0001188405126,
+      "gflops": 864.6920629320814
     },
     {
       "study": "conv",
       "case": "layer2 1x1 reduce (512)",
       "variant": "sme t4",
-      "seconds": 0.000382853139,
-      "gflops": 268.4069621798243
+      "seconds": 0.0001901777183,
+      "gflops": 540.3390519066922
     },
     {
       "study": "conv",
       "case": "layer2 3x3",
       "variant": "generic t1",
-      "seconds": 0.00418692,
-      "gflops": 55.22221776389327
+      "seconds": 0.002340398374,
+      "gflops": 98.79130432176588
     },
     {
       "study": "conv",
       "case": "layer2 3x3",
       "variant": "generic t4",
-      "seconds": 0.001448854825,
-      "gflops": 159.5819015200505
+      "seconds": 0.0007428423132,
+      "gflops": 311.2518012120153
     },
     {
       "study": "conv",
       "case": "layer2 3x3",
       "variant": "neon t1",
-      "seconds": 0.0042485,
-      "gflops": 54.421797810992125
+      "seconds": 0.002038252252,
+      "gflops": 113.43591440810539
     },
     {
       "study": "conv",
       "case": "layer2 3x3",
       "variant": "neon t4",
-      "seconds": 0.001381624498,
-      "gflops": 167.34721216560246
+      "seconds": 0.00076057277,
+      "gflops": 303.99590561202973
     },
     {
       "study": "conv",
       "case": "layer2 3x3",
       "variant": "sme t1",
-      "seconds": 0.0005254625748,
-      "gflops": 440.01422572864084
+      "seconds": 0.0002614998501,
+      "gflops": 884.1726215582256
     },
     {
       "study": "conv",
       "case": "layer2 3x3",
       "variant": "sme t4",
-      "seconds": 0.0005341284571,
-      "gflops": 432.87528482443776
+      "seconds": 0.0003010744535,
+      "gflops": 767.9529276302414
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce",
       "variant": "generic t1",
-      "seconds": 0.003037591346,
-      "gflops": 67.65916563155761
+      "seconds": 0.001970467262,
+      "gflops": 104.30058898385293
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce",
       "variant": "generic t4",
-      "seconds": 0.001029602362,
-      "gflops": 199.61191192372186
+      "seconds": 0.0006162992424,
+      "gflops": 333.47582125796237
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce",
       "variant": "neon t1",
-      "seconds": 0.003478852564,
-      "gflops": 59.077207849156785
+      "seconds": 0.001852875,
+      "gflops": 110.92000053970182
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce",
       "variant": "neon t4",
-      "seconds": 0.00117068192,
-      "gflops": 175.5565645021664
+      "seconds": 0.0006333893581,
+      "gflops": 324.4779745218773
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce",
       "variant": "sme t1",
-      "seconds": 0.0003690628531,
-      "gflops": 556.8723437585109
+      "seconds": 0.0001857551961,
+      "gflops": 1106.4072516677234
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce",
       "variant": "sme t4",
-      "seconds": 0.0008014795246,
-      "gflops": 256.4268826487748
+      "seconds": 0.000317184291,
+      "gflops": 647.9542077952404
     },
     {
       "study": "conv",
       "case": "layer3 3x3 stride 2",
       "variant": "generic t1",
-      "seconds": 0.006137480556,
-      "gflops": 37.67197401121999
+      "seconds": 0.003765514881,
+      "gflops": 61.402229258644645
     },
     {
       "study": "conv",
       "case": "layer3 3x3 stride 2",
       "variant": "generic t4",
-      "seconds": 0.002038439744,
-      "gflops": 113.42548077791012
+      "seconds": 0.001157117424,
+      "gflops": 199.81637403811146
     },
     {
       "study": "conv",
       "case": "layer3 3x3 stride 2",
       "variant": "neon t1",
-      "seconds": 0.004630697368,
-      "gflops": 49.93006228343964
+      "seconds": 0.002073,
+      "gflops": 111.53449493487699
     },
     {
       "study": "conv",
       "case": "layer3 3x3 stride 2",
       "variant": "neon t4",
-      "seconds": 0.001882726608,
-      "gflops": 122.80646962631124
+      "seconds": 0.0007160580808,
+      "gflops": 322.8942095614431
     },
     {
       "study": "conv",
       "case": "layer3 3x3 stride 2",
       "variant": "sme t1",
-      "seconds": 0.0005975668146,
-      "gflops": 386.9207632535089
+      "seconds": 0.0002266940407,
+      "gflops": 1019.9253905662991
     },
     {
       "study": "conv",
       "case": "layer3 3x3 stride 2",
       "variant": "sme t4",
-      "seconds": 0.0008578690209,
-      "gflops": 269.5178428956835
+      "seconds": 0.0003524693268,
+      "gflops": 655.974833609266
     },
     {
       "study": "conv",
       "case": "layer3 1x1 expand",
       "variant": "generic t1",
-      "seconds": 0.002666109069,
-      "gflops": 38.54322735511463
+      "seconds": 0.001609820964,
+      "gflops": 63.833463657142445
     },
     {
       "study": "conv",
       "case": "layer3 1x1 expand",
       "variant": "generic t4",
-      "seconds": 0.0008566775114,
-      "gflops": 119.95231184727469
+      "seconds": 0.0004827938866,
+      "gflops": 212.84537947171265
     },
     {
       "study": "conv",
       "case": "layer3 1x1 expand",
       "variant": "neon t1",
-      "seconds": 0.001673679965,
-      "gflops": 61.39790769378064
+      "seconds": 0.0009300817308,
+      "gflops": 110.48539563465212
     },
     {
       "study": "conv",
       "case": "layer3 1x1 expand",
       "variant": "neon t4",
-      "seconds": 0.0005444037115,
-      "gflops": 188.7578020305249
+      "seconds": 0.0002826631098,
+      "gflops": 363.5438953201526
     },
     {
       "study": "conv",
       "case": "layer3 1x1 expand",
       "variant": "sme t1",
-      "seconds": 0.0003073556763,
-      "gflops": 334.33723833263076
+      "seconds": 0.0001433203364,
+      "gflops": 716.9983728840871
     },
     {
       "study": "conv",
       "case": "layer3 1x1 expand",
       "variant": "sme t4",
-      "seconds": 0.0003713847477,
-      "gflops": 276.695391063848
+      "seconds": 0.0001995109827,
+      "gflops": 515.0616101897432
     },
     {
       "study": "conv",
       "case": "layer3 downsample",
       "variant": "generic t1",
-      "seconds": 0.006544377451,
-      "gflops": 31.404193529301374
+      "seconds": 0.003183403646,
+      "gflops": 64.56011202294137
     },
     {
       "study": "conv",
       "case": "layer3 downsample",
       "variant": "generic t4",
-      "seconds": 0.00177978655,
-      "gflops": 115.47502480002449
+      "seconds": 0.000967564296,
+      "gflops": 212.41058278983874
     },
     {
       "study": "conv",
       "case": "layer3 downsample",
       "variant": "neon t1",
-      "seconds": 0.004240385417,
-      "gflops": 48.46750372644252
+      "seconds": 0.001838330616,
+      "gflops": 111.79757014937296
     },
     {
       "study": "conv",
       "case": "layer3 downsample",
       "variant": "neon t4",
-      "seconds": 0.001732821809,
-      "gflops": 118.60474916264168
+      "seconds": 0.0005481714357,
+      "gflops": 374.9208415749635
     },
     {
       "study": "conv",
       "case": "layer3 downsample",
       "variant": "sme t1",
-      "seconds": 0.0006023937377,
-      "gflops": 341.17369278223157
+      "seconds": 0.0002236420455,
+      "gflops": 918.972528356704
     },
     {
       "study": "conv",
       "case": "layer3 downsample",
       "variant": "sme t4",
-      "seconds": 0.0008361203704,
-      "gflops": 245.80300071110432
+      "seconds": 0.0003707270951,
+      "gflops": 554.372471600876
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce (1024)",
       "variant": "generic t1",
-      "seconds": 0.003096566964,
-      "gflops": 33.18528202188752
+      "seconds": 0.001606768519,
+      "gflops": 63.95473074363862
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce (1024)",
       "variant": "generic t4",
-      "seconds": 0.0009015641026,
-      "gflops": 113.98019031996894
+      "seconds": 0.0004849128631,
+      "gflops": 211.915285857881
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce (1024)",
       "variant": "neon t1",
-      "seconds": 0.001776515306,
-      "gflops": 57.84382923858693
+      "seconds": 0.0008998802083,
+      "gflops": 114.19347492276657
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce (1024)",
       "variant": "neon t4",
-      "seconds": 0.0007638510803,
-      "gflops": 134.52942680874546
+      "seconds": 0.0003190254551,
+      "gflops": 322.1073627738867
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce (1024)",
       "variant": "sme t1",
-      "seconds": 0.0002639099003,
-      "gflops": 389.37701042358356
+      "seconds": 0.0001068241312,
+      "gflops": 961.9591270778341
     },
     {
       "study": "conv",
       "case": "layer3 1x1 reduce (1024)",
       "variant": "sme t4",
-      "seconds": 0.0004147392905,
-      "gflops": 247.77119109239547
+      "seconds": 0.000163897218,
+      "gflops": 626.9810388117753
     },
     {
       "study": "conv",
       "case": "layer3 3x3",
       "variant": "generic t1",
-      "seconds": 0.006882841667,
-      "gflops": 33.59237640298315
+      "seconds": 0.003749912202,
+      "gflops": 61.65771237968841
     },
     {
       "study": "conv",
       "case": "layer3 3x3",
       "variant": "generic t4",
-      "seconds": 0.002461835993,
-      "gflops": 93.91811991433502
+      "seconds": 0.001156667151,
+      "gflops": 199.89415952558684
     },
     {
       "study": "conv",
       "case": "layer3 3x3",
       "variant": "neon t1",
-      "seconds": 0.004624199561,
-      "gflops": 50.00022273043939
+      "seconds": 0.002010936966,
+      "gflops": 114.97675556678786
     },
     {
       "study": "conv",
       "case": "layer3 3x3",
       "variant": "neon t4",
-      "seconds": 0.001915873485,
-      "gflops": 120.68177247100427
+      "seconds": 0.00071885,
+      "gflops": 321.64013076441535
     },
     {
       "study": "conv",
       "case": "layer3 3x3",
       "variant": "sme t1",
-      "seconds": 0.0004950679451,
-      "gflops": 467.0288397551111
+      "seconds": 0.0002120558382,
+      "gflops": 1090.3307825080196
     },
     {
       "study": "conv",
       "case": "layer3 3x3",
       "variant": "sme t4",
-      "seconds": 0.0008450358187,
-      "gflops": 273.61089658387993
+      "seconds": 0.0003449773438,
+      "gflops": 670.2208482828489
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce",
       "variant": "generic t1",
-      "seconds": 0.005784196078,
-      "gflops": 35.53145384916877
+      "seconds": 0.003283648437,
+      "gflops": 62.589190025399795
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce",
       "variant": "generic t4",
-      "seconds": 0.00180136017,
-      "gflops": 114.09206188898914
+      "seconds": 0.0009901163194,
+      "gflops": 207.57247605467558
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce",
       "variant": "neon t1",
-      "seconds": 0.003798188333,
-      "gflops": 54.110243616505784
+      "seconds": 0.001859409091,
+      "gflops": 110.53022005473242
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce",
       "variant": "neon t4",
-      "seconds": 0.001579419922,
-      "gflops": 130.12429002399276
+      "seconds": 0.0005657010281,
+      "gflops": 363.30302720197585
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce",
       "variant": "sme t1",
-      "seconds": 0.0005047009804,
-      "gflops": 407.2131895545651
+      "seconds": 0.0002218403371,
+      "gflops": 926.4360967291373
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce",
       "variant": "sme t4",
-      "seconds": 0.0008482450249,
-      "gflops": 242.28953895040996
+      "seconds": 0.0003909965946,
+      "gflops": 525.6334680107723
     },
     {
       "study": "conv",
       "case": "layer4 3x3 stride 2",
       "variant": "generic t1",
-      "seconds": 0.006089143229,
-      "gflops": 37.97102470817902
+      "seconds": 0.003212317708,
+      "gflops": 71.97638248053391
     },
     {
       "study": "conv",
       "case": "layer4 3x3 stride 2",
       "variant": "generic t4",
-      "seconds": 0.002246149306,
-      "gflops": 102.93661573715528
+      "seconds": 0.0009748981092,
+      "gflops": 237.16427985457005
     },
     {
       "study": "conv",
       "case": "layer4 3x3 stride 2",
       "variant": "neon t1",
-      "seconds": 0.004308369048,
-      "gflops": 53.66555311860555
+      "seconds": 0.002290380631,
+      "gflops": 100.94872654378469
     },
     {
       "study": "conv",
       "case": "layer4 3x3 stride 2",
       "variant": "neon t4",
-      "seconds": 0.001216756006,
-      "gflops": 190.02249165803585
+      "seconds": 0.0006928141026,
+      "gflops": 333.727340613173
     },
     {
       "study": "conv",
       "case": "layer4 3x3 stride 2",
       "variant": "sme t1",
-      "seconds": 0.0007747986111,
-      "gflops": 298.41432946265127
+      "seconds": 0.0002854753861,
+      "gflops": 809.9157379509014
     },
     {
       "study": "conv",
       "case": "layer4 3x3 stride 2",
       "variant": "sme t4",
-      "seconds": 0.0009403268398,
-      "gflops": 245.8836632262637
+      "seconds": 0.0005062138713,
+      "gflops": 456.74569803121085
     },
     {
       "study": "conv",
       "case": "layer4 1x1 expand",
       "variant": "generic t1",
-      "seconds": 0.001455780914,
-      "gflops": 70.58785220479955
+      "seconds": 0.001120969118,
+      "gflops": 91.67107848906859
     },
     {
       "study": "conv",
       "case": "layer4 1x1 expand",
       "variant": "generic t4",
-      "seconds": 0.0005911704545,
-      "gflops": 173.82541231177174
+      "seconds": 0.0003790486905,
+      "gflops": 271.1009181022352
     },
     {
       "study": "conv",
       "case": "layer4 1x1 expand",
       "variant": "neon t1",
-      "seconds": 0.002135269445,
-      "gflops": 48.125283785906475
+      "seconds": 0.001020352996,
+      "gflops": 100.71068385435507
     },
     {
       "study": "conv",
       "case": "layer4 1x1 expand",
       "variant": "neon t4",
-      "seconds": 0.000614396124,
-      "gflops": 167.25438847332313
+      "seconds": 0.0003058579483,
+      "gflops": 335.97442398066335
     },
     {
       "study": "conv",
       "case": "layer4 1x1 expand",
       "variant": "sme t1",
-      "seconds": 0.0003831769006,
-      "gflops": 268.18017432442275
+      "seconds": 0.00013678641,
+      "gflops": 751.2474960049029
     },
     {
       "study": "conv",
       "case": "layer4 1x1 expand",
       "variant": "sme t4",
-      "seconds": 0.0004237326186,
-      "gflops": 242.51247954315502
+      "seconds": 0.0002092228725,
+      "gflops": 491.15303108172367
     },
     {
       "study": "conv",
       "case": "layer4 downsample",
       "variant": "generic t1",
-      "seconds": 0.005582644737,
-      "gflops": 36.81425304352123
+      "seconds": 0.003087579545,
+      "gflops": 66.56375746912133
     },
     {
       "study": "conv",
       "case": "layer4 downsample",
       "variant": "generic t4",
-      "seconds": 0.001508130522,
-      "gflops": 136.2752712725749
+      "seconds": 0.0008752443783,
+      "gflops": 234.815442515822
     },
     {
       "study": "conv",
       "case": "layer4 downsample",
       "variant": "neon t1",
-      "seconds": 0.004006361742,
-      "gflops": 51.29863682688892
+      "seconds": 0.00205247093,
+      "gflops": 100.13340164579091
     },
     {
       "study": "conv",
       "case": "layer4 downsample",
       "variant": "neon t4",
-      "seconds": 0.00116946658,
-      "gflops": 175.7390074370488
+      "seconds": 0.000606890625,
+      "gflops": 338.64569254138667
     },
     {
       "study": "conv",
       "case": "layer4 downsample",
       "variant": "sme t1",
-      "seconds": 0.0007870657714,
-      "gflops": 261.12289908685517
+      "seconds": 0.0002578435592,
+      "gflops": 797.0759348717522
     },
     {
       "study": "conv",
       "case": "layer4 downsample",
       "variant": "sme t4",
-      "seconds": 0.001053222388,
-      "gflops": 195.13532786771717
+      "seconds": 0.0004103477908,
+      "gflops": 500.84562560778875
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce (2048)",
       "variant": "generic t1",
-      "seconds": 0.002552958333,
-      "gflops": 40.251517884839686
+      "seconds": 0.001479419118,
+      "gflops": 69.45999733930707
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce (2048)",
       "variant": "generic t4",
-      "seconds": 0.0007361600318,
-      "gflops": 139.5898222683162
+      "seconds": 0.0004264145753,
+      "gflops": 240.98718466108681
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce (2048)",
       "variant": "neon t1",
-      "seconds": 0.002098200355,
-      "gflops": 48.97551740238839
+      "seconds": 0.0009950200803,
+      "gflops": 103.2747479518379
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce (2048)",
       "variant": "neon t4",
-      "seconds": 0.0006566899171,
-      "gflops": 156.48245134293992
+      "seconds": 0.0003060916065,
+      "gflops": 335.7179544222491
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce (2048)",
       "variant": "sme t1",
-      "seconds": 0.000436473267,
-      "gflops": 235.43354374553255
+      "seconds": 0.0001204033483,
+      "gflops": 853.4683582383399
     },
     {
       "study": "conv",
       "case": "layer4 1x1 reduce (2048)",
       "variant": "sme t4",
-      "seconds": 0.0004562725177,
-      "gflops": 225.21726383609453
+      "seconds": 0.0002268533202,
+      "gflops": 452.9818999757359
     },
     {
       "study": "conv",
       "case": "layer4 3x3",
       "variant": "generic t1",
-      "seconds": 0.00545520625,
-      "gflops": 42.38355020949025
+      "seconds": 0.002768254762,
+      "gflops": 83.52230118912733
     },
     {
       "study": "conv",
       "case": "layer4 3x3",
       "variant": "generic t4",
-      "seconds": 0.001581042151,
-      "gflops": 146.23962293083736
+      "seconds": 0.0008611630291,
+      "gflops": 268.4869184893344
     },
     {
       "study": "conv",
       "case": "layer4 3x3",
       "variant": "neon t1",
-      "seconds": 0.00481621627,
-      "gflops": 48.006774413392364
+      "seconds": 0.002290464461,
+      "gflops": 100.9450318644346
     },
     {
       "study": "conv",
       "case": "layer4 3x3",
       "variant": "neon t4",
-      "seconds": 0.00140076626,
-      "gflops": 165.06037773925254
+      "seconds": 0.0006884493159,
+      "gflops": 335.84318069623055
     },
     {
       "study": "conv",
       "case": "layer4 3x3",
       "variant": "sme t1",
-      "seconds": 0.0008464022277,
-      "gflops": 273.16918650874675
+      "seconds": 0.0002747819343,
+      "gflops": 841.4345309454358
     },
     {
       "study": "conv",
       "case": "layer4 3x3",
       "variant": "sme t4",
-      "seconds": 0.001078168017,
-      "gflops": 214.44803069130552
+      "seconds": 0.000496542011,
+      "gflops": 465.64238851483617
     }
   ]
 }
