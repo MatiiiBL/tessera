@@ -29,8 +29,8 @@ def _to_reshape(rw: Rewriter, node: Node) -> Value | None:
 
 
 def transpose(rw: Rewriter, value: Value, perm: tuple[int, ...], name: str) -> Value:
-    """``value`` transposed: computed now if it is a constant and folding is on."""
-    if value.data is not None and rw.fold:
+    """``value`` transposed; a constant is relaid out at compile time (even without folding)."""
+    if value.data is not None:
         return rw.const(np.asarray(np.transpose(value.data, perm), order="C"), name)
     return rw.op("Transpose", value, name=name, perm=perm)
 

@@ -95,7 +95,7 @@ def test_constants_fold_and_merge() -> None:
     assert len(out.constants()) == 2
     same_outputs(g, out)
     unfolded = optimize(g, fold=False)
-    assert ops(unfolded) == ["Mul", "Transpose", "Add", "Mul", "Mul"]
+    assert ops(unfolded) == ["Mul", "Transpose", "Add", "Add", "Mul", "Mul"]
     same_outputs(g, unfolded)
 
 
@@ -105,6 +105,20 @@ def test_large_expansions_are_not_folded() -> None:
     big = g.op("Expand", g.add_constant(np.float32(3), "three"), shape=(1024, 1024))
     g.set_outputs([g.op("Add", x, big)])
     assert ops(optimize(g)) == ["Expand", "Add"]
+
+
+def test_fold_off_is_the_minimal_pipeline() -> None:
+    g = Graph()
+    x = g.add_input("x", TensorType((2, 3), F32))
+    w = const(g, 4, 3, name="w")
+    y = g.op("Gemm", x, w, const(g, 4, name="b"), transB=1, alpha=0.5)
+    y = g.op("Reshape", g.op("Identity", y), shape=(2, 4))
+    g.set_outputs([g.op("Add", y, y)])
+    out = optimize(g, fold=False)
+    # The weight is relaid out at compile time; alpha stays a node; the no-op Reshape stays.
+    assert ops(out) == ["MatMul", "Mul", "Add", "Reshape", "Add"]
+    assert out.nodes[0].inputs[1].shape == (3, 4)
+    same_outputs(g, out)
 
 
 def test_dead_nodes_are_removed() -> None:

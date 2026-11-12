@@ -14,10 +14,12 @@ LAYOUTS = ("NHWC", "NCHW")
 def optimize(graph: Graph, *, layout: str = "NHWC", fold: bool = True) -> Graph:
     """A new graph computing the same outputs with canonical operators only.
 
-    ONNX-only operators are rewritten, no-op nodes removed, nodes on
-    constants evaluated at compile time (unless ``fold`` is False), equal
-    subexpressions merged and dead nodes removed. Input and output names are
-    kept.
+    ONNX-only operators are rewritten and dead nodes removed. With ``fold``
+    (the default), no-op nodes are also removed, nodes on constants are
+    evaluated at compile time and equal subexpressions merged. ``fold=False``
+    is the minimal legal pipeline used for ablations: only the rewrites that
+    canonical form requires, with constant weights relaid out at compile time.
+    Input and output names are kept.
     """
     if layout not in LAYOUTS:
         raise ValueError(f"layout must be one of {LAYOUTS}, got {layout!r}")
@@ -26,8 +28,9 @@ def optimize(graph: Graph, *, layout: str = "NHWC", fold: bool = True) -> Graph:
     eliminate_dead_code(g)
 
     rw = Rewriter(g, fold=fold)
-    rw.run(CANONICALIZE + SIMPLIFY + TRANSPOSE_AS_RESHAPE)
-    _cleanup(rw)
+    rw.run(CANONICALIZE + (SIMPLIFY + TRANSPOSE_AS_RESHAPE if fold else []))
+    if fold:
+        _cleanup(rw)
 
     leftover = sorted({n.op for n in g.nodes if n.op in IMPORT_OPS})
     if leftover:
@@ -39,7 +42,7 @@ def optimize(graph: Graph, *, layout: str = "NHWC", fold: bool = True) -> Graph:
 
 def _cleanup(rw: Rewriter) -> None:
     """Simplify, fold and merge until nothing changes."""
-    rules = SIMPLIFY + TRANSPOSE_AS_RESHAPE + (FOLD if rw.fold else [])
+    rules = SIMPLIFY + TRANSPOSE_AS_RESHAPE + FOLD
     while True:
         changed = rw.run(rules)
         changed |= eliminate_common_subexpressions(rw.graph)
