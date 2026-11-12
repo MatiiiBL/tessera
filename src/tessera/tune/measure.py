@@ -42,6 +42,7 @@ from typing import Any, Literal, Protocol
 from tessera.tune.task import Point, TuningTask
 
 DEFAULT_BUILD_WORKERS = 3
+STARTUP_TIMEOUT = 120.0  # seconds for a worker interpreter to import the tuner
 
 type _Op = Literal["build", "measure"]
 
@@ -248,12 +249,22 @@ class _Worker:
         self._jobs = Connection(jobs_write, readable=False)
         self.conn = Connection(answers_read, writable=False)
         self.tasks = set()
+        # Job timeouts start once the interpreter has imported everything, so a
+        # slow start on a busy machine is not mistaken for a hanging candidate.
+        try:
+            ready = self.conn.poll(STARTUP_TIMEOUT) and self.conn.recv() == ("ready",)
+        except (EOFError, OSError):
+            ready = False
+        if not ready:
+            reason = self.death()
+            raise RuntimeError(f"worker process did not start: {reason}")
 
 
 def _serve(jobs: Connection, answers: Connection) -> None:
     """The child process: keep tasks, run jobs, answer with (job, ok, value)."""
     # Ctrl-C reaches the whole process group; the parent decides what to stop.
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    answers.send(("ready",))
     tasks: dict[tuple[str, str], Any] = {}
     broken: dict[tuple[str, str], str] = {}
     while True:

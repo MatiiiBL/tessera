@@ -9,6 +9,7 @@ import time
 import types
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -113,3 +114,16 @@ def test_tasks_the_worker_cannot_import_fail_their_candidates(
         fine = runner.run(other, [other.space.default()])
     assert all("cannot load the task here" in (r.error or "") for r in results)
     assert fine[0].seconds is not None
+
+
+def test_slow_worker_start_does_not_count_against_timeouts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Workers get the tuner's sys.path; this makes each of them start 2.5 s late.
+    (tmp_path / "sitecustomize.py").write_text("import time\ntime.sleep(2.5)\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    task = SyntheticMatmul(4, 4, 4)
+    with LocalRunner(build_workers=1, build_timeout=1.0, measure_timeout=1.0) as runner:
+        [result] = runner.run(task, [task.space.default()])
+    assert result.error is None
+    assert result.seconds == task.cost(task.space.default())
