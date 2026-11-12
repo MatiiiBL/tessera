@@ -75,9 +75,15 @@ class Backend(Protocol):
         *,
         repeat: int = 5,
         min_seconds: float = 0.05,
+        constants: frozenset[int] = frozenset(),
     ) -> float:
         """Median seconds of one call of ``func`` on random inputs (for tuning).
-        Raises ``MeasureError`` if it does not build or run."""
+
+        ``constants`` is the set of parameter indices of ``func`` that hold
+        model constants (weights) in the compiled model. A backend prepares
+        those once, outside the timed region, as ``build`` prepares them, and
+        times the calls with them as a model run finds them. Raises
+        ``MeasureError`` if it does not build or run."""
         ...
 
 
@@ -88,10 +94,13 @@ class Prebuilder(Protocol):
     parallel build processes when the backend has it, so that compilation runs
     in parallel and ``measure`` only has to run the cached result."""
 
-    def prebuild(self, func: PrimFunc, target: Target) -> None:
+    def prebuild(
+        self, func: PrimFunc, target: Target, *, constants: frozenset[int] = frozenset()
+    ) -> None:
         """Compile ``func`` for ``measure`` into the build cache without running it;
-        safe to call from another process. Raises ``MeasureError`` if it does not
-        build."""
+        safe to call from another process. ``constants`` is the set of parameter
+        indices that hold model constants, as ``measure`` will be given it.
+        Raises ``MeasureError`` if it does not build."""
         ...
 
 

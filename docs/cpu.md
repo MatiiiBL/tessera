@@ -11,8 +11,9 @@ provides, as `tessera.backend.base.Backend` asks:
 - `templates(target)`: one schedule template per pattern, specialized for
   the target's ISA and thread count;
 - `build(plan, target)`: the compiled model (`CModel`);
-- `measure(func, target)` and `prebuild(func, target)`: timing of one
-  kernel in a separate process, for the tuner.
+- `measure(func, target, constants=...)` and `prebuild(func, target,
+  constants=...)`: timing of one kernel in a separate process, for the
+  tuner; `constants` names the parameters that hold model weights.
 
 `run_kernel(func, arrays, target)` compiles one PrimFunc and runs it on
 NumPy arrays in place, the native counterpart of `tir.interpret`; the tests
@@ -165,7 +166,8 @@ templates parallelize loops of equal-cost tiles) and the calling thread runs
 the first chunk. A loop is published by writing the job and incrementing a
 generation counter; workers poll the counter for 0.5 ms (a model's kernels
 follow each other within microseconds, so workers stay awake through a run)
-and then sleep on a condition variable. The publisher takes the mutex only
+and then sleep on a condition variable. On SME targets they sleep at once
+(`TSR_SPIN_SECONDS` 0, see "Threads on SME targets" below). The publisher takes the mutex only
 when some worker sleeps; the sleeper registers itself before rechecking the
 counter under the mutex, so a wakeup cannot be lost. Every worker
 acknowledges every job, so the job fields are never rewritten while a
@@ -181,6 +183,26 @@ thread starting a loop while the pool is busy runs it serially, and after
 `fork()` the child runs every loop serially. `test_thread_pool` checks
 2000 loops of varied sizes for exactly-once execution, wakeups after
 sleeping, nesting, concurrent callers and fork.
+
+**Threads on SME targets.** The performance cores share one SME unit, and
+the efficiency cluster has its own. When several threads keep SME busy,
+macOS moves some of them to the efficiency cluster (its scheduler spreads
+users of a cluster's shared unit across clusters), whatever their QoS
+class. There an SME chunk takes about three times as long: a 128 x 2304 x
+768 product split in three chunks took 165 µs per chunk on a performance
+core and 465 µs on an efficiency core, and the static partitioning waits
+for the slowest chunk. A worker that polls never blocks, so it stays where
+it was moved for the rest of the run, NEON kernels included. Instrumented
+runs of ResNet-50 (untuned, c:sme) fell into three groups by the share of
+loop chunks that ran on efficiency cores: none, 12–14 ms; a quarter (one
+thread), 17.5–18.5 ms; half, 24.5–25 ms. That is the spread of its
+untuned latency. NEON kernels alone never moved. On SME targets idle
+workers therefore sleep at once, and each wakeup lets the scheduler place
+them again: the same model then ran in 11.8–15 ms with no chunk on an
+efficiency core. Polling stays on NEON and generic targets, where a wakeup
+(3–7 µs) would cost more than the loops it parallelizes (MobileNetV2 on
+c:neon: 3.0 ms polling, 4.2 ms sleeping). `runtime_defines(target)` in
+`build.py` writes these settings into every generated source.
 
 **Memory and time.** `tsr_alloc` returns 128-byte-aligned memory (the cache
 line of Apple's performance cores); `tsr_now` reads `mach_absolute_time`
@@ -251,7 +273,19 @@ SVE, so ordinary code stays NEON and only functions marked
 `main` that fills every float parameter with random values (integer and
 boolean ones with zeros, which are always valid indices), calibrates how
 many calls make one sample, and prints the per-call time of each sample;
-the median is returned. The harness runs as a subprocess, so a candidate
+the median is returned. The calls are timed as a model run makes them. The
+parameters listed in `constants` (indices of model weights) get as many
+copies as it takes to span 64 MiB (at most 64), more than the caches; every
+copy is prepared by one untimed call, as a model's first run packs its
+weights, and the timed calls rotate through the copies, so each reads its
+weights from memory as a model run does. The other parameters stay in one
+warm copy, like the activations the previous kernel just wrote. On GPT-2's
+QKV projection (128 x 768 by 768 x 2304, 12 layers) the template's default
+took 474 µs in `measure` and 498 µs in the model, and 32 x 64 tiles 620 µs
+and 692 µs. Before the SME threads slept, `measure` gave 1063 and 638 µs
+for the same two: it ranked them the other way round. A warm weight alone
+made `measure` up to a fifth faster than the model
+(`test_measure_ranks_weight_configs_as_the_model_does`). The harness runs as a subprocess, so a candidate
 that crashes or hangs becomes a `MeasureError` (as do build errors and
 timeouts) and cannot take down the tuner. `prebuild` compiles the same
 harness into the cache from the tuner's build processes, so the later
@@ -326,7 +360,9 @@ feeds only 256 flops and packing costs about as much as multiplying:
 - A B operand that is a model constant (`constant_b`, set by the templates
   for graph constants) is packed at its first call, every block in the order
   the driver uses them, and the packing is kept: later calls only read the
-  panels. Entries are keyed by the operand's address and geometry, and the
+  panels. Entries are keyed by the operand's address and geometry, in a
+  hash table (a tuned GPT-2 makes 1434 packings and 5796 lookups per run;
+  a list took 0.9 µs per lookup at 4000 entries, the table 14 ns), and the
   executor drops them all whenever it loads a model (as `run_kernel` does
   before every call), so a packing is never reused for other data that came
   to live at the same address.
@@ -483,21 +519,28 @@ how much more threads help depends on how long they keep it busy:
   computation.
 - In sustained single-kernel runs (`gemm.md`), several threads streaming
   through the unit lose to one on most shapes.
-- On whole models (`sme_models.md`, best median latency over interleaved
-  rounds), with the thread count forced to one, to four, or chosen by the
-  matmul template's rule (every thread when a product has no more tiles
-  than threads, one thread otherwise; convolutions on every thread):
+- On whole models, with the thread count forced to one, to four, or chosen
+  by the matmul template's rule (every thread when a product has no more
+  tiles than threads, one thread otherwise; convolutions on every thread),
+  median of 40 runs in interleaved rounds, with the workers sleeping between
+  loops:
 
   | c:sme | default | 1 thread | 4 threads |
   |---|---:|---:|---:|
-  | ResNet-50 | 18.2 ms | 23.9 ms | 17.8 ms |
-  | BERT | 27.1 ms | 31.0 ms | 26.1 ms |
-  | GPT-2 | 38.0 ms | 44.3 ms | 55.9 ms |
+  | ResNet-50 | 12.0 ms | 25.1 ms | 12.0 ms |
+  | BERT | 26.9 ms | 30.9 ms | 26.1 ms |
+  | GPT-2 | 37.8 ms | 43.8 ms | 50.1 ms |
 
-  The rule is within 4 percent of the better fixed choice on every model
-  and avoids the 47 percent loss of four threads on GPT-2, whose 50257-wide
+  The rule is within 3 percent of the better fixed choice on every model
+  and avoids the 33 percent loss of four threads on GPT-2, whose 50257-wide
   output layer has 50 tiles that would keep all four threads contending for
   the unit.
+
+The microkernel and template studies above (and `sme_models.md`, which
+gave ResNet-50 18.2 ms by default) ran while idle workers still polled, so
+some of their multi-threaded runs had a thread on the efficiency cluster
+(see "Threads on SME targets"); the losses of four threads there are partly
+that.
 
 ## Limitations
 

@@ -40,20 +40,32 @@ class CBackend:
         *,
         repeat: int = 5,
         min_seconds: float = 0.05,
+        constants: frozenset[int] = frozenset(),
         timeout: float = DEFAULT_TIMEOUT,
     ) -> float:
         """Median seconds of one call of ``func`` on random inputs, timed in a
         separate process; ``MeasureError`` if it does not build, crashes or
-        exceeds ``timeout``."""
+        exceeds ``timeout``. The parameters at the indices ``constants`` hold
+        model constants: they are prepared (packed) before timing, as in a
+        built model, and read cold, as a model run reads its weights."""
         _check_target(target)
-        return measure_kernel(func, target, repeat=repeat, min_seconds=min_seconds, timeout=timeout)
+        return measure_kernel(
+            func,
+            target,
+            repeat=repeat,
+            min_seconds=min_seconds,
+            timeout=timeout,
+            constants=constants,
+        )
 
-    def prebuild(self, func: PrimFunc, target: Target) -> None:
-        """Compile ``func``'s timing executable into the build cache without
-        running it, so a later ``measure`` only runs it. Safe to call from
-        several processes at once; ``MeasureError`` if it does not build."""
+    def prebuild(
+        self, func: PrimFunc, target: Target, *, constants: frozenset[int] = frozenset()
+    ) -> None:
+        """Compile ``func``'s timing executable for ``measure`` with the same
+        ``constants`` into the build cache without running it. Safe to call
+        from several processes at once; ``MeasureError`` if it does not build."""
         _check_target(target)
-        build_harness(func, target)
+        build_harness(func, target, constants)
 
 
 def _check_target(target: Target) -> None:

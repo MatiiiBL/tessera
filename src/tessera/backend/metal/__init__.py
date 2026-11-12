@@ -44,17 +44,22 @@ class MetalBackend:
         *,
         repeat: int = 5,
         min_seconds: float = 0.05,
+        constants: frozenset[int] = frozenset(),
     ) -> float:
         """Median GPU seconds of one call of ``func`` on random inputs; raises
-        ``MeasureError`` if it does not compile or run."""
+        ``MeasureError`` if it does not compile or run. ``constants`` is
+        accepted and ignored: Metal prepares no constants at load."""
         from tessera.backend.metal.measure import measure
 
         _check_target(target)
         return measure(func, repeat=repeat, min_seconds=min_seconds)
 
-    def prebuild(self, func: PrimFunc, target: Target) -> None:
+    def prebuild(
+        self, func: PrimFunc, target: Target, *, constants: frozenset[int] = frozenset()
+    ) -> None:
         """Generate and compile ``func`` without running it, so that the tuner's
-        build processes report broken candidates; raises ``MeasureError``."""
+        build processes report broken candidates; raises ``MeasureError``.
+        ``constants`` is accepted and ignored: Metal prepares no constants at load."""
         from tessera.backend.metal.measure import prebuild
 
         _check_target(target)

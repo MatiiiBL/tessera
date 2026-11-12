@@ -6,6 +6,15 @@ and prints the per-call time of each sample. Running it as a separate process
 means a candidate that crashes or hangs costs a ``MeasureError``, not the
 tuner. Executables are cached like models, so measuring the same function
 twice compiles once.
+
+The calls are timed as a model run makes them. Parameters that hold model
+constants (``constants``) are prepared once before timing, as a model's
+first run prepares them (the microkernels pack constant weights at their
+first call and keep the packing), and the timed calls rotate through enough
+copies of them to exceed the caches: a model reads each weight once per run,
+from memory, not from the cache that the previous call left warm. Other
+parameters stay warm, like the activations a kernel reads right after the
+kernel before it wrote them.
 """
 
 from __future__ import annotations
@@ -25,13 +34,34 @@ from tessera.tir.stmt import PrimFunc
 DEFAULT_TIMEOUT = 60.0
 
 
-def harness_sources(func: PrimFunc, target: Target) -> dict[str, str]:
-    """``harness.c`` (the kernel plus a timing ``main``) and the headers it includes."""
+# The constant parameters of a harness span at least this many bytes in all
+# their copies: more than the caches of the machines Tessera targets (the M4's
+# performance cores share a 16 MiB L2). At most MAX_COPIES copies.
+COLD_BYTES = 64 << 20
+MAX_COPIES = 64
+
+
+def constant_copies(func: PrimFunc, constants: frozenset[int]) -> int:
+    """How many copies of the constant parameters the harness rotates through."""
+    size = sum(func.params[i].numel * func.params[i].dtype.itemsize for i in constants)
+    if size == 0:
+        return 1
+    return max(1, min(MAX_COPIES, -(-COLD_BYTES // size)))
+
+
+def harness_sources(
+    func: PrimFunc, target: Target, constants: frozenset[int] = frozenset()
+) -> dict[str, str]:
+    """``harness.c`` (the kernel plus a timing ``main``) and the headers it
+    includes. ``constants``: the parameter indices that hold model constants."""
+    if any(not 0 <= i < len(func.params) for i in constants):
+        raise ValueError(f"constant indices {sorted(constants)} out of range for {func.name}")
     code = generate_kernel(func, target.isa)
+    copies = constant_copies(func, constants)
     lines = [
         f"/* Timing harness for {func.name}, c:{target.isa}, {target.threads} threads. */",
         "",
-        f"#define TSR_NUM_THREADS {target.threads}",
+        *cbuild.runtime_defines(target),
         '#include "tessera_runtime.h"',
         *(f'#include "{h}"' for h in code.headers),
         "",
@@ -52,21 +82,40 @@ def harness_sources(func: PrimFunc, target: Target) -> dict[str, str]:
         "  double min_seconds = argc > 2 ? atof(argv[2]) : 0.05;",
         "  if (repeat < 1) repeat = 1;",
         "  tsr_prefer_performance_cores();",
+        f"  enum {{ COPIES = {copies} }}; /* of each constant parameter */",
     ]
     args = []
     for i, buf in enumerate(func.params):
         ctype = c_type(buf.dtype)
-        name = f"p{i}"
-        args.append(name)
-        lines.append(f"  {ctype}* {name} = ({ctype}*)tsr_alloc({buf.numel * buf.dtype.itemsize});")
+        nbytes = buf.numel * buf.dtype.itemsize
+        if i in constants:
+            name = f"p{i}[c]"
+            lines += [
+                f"  {ctype}* p{i}[COPIES];",
+                "  for (int c = 0; c < COPIES; ++c) {",
+                f"    p{i}[c] = ({ctype}*)tsr_alloc({nbytes});",
+            ]
+            indent = "    "
+        else:
+            name = f"p{i}"
+            lines.append(f"  {ctype}* {name} = ({ctype}*)tsr_alloc({nbytes});")
+            indent = "  "
         if buf.dtype.is_float:
             # Integer and boolean parameters (indices, masks) stay zero: always in range.
-            lines.append(f"  for (int64_t i = 0; i < {buf.numel}; ++i) {name}[i] = random_unit();")
+            lines.append(
+                f"{indent}for (int64_t i = 0; i < {buf.numel}; ++i) {name}[i] = random_unit();"
+            )
         else:
-            lines.append(f"  memset({name}, 0, {buf.numel * buf.dtype.itemsize});")
+            lines.append(f"{indent}memset({name}, 0, {nbytes});")
+        if i in constants:
+            lines.append("  }")
+        args.append(name)
     call = f"{code.name}({', '.join(args)});"
     lines += [
-        f"  {call}",
+        "  /* Prepare every copy of the constants, untimed, as a model's first run does. */",
+        "  int c = 0;",
+        f"  for (c = 0; c < COPIES; ++c) {call}",
+        "  c = 0;",
         "  double start = tsr_now();",
         f"  {call}",
         "  double once = tsr_now() - start;",
@@ -75,7 +124,10 @@ def harness_sources(func: PrimFunc, target: Target) -> dict[str, str]:
         "  if (number > 1000000) number = 1000000;",
         "  for (int r = 0; r < repeat; ++r) {",
         "    start = tsr_now();",
-        f"    for (int64_t n = 0; n < number; ++n) {call}",
+        "    for (int64_t n = 0; n < number; ++n) {",
+        "      c = c + 1 < COPIES ? c + 1 : 0;",
+        f"      {call}",
+        "    }",
         '    printf("%.9e\\n", (tsr_now() - start) / (double)number);',
         "  }",
         "  return 0;",
@@ -85,11 +137,11 @@ def harness_sources(func: PrimFunc, target: Target) -> dict[str, str]:
     return {"harness.c": "\n".join(lines), **header_files(["tessera_runtime.h", *code.headers])}
 
 
-def build_harness(func: PrimFunc, target: Target) -> Path:
+def build_harness(func: PrimFunc, target: Target, constants: frozenset[int] = frozenset()) -> Path:
     """Compile (or reuse) the timing executable of ``func``; ``MeasureError`` if
     it does not build."""
     try:
-        files = harness_sources(func, target)
+        files = harness_sources(func, target, constants)
         return cbuild.build(files, "harness.c", target, kind="executable")
     except (CodegenError, cbuild.BuildError) as e:
         raise MeasureError(f"{func.name}: {e}") from e
@@ -129,14 +181,17 @@ def measure(
     repeat: int = 5,
     min_seconds: float = 0.05,
     timeout: float = DEFAULT_TIMEOUT,
+    constants: frozenset[int] = frozenset(),
 ) -> float:
     """Median seconds per call of ``func`` on random inputs.
 
     Each of the ``repeat`` samples runs the kernel enough times to take about
-    ``min_seconds / repeat``. Raises ``MeasureError`` if the kernel does not
-    build, crashes, or the run takes longer than ``timeout``.
+    ``min_seconds / repeat``. ``constants`` are the parameter indices that hold
+    model constants: prepared before timing and read cold (see the module
+    docstring). Raises ``MeasureError`` if the kernel does not build, crashes,
+    or the run takes longer than ``timeout``.
     """
-    path = build_harness(func, target)
+    path = build_harness(func, target, constants)
     return statistics.median(
         run_harness(path, repeat=repeat, min_seconds=min_seconds, timeout=timeout)
     )
