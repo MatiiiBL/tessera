@@ -84,6 +84,18 @@ def measure_kernel(
     return statistics.median(times) / count
 
 
+def prebuild(func: PrimFunc) -> Kernel:
+    """Generate and compile ``func``'s kernel without running it; raises
+    ``MeasureError`` if either step fails."""
+    try:
+        device = runtime.device()
+        kernel = generate(func, max_threadgroup_memory=device.info.max_threadgroup_memory)
+        device.compile(module_source([kernel])).pipeline(kernel.name)
+    except (CodegenError, runtime.MetalError) as error:
+        raise MeasureError(f"{func.name}: {error}") from error
+    return kernel
+
+
 def measure(
     func: PrimFunc,
     *,

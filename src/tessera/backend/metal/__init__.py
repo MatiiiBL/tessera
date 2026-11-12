@@ -44,6 +44,14 @@ class MetalBackend:
         _check_target(target)
         return measure(func, repeat=repeat, min_seconds=min_seconds)
 
+    def prebuild(self, func: PrimFunc, target: Target) -> None:
+        """Generate and compile ``func`` without running it, so that the tuner's
+        build processes report broken candidates; raises ``MeasureError``."""
+        from tessera.backend.metal.measure import prebuild
+
+        _check_target(target)
+        prebuild(func)
+
 
 def _check_target(target: Target) -> None:
     if target.kind != "metal":

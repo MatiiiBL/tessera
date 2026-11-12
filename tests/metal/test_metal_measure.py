@@ -53,6 +53,18 @@ def test_compiler_errors_become_measure_errors() -> None:
         del INTRINSICS["metal.broken"]
 
 
+def test_prebuild_compiles_without_running() -> None:
+    func = matmul_bound(16, 16, 16, np.random.default_rng(0)).func
+    backend().prebuild(func, METAL)
+    out = Buffer("out", (4096,))
+    t = Var("t")
+    wide = prim_func(
+        "wide", [out], bound(t, 4096, "thread.x", BufferStore(out, FloatImm(1.0), (t,)))
+    )
+    with pytest.raises(MeasureError, match="wide: 4096 threads"):
+        backend().prebuild(wide, METAL)
+
+
 def test_measure_checks_the_target() -> None:
     with pytest.raises(ValueError, match="cannot build"):
         backend().measure(matmul_naive(2, 2, 2, np.random.default_rng(0)).func, Target.parse("c"))
