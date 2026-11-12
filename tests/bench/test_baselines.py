@@ -105,3 +105,37 @@ def test_torch_runner_needs_cached_weights(tmp_path: Path, monkeypatch: pytest.M
     )
     with pytest.raises(MissingModels, match="not cached"):
         torch_eager(spec)
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "mps",
+            marks=[
+                pytest.mark.metal,
+                pytest.mark.skipif(not torch_available("mps"), reason="no MPS device"),
+            ],
+        ),
+    ],
+)
+@pytest.mark.skipif(not torch_available("cpu"), reason="PyTorch is not installed")
+def test_torch_runner(monkeypatch: pytest.MonkeyPatch, device: str) -> None:
+    import torch
+
+    import tessera.bench.baselines as baselines
+
+    torch.manual_seed(0)
+    linear = torch.nn.Linear(4, 3)
+    monkeypatch.setattr(baselines, "torch_module", lambda spec: linear)
+    spec = ModelSpec(
+        "tiny", Path("t.onnx"), Path("t.npz"), (("x", (2, 4), "float32"),), (("y", (2, 3)),), {}
+    )
+    runner = torch_eager(spec, device)
+    x = np.ones((2, 4), np.float32)
+    out = runner.outputs({"x": x})
+    expected = x @ linear.weight.detach().cpu().numpy().T + linear.bias.detach().cpu().numpy()
+    np.testing.assert_allclose(out["y"], expected, rtol=1e-5, atol=1e-6)
+    assert runner.name == f"pytorch-{device}"
+    assert time_runs(runner.prepare({"x": x}), warmup=1, runs=50).runs == 50
