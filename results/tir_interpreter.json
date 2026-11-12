@@ -1,0 +1,48 @@
+{
+  "date": "2026-11-12T06:08:19Z",
+  "machine": "arm64",
+  "python": "3.13.7",
+  "load_average_1min": 6.78466796875,
+  "rows": [
+    {
+      "kernel": "matmul 64x64x64",
+      "executions": 262144,
+      "compile_seconds": 0.0006431660003727302,
+      "run_seconds": 0.08182408300126554,
+      "ns_per_execution": 312.1341056872007
+    },
+    {
+      "kernel": "matmul 64x64x64, tiled 8x8",
+      "executions": 266240,
+      "compile_seconds": 0.0007837919984012842,
+      "run_seconds": 0.09908254100082559,
+      "ns_per_execution": 372.1549767158413
+    },
+    {
+      "kernel": "conv2d 3x3 NHWC 16x16x16 -> 16, relu",
+      "executions": 593920,
+      "compile_seconds": 0.0015085829982126597,
+      "run_seconds": 0.38004458299838006,
+      "ns_per_execution": 639.8918760075096
+    },
+    {
+      "kernel": "softmax 64x512",
+      "executions": 98304,
+      "compile_seconds": 0.0007931660002213903,
+      "run_seconds": 0.022341291998600354,
+      "ns_per_execution": 227.26737466024125
+    },
+    {
+      "kernel": "gelu 256x256",
+      "executions": 65536,
+      "compile_seconds": 0.00033316700137220323,
+      "run_seconds": 0.015248416999384062,
+      "ns_per_execution": 232.6723785306406
+    }
+  ],
+  "storage_ns": {
+    "array.array": 100.3318750008475,
+    "list": 51.871460000256775,
+    "numpy": 301.92250000254717
+  }
+}
