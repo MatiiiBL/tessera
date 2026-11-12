@@ -13,6 +13,7 @@ from metal_workloads import (
     Workload,
     configs,
     conv2d,
+    conv2d_pad_block,
     depthwise,
     injective,
     layernorm,
@@ -46,7 +47,10 @@ WORKLOADS = [
     pytest.param("conv", lambda: conv2d((1, 7, 7, 24), 40, 3, pad=1), id="conv3x3-7x7"),
     pytest.param("conv", lambda: conv2d((2, 15, 15, 8), 24, 3, stride=2, pad=1), id="conv3x3-s2"),
     pytest.param("conv", lambda: conv2d((1, 14, 14, 32), 48, 1), id="conv1x1"),
+    pytest.param("conv", lambda: conv2d((1, 32, 32, 16), 32, 1, stride=2), id="conv1x1-s2"),
     pytest.param("conv", lambda: conv2d((1, 23, 23, 3), 16, 7, stride=2, pad=3), id="conv7x7-stem"),
+    pytest.param("conv", lambda: conv2d_pad_block((1, 8, 8, 32), 64, 3), id="conv-pad-block"),
+    pytest.param("conv", lambda: conv2d_pad_block((1, 7, 7, 16), 24, 3), id="conv-pad-block-7x7"),
     pytest.param("depthwise", lambda: depthwise((1, 16, 16, 32)), id="depthwise"),
     pytest.param("depthwise", lambda: depthwise((1, 15, 15, 24), stride=2), id="depthwise-s2"),
     pytest.param("maxpool", lambda: pool("MaxPool2d", (1, 16, 16, 8)), id="maxpool"),
@@ -76,6 +80,32 @@ def test_simdgroup_matrices_are_the_default_for_whole_tiles() -> None:
     assert (
         space_of_workload(TEMPLATES["matmul"], matmul(33, 70, 19)).default()["strategy"] == "tiles"
     )
+
+
+def test_convolutions_use_simdgroup_matrices_when_they_can() -> None:
+    from metal_workloads import space as space_of_workload
+
+    def strategy(workload: Workload) -> object:
+        return space_of_workload(TEMPLATES["conv2d"], workload).default()["strategy"]
+
+    # The padding as a block of its own, or no padding: the input is a plain load.
+    assert strategy(conv2d_pad_block((1, 7, 7, 16), 24, 3)) == "simdgroup"
+    assert strategy(conv2d((1, 14, 14, 32), 48, 1)) == "simdgroup"
+    # A stride of 2 reads every other input row: the microkernel's rows are 2 apart.
+    assert strategy(conv2d((1, 32, 32, 16), 32, 1, stride=2)) == "simdgroup"
+    # Padding read through a select, or a stride of 2: scalar tiles.
+    assert strategy(conv2d((1, 8, 8, 16), 32, 3, pad=1)) == "tiles"
+    assert strategy(conv2d((2, 15, 15, 8), 24, 3, stride=2, pad=1)) == "tiles"
+    source = generate(
+        scheduled(
+            conv2d_pad_block((1, 8, 8, 32), 64, 3),
+            space_of_workload(
+                TEMPLATES["conv2d"], conv2d_pad_block((1, 8, 8, 32), 64, 3)
+            ).default(),
+        ).func
+    ).source
+    assert "threadgroup float pad_shared[" in source
+    assert "simdgroup_multiply_accumulate" in source
 
 
 def test_every_pattern_has_a_template() -> None:

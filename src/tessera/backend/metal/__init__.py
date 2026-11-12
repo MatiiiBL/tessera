@@ -18,6 +18,11 @@ class MetalBackend:
 
     name = "metal"
 
+    def lowering_options(self, target: Target) -> Mapping[str, object]:
+        """Lower convolutions with their padding as a block of its own, which the
+        SIMD-group convolution computes tile by tile in threadgroup memory."""
+        return {"pad_block": True}
+
     def templates(self, target: Target | None = None) -> Mapping[str, Template]:
         """The GPU schedule template of every pattern (the same for every target)."""
         from tessera.backend.metal.templates import TEMPLATES

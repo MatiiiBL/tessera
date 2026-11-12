@@ -222,6 +222,7 @@ class GemmKnobs:
     simd_groups: tuple[int, int] = (1, 1)  # SIMD groups per threadgroup (rows, columns)
     simd_tiles: tuple[int, int] = (1, 1)  # 8 x 8 accumulator tiles per SIMD group
     image_rows: int = 1  # convolution: output rows per threadgroup, on thread.z
+    simd_k: int = 32  # convolution: input channels per call of the SIMD-group microkernel
 
 
 SIMD_GROUPS = ((1, 1), (1, 2), (2, 1), (2, 2), (1, 4), (4, 1), (2, 4), (4, 2))
@@ -258,6 +259,7 @@ def gemm_knobs(
     simd: tuple[tuple[int, int], tuple[int, int]] | None = None,
     *,
     image_rows: Sequence[int] = (1,),
+    simd_k: Sequence[int] = (32,),
 ) -> GemmKnobs:
     """Every knob of the GEMM templates, asked whatever the strategy. ``simd`` is
     the SIMD-group layout to default to, when that strategy applies; a
@@ -284,8 +286,18 @@ def gemm_knobs(
 
     simd_groups = knob_pair(cfg, "simd_groups", SIMD_GROUPS, groups)
     simd_tiles = knob_pair(cfg, "simd_tiles", FRAGMENT_TILES, tiles)
+    channel_tile = knob_int(cfg, "simd_k", simd_k, 32 if 32 in simd_k else simd_k[-1])
     return GemmKnobs(
-        strategy, threads, regs, tile_k, stage, element_threads, simd_groups, simd_tiles, stack
+        strategy,
+        threads,
+        regs,
+        tile_k,
+        stage,
+        element_threads,
+        simd_groups,
+        simd_tiles,
+        stack,
+        channel_tile,
     )
 
 
@@ -520,23 +532,52 @@ def _affine_reads(block: Block) -> list[int]:
 def schedule_conv2d(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
     """Conv2d over NHWC/HWIO as a GEMM per output row: each output row's pixels
     ``ow`` are the rows, output channels the columns and ``(kh, kw, c)`` the
-    reduction. Tiling ``ow`` rather than the fused pixel index keeps every index
-    affine, so a thread's accumulators stay a small register tile and the store
-    reads the same elements the thread computed. The window loops ``kh, kw``
-    stay outside the tiled channel loop, so the input's coordinates and padding
-    test do not change inside it. A threadgroup takes ``image_rows``
-    consecutive output rows (on thread.z), so that small images still give it
-    enough work."""
+    reduction, with the window loops ``kh, kw`` outside the tiled channel loop
+    (so the input's coordinates and padding test do not change inside it).
+
+    With SIMD-group matrices (stride 1, input channels a multiple of 8), each
+    SIMD group computes its tile of the window's input (the padding block, or a
+    copy of the input) into threadgroup memory, then runs the microkernel over
+    ``simd_k`` input channels for every ``(kh, kw)``. Otherwise scalar tiles:
+    tiling ``ow`` rather than the fused pixel index keeps every index affine, so
+    a thread's accumulators stay a small register tile, and a threadgroup takes
+    ``image_rows`` consecutive output rows (on thread.z) so that small images
+    still give it enough work."""
     main = lowered.main_block
     assert main is not None
     spatial, reduction = split_loops(sch, main)
     *batch, rows, pixels, channels = spatial
     *window, in_channels = reduction
     m, n, k = sch.extent(pixels), sch.extent(channels), sch.extent(in_channels)
-    # The input is read through the padding test (not a plain affine load), so of
-    # the two operands only the weights can be staged in threadgroup memory.
     staged = _affine_reads(find_block(sch.func, main).block)
-    knobs = gemm_knobs(cfg, m, n, k, _extent(sch, spatial), bool(staged), image_rows=(1, 2, 4, 8))
+    channel_tiles = [t for t in (8, 16, 32, 64) if k % t == 0] or [32]
+    # One SIMD group per 8 x 32 or 16 x 32 tile; two across the output channels
+    # when there are channels for both.
+    layout = ((1, 2 if n > 32 else 1), (1 if m <= 8 else 2, 4))
+    channel_tile = 32 if 32 in channel_tiles else channel_tiles[-1]
+    trial = GemmKnobs("simdgroup", (8, 8), (4, 4), 8, False, 32, *layout, 1, channel_tile)
+    applies = succeeds(sch, partial(_simdgroup_conv_check, lowered=lowered, knobs=trial))
+    simd = layout if applies else None
+    knobs = gemm_knobs(
+        cfg,
+        m,
+        n,
+        k,
+        _extent(sch, spatial),
+        bool(staged),
+        simd,
+        image_rows=(1, 2, 4, 8),
+        simd_k=channel_tiles,
+    )
+    if knobs.strategy == "simdgroup":
+        _simdgroup_conv(sch, lowered, knobs)
+        return
+    # The scalar schedules read the input through the padding test: inline a
+    # padding block back into the convolution.
+    inline_all(sch, {main, *([lowered.epilogue_block] if lowered.epilogue_block else [])})
+    spatial, reduction = split_loops(sch, main)
+    *batch, rows, pixels, channels = spatial
+    *window, in_channels = reduction
     _gemm(
         sch,
         lowered,
@@ -545,10 +586,85 @@ def schedule_conv2d(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
         rows=[pixels],
         cols=[channels],
         reduction=[in_channels],
-        staged=staged,
+        staged=_affine_reads(find_block(sch.func, main).block),
         stack=rows,
         window=window,
     )
+
+
+def _simdgroup_conv(sch: Schedule, lowered: LoweredGroup, knobs: GemmKnobs) -> None:
+    """The SIMD-group schedule of ``schedule_conv2d`` (see its docstring)."""
+    from tessera.backend.metal import microkernels
+
+    main = lowered.main_block
+    assert main is not None
+    spatial, reduction = split_loops(sch, main)
+    *batch, rows, pixels, channels = spatial
+    *window, in_channels = reduction
+    (gm, gn), (fm, fn), kt = knobs.simd_groups, knobs.simd_tiles, knobs.simd_k
+    if sch.extent(in_channels) % kt or kt % 8:
+        raise ScheduleError(f"{sch.extent(in_channels)} input channels are not tiles of {kt}")
+    ranks = _gemm_ranks(sch, main)
+    source = _conv_input(sch, main)
+    mo, ms, mi = sch.split(pixels, [None, gm, 8 * fm])
+    no, ns, ni = sch.split(channels, [None, gn, 8 * fn])
+    ko, ki = sch.split(in_channels, [None, kt])
+    sch.reorder(*batch, rows, mo, no, ms, ns, *window, ko, mi, ni, ki)
+    group = fuse_all(sch, [*batch, rows])
+    assert group is not None
+    sch.bind(group, "threadgroup.z")
+    sch.bind(mo, "threadgroup.y")
+    sch.bind(no, "threadgroup.x")
+    sch.bind(ms, "thread.z")
+    sch.bind(ns, "thread.y")
+    store = sch.cache_write(main, 0, "shared")
+    sch.reverse_compute_at(store, ns)
+    if lowered.epilogue_block is not None:
+        sch.reverse_compute_inline(lowered.epilogue_block)
+    _lanes(sch, store)
+    # Each SIMD group's input tile for one (kh, kw, channel tile) step, in
+    # threadgroup memory: rows past the image's edge never read device memory.
+    if isinstance(source, str):
+        sch.compute_inline(sch.cache_write(source, 0, "shared"))
+        sch.compute_at(source, ko)
+        _lanes(sch, source)
+    else:
+        copy = sch.cache_read(main, source, "shared")
+        sch.compute_at(copy, ko)
+        _lanes(sch, copy)
+    init = sch.decompose_reduction(main, window[0] if window else ko)
+    _lanes(sch, init)
+    sch.tensorize(mi, microkernels.name(fm, fn, ranks, int(lowered.dims.get("SW", 1))))
+
+
+def _conv_input(sch: Schedule, main: str) -> str | int:
+    """The convolution's input: the block that pads it (a block of this function),
+    or the index of the main block's read of it."""
+    from tessera.tir.expr import Binary, BufferLoad
+
+    block = find_block(sch.func, main).block
+    body = block.body
+    a = None
+    if isinstance(body, BufferStore) and isinstance(body.value, Binary):
+        product = body.value.b
+        if isinstance(product, Binary) and isinstance(product.a, BufferLoad):
+            a = product.a
+    if a is None:
+        # The input is read through a padding test: not a matrix the microkernel takes.
+        raise ScheduleError(f"block {main} does not read its input as a plain load")
+    for name in sch.blocks():
+        realize = find_block(sch.func, name)
+        if any(
+            isinstance(s, BufferStore) and s.buffer is a.buffer
+            for s in walk_stmts(realize.block.body)
+        ):
+            return name
+    return next(i for i, r in enumerate(block.reads) if r.buffer is a.buffer)
+
+
+def _simdgroup_conv_check(sch: Schedule, *, lowered: LoweredGroup, knobs: GemmKnobs) -> None:
+    """Apply the SIMD-group convolution schedule to ``sch`` (for ``succeeds``)."""
+    _simdgroup_conv(sch, lowered, knobs)
 
 
 # -- reductions ----------------------------------------------------------------------------
