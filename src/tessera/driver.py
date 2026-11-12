@@ -181,6 +181,7 @@ def lower(
     fuse: bool = True,
     optimize: bool = True,
     tuned: bool = True,
+    schedule: bool = True,
 ) -> Compilation:
     """Run the pipeline up to the ``ExecutionPlan``; see ``compile`` for the options."""
     tgt = resolve_target(target)
@@ -189,7 +190,7 @@ def lower(
     groups = passes.fuse(graph, enabled=fuse)
     passes.verify_groups(graph, groups)
     memory = passes.plan_memory(graph, groups)
-    templates = get_backend(tgt.kind).templates(tgt)
+    templates = get_backend(tgt.kind).templates(tgt) if schedule else {}
     best = best_configs(tuning_log) if tuned else BestConfigs()
 
     refs = dict(memory.refs)
@@ -245,6 +246,7 @@ def compile(
     fuse: bool = True,
     optimize: bool = True,
     tuned: bool = True,
+    schedule: bool = True,
 ) -> CompiledModel:
     """Compile an ONNX model (a path, a ``ModelProto`` or an imported ``Graph``).
 
@@ -256,8 +258,9 @@ def compile(
     of its task on this target, or the template's defaults. The ablation
     switches: ``fuse=False`` gives every operator its own kernel,
     ``optimize=False`` turns off the graph rewrites (the minimal pipeline:
-    canonical operators and the NHWC layout only), and ``tuned=False``
-    ignores the logs.
+    canonical operators and the NHWC layout only), ``tuned=False`` ignores
+    the logs, and ``schedule=False`` applies no templates at all (every loop
+    serial: what the templates add).
     """
     return lower(
         model,
@@ -267,6 +270,7 @@ def compile(
         fuse=fuse,
         optimize=optimize,
         tuned=tuned,
+        schedule=schedule,
     ).build()
 
 
