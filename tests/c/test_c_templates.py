@@ -176,3 +176,26 @@ def test_balanced_tiles() -> None:
     assert balanced_tile(128, 12, 4, tile_options(128, 1024)) == 128
     # No option small enough: the smallest.
     assert balanced_tile(50257, 1, 4, [29, 1733]) == 29
+
+
+def test_overridden_defaults() -> None:
+    from tessera.backend.c.templates.common import overridden_defaults
+
+    w = WORKLOADS["matmul"]()
+    target = Target(isa="neon", num_threads=4)
+    assert _space(w, target).default()["micro_threads"] == 4
+    with overridden_defaults(micro_threads=1, tile_m=999):  # 999 is not an option: ignored
+        space = _space(w, target)
+    assert space.default()["micro_threads"] == 1
+    assert space.default()["tile_m"] == 4
+    assert _space(w, target).default()["micro_threads"] == 4
+
+
+def test_sme_matmul_threads_follow_the_tile_count() -> None:
+    """A few wide tiles run on every thread; many run on one thread, which
+    drives the shared SME unit best."""
+    target = Target(isa="sme", num_threads=4)
+    few = _space(W.matmul(12, 32, 20), target).default()
+    many = _space(W.matmul(12, 5000, 20), target).default()
+    assert few["micro_threads"] == 4
+    assert many["micro_threads"] == 1

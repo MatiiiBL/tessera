@@ -111,21 +111,26 @@ def _micro_knobs(cfg: Config, m: int, n: int, batches: int, target: CpuTarget) -
     default a tile has up to 256 rows (one block of A, which the microkernel
     then packs once per call), and its width gives every thread a whole
     number of tiles at most 1024 columns wide (``balanced_tile``).
-    Every thread is used on SME too: the performance cores share one SME
-    unit, but packing, the init and the epilogue run on NEON, and other
-    threads overlap them with one thread's streaming computation."""
+
+    On SME the performance cores share one matrix unit. Tiles are sized for
+    one thread, and the tiles run on every thread only when there are no
+    more of them than threads: a few wide tiles overlap one thread's packing
+    and epilogue with another's streaming computation, but many tiles keep
+    all threads contending for the unit (results/cpu/sme_models.md)."""
     enabled = choose(cfg, "kernel", ["micro", "loops"], "micro") == "micro"
-    counts = sorted({c for c in (1, 2, target.threads) if c <= target.threads})
-    threads = choose_int(cfg, "micro_threads", counts, target.threads)
     # Tiles need not divide the matrix: an edge tile computes its valid part.
     rows = tile_options(m, 512)
     default_m = min(m, 256)
-    tile_m = choose_int(cfg, "micro_m", rows, default_m)
-    columns = tile_options(n, 1024)
     row_tiles = batches * -(-m // default_m)
-    tile_n = choose_int(
-        cfg, "micro_n", columns, balanced_tile(n, row_tiles, target.threads, columns, 1024)
-    )
+    columns = tile_options(n, 1024)
+    sme = target.isa == "sme"
+    default_n = balanced_tile(n, row_tiles, 1 if sme else target.threads, columns, 1024)
+    tiles = row_tiles * -(-n // default_n)
+    counts = sorted({c for c in (1, 2, target.threads) if c <= target.threads})
+    default_threads = 1 if sme and tiles > target.threads else target.threads
+    threads = choose_int(cfg, "micro_threads", counts, default_threads)
+    tile_m = choose_int(cfg, "micro_m", rows, default_m)
+    tile_n = choose_int(cfg, "micro_n", columns, default_n)
     return MicroKnobs(enabled, tile_m, tile_n, threads)
 
 

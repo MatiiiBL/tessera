@@ -8,6 +8,7 @@ the same questions.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from math import prod
@@ -82,12 +83,32 @@ def nearest(options: Sequence[int], want: int) -> int:
     return min(options, key=lambda v: (abs(v - want), -v))
 
 
+_DEFAULT_OVERRIDES: dict[str, KnobValue] = {}
+
+
+@contextlib.contextmanager
+def overridden_defaults(**knobs: KnobValue) -> Iterator[None]:
+    """Within the block, templates take these values as the defaults of the
+    named knobs (where they are options): for comparing defaults on whole
+    models, which the driver compiles with each template's defaults."""
+    saved = dict(_DEFAULT_OVERRIDES)
+    _DEFAULT_OVERRIDES.update(knobs)
+    try:
+        yield
+    finally:
+        _DEFAULT_OVERRIDES.clear()
+        _DEFAULT_OVERRIDES.update(saved)
+
+
 def choose(cfg: Config, name: str, options: Sequence[KnobValue], default: KnobValue) -> KnobValue:
     """``cfg.choice`` with the options deduplicated in order."""
     unique: list[KnobValue] = []
     for o in options:
         if o not in unique:
             unique.append(o)
+    override = _DEFAULT_OVERRIDES.get(name)
+    if override is not None and override in unique:
+        default = override
     return cfg.choice(name, unique, default=default)
 
 
