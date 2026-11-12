@@ -466,24 +466,33 @@ class Analyzer:
 
     def _from_lin(self, lin: _Lin, dtype: DType = INDEX) -> Expr:
         lin = self._recombine(lin)
+        positive = [(t, k) for t, k in lin.terms.items() if k > 0]
+        negative = [(t, -k) for t, k in lin.terms.items() if k < 0]
+
+        def term(t: Expr, k: int) -> Expr:
+            return t if k == 1 else Binary("mul", t, IntImm(k, dtype))
+
         out: Expr | None = None
-        for t, k in lin.terms.items():
-            if out is None:
-                out = t if k == 1 else Binary("mul", t, IntImm(k, dtype))
-            elif k == 1:
-                out = Binary("add", out, t)
-            elif k == -1:
-                out = Binary("sub", out, t)
-            elif k > 0:
-                out = Binary("add", out, Binary("mul", t, IntImm(k, dtype)))
+        for t, k in positive:
+            out = term(t, k) if out is None else Binary("add", out, term(t, k))
+        const = lin.const
+        if out is None and negative:
+            # No positive term: lead with the constant (``10 - j * 4``), or with the
+            # first term scaled by -1 when there is none.
+            if const > 0:
+                out, const = IntImm(const, dtype), 0
             else:
-                out = Binary("sub", out, Binary("mul", t, IntImm(-k, dtype)))
+                t, k = negative.pop(0)
+                out = Binary("mul", t, IntImm(-k, dtype))
+        for t, k in negative:
+            assert out is not None
+            out = Binary("sub", out, term(t, k))
         if out is None:
-            return IntImm(lin.const, dtype)
-        if lin.const > 0:
-            return Binary("add", out, IntImm(lin.const, dtype))
-        if lin.const < 0:
-            return Binary("sub", out, IntImm(-lin.const, dtype))
+            return IntImm(const, dtype)
+        if const > 0:
+            return Binary("add", out, IntImm(const, dtype))
+        if const < 0:
+            return Binary("sub", out, IntImm(-const, dtype))
         return out
 
     # booleans ---------------------------------------------------------------
