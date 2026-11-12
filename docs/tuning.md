@@ -392,10 +392,10 @@ measurements per search and this much noise, it is smaller.
   measured on a busy machine favours whatever ran in quiet moments.
 - The budget covers a tiny part of the spaces of the final templates
   (3.1 million configurations on `c:sme` and 420 million on Metal, against
-  11,825 and 14,294 measurements), so the logs hold good configurations,
+  9,321 and 16,330 measurements), so the logs hold good configurations,
   not optimal ones.
 - Even with scoring in the build processes, about half of the Metal
   tuning time went to the search rather than to measurements.
 - Metal's templates reject some points of their own spaces when a schedule
-  primitive cannot apply (2.4% of the candidates tried); these are recorded
+  primitive cannot apply (1.8% of the measurements); these are recorded
   as failed builds and cost a template application each.
