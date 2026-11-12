@@ -256,3 +256,84 @@ def conv2d_pad_block(
     }
     lowered = LoweredGroup(group, func, "conv", "relu", dims)
     return Workload(lowered, [xs, ws, bs], np.maximum(ref + bs, 0))
+
+
+def _matmul_group(
+    func: PrimFunc, main: str, epilogue: str | None, dims: dict[str, int]
+) -> LoweredGroup:
+    from tessera.plan import FusedGroup
+
+    out = func.params[-1]
+    value = Value(out.name, TensorType(out.shape, F32))
+    group = FusedGroup(func.name, [], [], value, None, "matmul")
+    return LoweredGroup(group, func, main, epilogue, dims)
+
+
+def output_projection(heads: int, rows: int, width: int, n: int) -> Workload:
+    """A transformer's attention output projection with its operand as a block of
+    its own (role ``operand``): ``a[m, h * width + d] = x[h, m, d]`` (a transpose
+    and a reshape), times ``w``, plus a bias."""
+    from tessera import te
+    from tessera.compute.anchor import ROLE
+
+    k_n = heads * width
+    rng = np.random.default_rng(heads * rows + n)
+    x = te.placeholder((heads, rows, width), F32, "x")
+    w = te.placeholder((k_n, n), F32, "w")
+    bias = te.placeholder((n,), F32, "b")
+    a = te.compute(
+        (rows, k_n),
+        lambda m, k: x[k // width, m, k % width],
+        "a",
+        ["m", "k"],
+        annotations={ROLE: "operand"},
+    )
+    k = te.reduce_axis(k_n, "k")
+    main = te.compute((rows, n), lambda i, j: te.sum(a[i, k] * w[k, j], axis=k), "mm", ["m", "n"])
+    out = te.compute((rows, n), lambda i, j: main[i, j] + bias[j], "out", ["m", "n"])
+    func = te.create_prim_func([x, w, bias, out], "output_projection")
+    xs = rng.standard_normal((heads, rows, width)).astype(np.float32)
+    ws = (rng.standard_normal((k_n, n)) * 0.3).astype(np.float32)
+    bs = rng.standard_normal(n).astype(np.float32)
+    flat = xs.astype(np.float64).transpose(1, 0, 2).reshape(rows, k_n)
+    dims = {"B": 1, "M": rows, "N": n, "K": k_n}
+    return Workload(_matmul_group(func, "mm", "out", dims), [xs, ws, bs], flat @ ws + bs)
+
+
+def attention_scores(heads: int, rows: int, width: int) -> Workload:
+    """``Q K^T`` per head with both operands sliced from one projection as blocks of
+    their own: ``q[h, s, d] = qkv[s, h * width + d]`` is a matrix of ``qkv`` the
+    microkernel loads in place, ``kt[h, d, s] = qkv[s, (heads + h) * width + d]``
+    is transposed."""
+    from tessera import te
+    from tessera.compute.anchor import ROLE
+
+    rng = np.random.default_rng(heads + rows + width)
+    qkv = te.placeholder((rows, 2 * heads * width), F32, "qkv")
+    q = te.compute(
+        (heads, rows, width),
+        lambda h, s, d: qkv[s, h * width + d],
+        "q",
+        ["h", "s", "d"],
+        annotations={ROLE: "operand"},
+    )
+    kt = te.compute(
+        (heads, width, rows),
+        lambda h, d, s: qkv[s, (heads + h) * width + d],
+        "kt",
+        ["h", "d", "s"],
+        annotations={ROLE: "operand"},
+    )
+    k = te.reduce_axis(width, "k")
+    out = te.compute(
+        (heads, rows, rows),
+        lambda h, i, j: te.sum(q[h, i, k] * kt[h, k, j], axis=k),
+        "scores",
+        ["b0", "m", "n"],
+    )
+    func = te.create_prim_func([qkv, out], "attention_scores")
+    xs = rng.standard_normal((rows, 2 * heads * width)).astype(np.float32)
+    split = xs.astype(np.float64).reshape(rows, 2, heads, width).transpose(1, 2, 0, 3)
+    ref = split[0] @ split[1].transpose(0, 2, 1)
+    dims = {"B": heads, "M": rows, "N": rows, "K": width}
+    return Workload(_matmul_group(func, "scores", None, dims), [xs], ref)

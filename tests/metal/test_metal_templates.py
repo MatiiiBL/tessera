@@ -11,6 +11,7 @@ import pytest
 from metal_funcs import gpu
 from metal_workloads import (
     Workload,
+    attention_scores,
     configs,
     conv2d,
     conv2d_pad_block,
@@ -18,6 +19,7 @@ from metal_workloads import (
     injective,
     layernorm,
     matmul,
+    output_projection,
     pool,
     reduce,
     softmax,
@@ -43,6 +45,8 @@ WORKLOADS = [
     pytest.param("matmul", lambda: matmul(1, 1000, 96), id="gemv"),
     pytest.param("matmul", lambda: matmul(32, 128, 48), id="matmul-simdgroup"),
     pytest.param("matmul", lambda: matmul(64, 64, 16, batch=3, epilogue=False), id="bmm-simdgroup"),
+    pytest.param("matmul", lambda: output_projection(4, 32, 16, 48), id="matmul-operand-block"),
+    pytest.param("matmul", lambda: attention_scores(2, 32, 16), id="matmul-operand-blocks"),
     pytest.param("conv", lambda: conv2d((1, 8, 8, 16), 32, 3, pad=1), id="conv3x3"),
     pytest.param("conv", lambda: conv2d((1, 7, 7, 24), 40, 3, pad=1), id="conv3x3-7x7"),
     pytest.param("conv", lambda: conv2d((2, 15, 15, 8), 24, 3, stride=2, pad=1), id="conv3x3-s2"),
@@ -106,6 +110,41 @@ def test_convolutions_use_simdgroup_matrices_when_they_can() -> None:
     ).source
     assert "threadgroup float pad_shared[" in source
     assert "simdgroup_multiply_accumulate" in source
+
+
+def test_operands_with_a_prologue_are_staged_unless_loaded_in_place() -> None:
+    projection, scores = output_projection(4, 32, 16, 48), attention_scores(2, 32, 16)
+    for workload in (projection, scores):
+        assert space(TEMPLATES["matmul"], workload).default()["strategy"] == "simdgroup"
+    # A transpose and reshape (k // 16, k % 16) is computed into threadgroup memory
+    # once per element; a slice of the projection is a matrix loaded in place.
+    source = generate(scheduled(projection, space(TEMPLATES["matmul"], projection).default()).func)
+    assert "threadgroup float a_shared[" in source.source
+    assert "simdgroup_multiply_accumulate" in source.source
+    source = generate(scheduled(scores, space(TEMPLATES["matmul"], scores).default()).func)
+    assert "threadgroup float kt_shared[" in source.source
+    assert "q_shared" not in source.source
+    # The scalar schedules read the operand through its prologue again.
+    tiles = {**space(TEMPLATES["matmul"], projection).default(), "strategy": "tiles"}
+    assert "a" not in scheduled(projection, tiles).blocks()
+
+
+@pytest.mark.parametrize(
+    "make",
+    [lambda: output_projection(2, 16, 32, 40), lambda: attention_scores(3, 16, 32)],
+    ids=["projection", "scores"],
+)
+def test_operand_block_points_interpret_to_the_reference(make: Callable[[], Workload]) -> None:
+    workload = make()
+    ran = 0
+    for values in configs(TEMPLATES["matmul"], workload, samples=8, seed=3):
+        try:
+            sch = scheduled(workload, values)
+        except ScheduleError:
+            continue
+        check_interpreted(sch, workload)
+        ran += 1
+    assert ran >= 3
 
 
 def test_every_pattern_has_a_template() -> None:

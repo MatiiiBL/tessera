@@ -424,9 +424,26 @@ def _simdgroup(
     # past the end, and the reduction is walked 8 at a time.
     if m % (8 * gm * fm) or k % 8 or n < 8 * fn:
         raise ScheduleError(f"{m} x {n} x {k} does not fit {8 * fm} x {8 * fn} x 8 tiles")
+    # Operands the microkernel loads in place are read from device memory like
+    # any input; the others are staged.
+    operands = []
+    for block in _operand_blocks(sch, main):
+        if _loads_directly(sch, block):
+            sch.compute_inline(block)
+        else:
+            operands.append(block)
+    if operands and (k % knobs.simd_k or knobs.simd_k % 8):
+        raise ScheduleError(f"a reduction of {k} is not steps of {knobs.simd_k}")
     mo, ms, mi = sch.split(m_loop, [None, gm, 8 * fm])
     no, ns, ni = sch.split(n_loop, [None, gn, 8 * fn])
-    sch.reorder(mo, no, ms, ns, mi, ni, k_loop)
+    # The microkernel walks the whole reduction, unless operands are staged a
+    # step of it at a time.
+    ko = mi
+    if operands:
+        ko, ki = sch.split(k_loop, [None, knobs.simd_k])
+        sch.reorder(mo, no, ms, ns, ko, mi, ni, ki)
+    else:
+        sch.reorder(mo, no, ms, ns, mi, ni, k_loop)
     batch_loop = fuse_all(sch, batch)
     if batch_loop is not None:
         sch.bind(batch_loop, "threadgroup.z")
@@ -439,7 +456,13 @@ def _simdgroup(
     if lowered.epilogue_block is not None:
         sch.reverse_compute_inline(lowered.epilogue_block)
     _lanes(sch, store)
-    init = sch.decompose_reduction(main, mi)
+    # Each SIMD group computes its tile of an operand's prologue for one step of
+    # the reduction into threadgroup memory.
+    for operand in operands:
+        sch.compute_inline(sch.cache_write(operand, 0, "shared"))
+        sch.compute_at(operand, ko)
+        _lanes(sch, operand)
+    init = sch.decompose_reduction(main, ko)
     _lanes(sch, init)
     sch.tensorize(mi, microkernels.name(fm, fn, _gemm_ranks(sch, main)))
 
@@ -475,20 +498,38 @@ def schedule_matmul(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
     """MatMul (batched or not) with its prologue and epilogue: SIMD-group matrices
     when the operands are plain matrices and the shape divides into their tiles,
     otherwise tiles of scalar code, or for a matrix-vector product (few rows) one
-    thread per output element."""
+    thread per output element.
+
+    An operand whose prologue is a block of its own (``operand_blocks`` lowering)
+    is a plain matrix to the SIMD-group schedule: each SIMD group computes its
+    tile of it into threadgroup memory every ``simd_k`` steps of the reduction,
+    evaluating the prologue once per element. The scalar schedules inline such a
+    block back into the main block's loads."""
     main = lowered.main_block
     assert main is not None
+    operands = _operand_blocks(sch, main)
+    keep = {main, *([lowered.epilogue_block] if lowered.epilogue_block else [])}
+    plain = sch.copy()
+    inline_all(plain, keep)
+    staged = _affine_reads(find_block(plain.func, main).block)
     spatial, reduction = split_loops(sch, main)
     *batch, rows, cols = spatial
-    staged = _affine_reads(find_block(sch.func, main).block)
     m, n, k = sch.extent(rows), sch.extent(cols), _extent(sch, reduction)
+    k_tiles = [t for t in (8, 16, 32, 64) if k % t == 0] if operands else []
     simd = simd_layout(m, n) if k % 8 == 0 else None
     if simd is not None:
         # The default must apply: try the SIMD-group schedule on a copy.
-        trial = GemmKnobs("simdgroup", (8, 8), (4, 4), 8, False, 32, *simd)
+        k_tile = 32 if 32 in k_tiles else k_tiles[-1] if k_tiles else 32
+        trial = GemmKnobs("simdgroup", (8, 8), (4, 4), 8, False, 32, *simd, 1, k_tile)
         if not succeeds(sch, partial(_simdgroup_check, lowered=lowered, knobs=trial)):
             simd = None
-    knobs = gemm_knobs(cfg, m, n, k, _extent(sch, spatial), bool(staged), simd)
+    knobs = gemm_knobs(
+        cfg, m, n, k, _extent(sch, spatial), bool(staged), simd, simd_k=k_tiles or (32,)
+    )
+    if knobs.strategy != "simdgroup":
+        inline_all(sch, keep)
+    spatial, reduction = split_loops(sch, main)
+    *batch, rows, cols = spatial
     _gemm(
         sch,
         lowered,
@@ -498,6 +539,55 @@ def schedule_matmul(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
         cols=[cols],
         reduction=reduction,
         staged=staged,
+    )
+
+
+def _operand_blocks(sch: Schedule, main: str) -> list[str]:
+    """The blocks that compute a buffer the main block reads (operands lowered
+    with their prologue as a block of their own)."""
+    reads = {r.buffer for r in find_block(sch.func, main).block.reads}
+    out = []
+    for name in sch.blocks():
+        if name == main:
+            continue
+        body = find_block(sch.func, name).block.body
+        if any(isinstance(s, BufferStore) and s.buffer in reads for s in walk_stmts(body)):
+            out.append(name)
+    return out
+
+
+def _loads_directly(sch: Schedule, block: str) -> bool:
+    """Whether the operand ``block`` computes is a matrix of its source buffer the
+    microkernel can load in place: a copy whose last two axes (rows, columns)
+    each index one dimension of the source with unit coefficient, the columns
+    the source's last (a slice, or a transpose of leading axes)."""
+    from tessera.backend.metal.lower import affine
+    from tessera.tir.expr import BufferLoad
+
+    realize = find_block(sch.func, block)
+    body = realize.block.body
+    if not isinstance(body, BufferStore) or not isinstance(body.value, BufferLoad):
+        return False
+    forms = [affine(i) for i in body.value.indices]
+    if any(f is None for f in forms) or len(realize.block.iter_vars) < 2:
+        return False
+    rows, cols = (iv.var for iv in realize.block.iter_vars[-2:])
+
+    def dims(v: Var) -> list[int]:
+        return [d for d, f in enumerate(forms) if f is not None and f.get(v, 0) != 0]
+
+    def unit(v: Var, d: int) -> bool:
+        form = forms[d]
+        return form is not None and form.get(v) == 1
+
+    last = len(forms) - 1
+    row_dims, col_dims = dims(rows), dims(cols)
+    return (
+        col_dims == [last]
+        and unit(cols, last)
+        and len(row_dims) == 1
+        and row_dims[0] != last
+        and unit(rows, row_dims[0])
     )
 
 
