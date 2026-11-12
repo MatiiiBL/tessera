@@ -21,6 +21,7 @@ themselves when there is none (CI runners have none).
 | `shim.m`, `runtime.py` | the Objective-C runtime and its ctypes wrapper |
 | `executor.py` | `MetalModel`: a whole `ExecutionPlan` in one command buffer |
 | `measure.py` | timing one kernel for the tuner |
+| `microkernels.py` | the SIMD-group matrix multiply, registered as a tensorize intrinsic |
 | `templates.py` | one schedule template per pattern |
 | `bench.py` | the kernel benchmarks in `results/metal/` |
 
@@ -115,9 +116,9 @@ loop runs under `if (thread_x < extent)`.
 Threadgroups are launched one-dimensional, and the code computes each axis
 position from `thread_index_in_threadgroup`, x fastest (`thread_index % 32`,
 `thread_index / 32`). `generate(func, flat=False)` launches the threadgroup in
-the thread loops' shape instead; `results/metal/shape.md` compares the two on
-SIMD-group matrix multiplies, where they perform within a few percent of each
-other.
+the thread loops' shape instead, and `results/metal/shape.md` compares the two
+on SIMD-group matrix multiplies (see Measurements). A flat launch costs a few
+integer divisions by constants per thread.
 
 **Buffers.** A function's parameters become `device` pointers, `const`
 when the kernel never writes them, bound at buffer indices 0, 1, .... Buffers

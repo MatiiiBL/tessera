@@ -1,0 +1,177 @@
+{
+  "environment": {
+    "commit": "cb94edd",
+    "cores": 10,
+    "date": "2026-11-12T06:54:03Z",
+    "load_average": [
+      6.24,
+      6.05,
+      6.28
+    ],
+    "machine": "Apple M4",
+    "memory_gb": 16,
+    "numpy": "2.5.4",
+    "os": "Darwin 27.0.0",
+    "performance_cores": 4,
+    "provisional": true,
+    "python": "3.13.7"
+  },
+  "shapes": [
+    {
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 1.8367436834833303e-05,
+      "default_seconds": 1.8367436834833303e-05,
+      "flops": 33554432,
+      "mps_seconds": 0.00012147416666266508,
+      "name": "256 x 256 x 256",
+      "shape": [
+        0,
+        256,
+        256,
+        256
+      ]
+    },
+    {
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.0001166836832071706,
+      "default_seconds": 0.0001166836832071706,
+      "flops": 268435456,
+      "mps_seconds": 0.00016233166665188036,
+      "name": "512 x 512 x 512",
+      "shape": [
+        0,
+        512,
+        512,
+        512
+      ]
+    },
+    {
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.0009295381943654016,
+      "default_seconds": 0.0009295381943654016,
+      "flops": 2147483648,
+      "mps_seconds": 0.000992605833307607,
+      "name": "1024 x 1024 x 1024",
+      "shape": [
+        0,
+        1024,
+        1024,
+        1024
+      ]
+    },
+    {
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.008164249999936146,
+      "default_seconds": 0.008164249999936146,
+      "flops": 17179869184,
+      "mps_seconds": 0.010887379166670144,
+      "name": "2048 x 2048 x 2048",
+      "shape": [
+        0,
+        2048,
+        2048,
+        2048
+      ]
+    },
+    {
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.1301377500021772,
+      "default_seconds": 0.1301377500021772,
+      "flops": 137438953472,
+      "mps_seconds": 0.08516571000000113,
+      "name": "4096 x 4096 x 4096",
+      "shape": [
+        0,
+        4096,
+        4096,
+        4096
+      ]
+    },
+    {
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.00012177963617432397,
+      "default_seconds": 0.00012177963617432397,
+      "flops": 150994944,
+      "mps_seconds": 0.00015326749999076129,
+      "name": "attention projection (BERT, GPT-2)",
+      "shape": [
+        0,
+        128,
+        768,
+        768
+      ]
+    },
+    {
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.00029985377354160793,
+      "default_seconds": 0.00029985377354160793,
+      "flops": 452984832,
+      "mps_seconds": 0.0003422391667118063,
+      "name": "fused QKV projection (GPT-2)",
+      "shape": [
+        0,
+        128,
+        2304,
+        768
+      ]
+    },
+    {
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.0003159016393257217,
+      "default_seconds": 0.0003159016393257217,
+      "flops": 603979776,
+      "mps_seconds": 0.00039373916668409946,
+      "name": "MLP up (BERT, GPT-2)",
+      "shape": [
+        0,
+        128,
+        3072,
+        768
+      ]
+    },
+    {
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.0003473276515168519,
+      "default_seconds": 0.0003473276515168519,
+      "flops": 603979776,
+      "mps_seconds": 0.00046219749994634183,
+      "name": "MLP down (BERT, GPT-2)",
+      "shape": [
+        0,
+        128,
+        768,
+        3072
+      ]
+    },
+    {
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 1.640582160996621e-05,
+      "default_seconds": 1.640582160996621e-05,
+      "flops": 25165824,
+      "mps_seconds": 9.123916664975695e-05,
+      "name": "attention scores, 12 heads",
+      "shape": [
+        12,
+        128,
+        128,
+        64
+      ]
+    },
+    {
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 1.4709782854503492e-05,
+      "default_seconds": 1.4709782854503492e-05,
+      "flops": 25165824,
+      "mps_seconds": 7.815749995643273e-05,
+      "name": "attention times values, 12 heads",
+      "shape": [
+        12,
+        128,
+        64,
+        128
+      ]
+    }
+  ],
+  "torch": "2.15.0",
+  "trials": 0
+}
