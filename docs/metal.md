@@ -140,9 +140,16 @@ access over the remaining loops. A matmul's `C_local` of 64 x 64 becomes the
 2 x 2 accumulators of one thread, and its `A_shared` the 16 x 8 tile of one
 step (`tests/metal/test_metal_lower.py`). Indices are split into additive
 terms, so an affine fixed part (`by * 16`) and a gathered part
-(`flat // 8`) are handled separately. Loops bound to the same axis count as
-the same position. The tir package's own `compact_buffers` places buffers by
-loop nest only; the Metal backend needs the scope-dependent version.
+(`flat // 8`) are handled separately; a non-affine term made only of fixed
+variables (a thread's element `t // 3136`) stands for one unknown, so a
+per-thread result addressed through `//` and `%` still shrinks to one
+register. Loops bound to the same axis count as the same position, and a loop
+of one iteration counts as its start, because a schedule may have simplified
+its variable away in some indices but not others. A tile that reaches past
+the tensor's edge (a SIMD group's 8 x 8 tile at the last columns) makes the
+buffer grow to whole tiles instead. The tir package's own `compact_buffers`
+places buffers by loop nest only; the Metal backend needs the
+scope-dependent version.
 
 **Barriers.** A pass over each statement sequence inserts
 `threadgroup_barrier(mem_flags::mem_threadgroup)` before a statement that
@@ -190,6 +197,72 @@ negative base and an integral exponent follows NumPy. Generated code is
 deterministic: names come from the IR (sanitized, made unique, never shadowing
 a Metal function), and the same function always prints the same text.
 
+## The SIMD-group matrix microkernel
+
+`microkernels.py` registers `metal.simdgroup_gemm_{fm}x{fn}` with
+`tir.intrin`: its description is `tir.intrin.matmul_desc(8 fm, 8 fn)` (or a
+copy for 3- and 4-D buffers, whose leading indices the matcher treats as
+offsets), so `Schedule.tensorize` replaces the update block of a decomposed
+matmul reduction whose inner loops cover one SIMD group's tile and the whole
+reduction. The emitted code keeps the `fm x fn` accumulator tiles in
+`simdgroup_float8x8` registers, walks the reduction 8 at a time loading `fm`
+tiles of A and `fn` tiles of B with `simdgroup_load`, and multiplies every
+pair with `simdgroup_multiply_accumulate` (the loop of a 2 x 4 tile, condensed;
+the generated code unrolls the inner loops):
+
+```
+for (int k = 0; k < 768; k += 8) {
+  simdgroup_float8x8 a[2];
+  simdgroup_float8x8 b[4];
+  for (int i = 0; i < 2; ++i) simdgroup_load(a[i], a_tile + i * 6144 + k, 768);
+  for (int j = 0; j < 4; ++j) simdgroup_load(b[j], b_tile + k * 768 + j * 8, 768);
+  for (int i = 0; i < 2; ++i)
+    for (int j = 0; j < 4; ++j)
+      simdgroup_multiply_accumulate(acc[i][j], a[i], b[j], acc[i][j]);
+}
+```
+
+A and B come straight from device memory, which the GPU caches; the
+accumulators start and end in a tile of
+threadgroup memory, where the 32 lanes write the reduction's init and apply
+the epilogue as they store the result. The call does not carry row strides:
+the code generator computes them from the buffers when it prints the kernel,
+after compaction has changed their shapes.
+
+**Edges.** A tile whose last columns fall past the output (GPT-2's 50257
+vocabulary entries) is still computed whole: the extra columns only reach
+parts of the threadgroup tile that the predicated store skips. Their reads of
+B run up to a tile row past the end of its last row, so every allocation has
+4 KB of padding after it (`runtime.PADDING`); a test fills the padding with
+NaN and checks it never reaches a result. Rows past the edge would read whole
+rows of A past the end, so the schedule requires the rows to divide into
+tiles, and the reduction to be a multiple of 8.
+
+**Convolutions.** For a convolution, each SIMD group computes the part of the
+input its tile needs for one `(kh, kw)` and one tile of `simd_k` input
+channels into threadgroup memory, from the padding block that
+`lower_group(pad_block=True)` emits (the backend asks for it through
+`lowering_options`), or by copying the input when there is no padding. The
+microkernel then multiplies that tile by the weights, read from device
+memory. Rows past the image's edge (an output 7 pixels wide in 8-row tiles)
+read only threadgroup memory. A strided convolution uses a variant whose A
+rows are the stride apart in that tile.
+
+## Templates
+
+Each template asks a `Config` for every decision; the defaults are what an
+untuned compile uses. `tests/metal/test_metal_templates.py` runs every
+template's default and random points of its space, on groups lowered from
+small graphs with uneven shapes, in `tir.interpret` and on the GPU.
+
+| Pattern | Schedule | Knobs (default) |
+|---|---|---|
+| `matmul` | `simdgroup`: SIMD groups of 8 x 8 tiles with the microkernel, when the rows divide into tiles, K is a multiple of 8 and the operands are plain loads; `tiles`: threadgroup tile over threads and per-thread register tiles, accumulators in registers, optional threadgroup staging of A and B every `tile_k` steps, the epilogue applied on the store; `elements`: one thread per output element (matrix-vector products) | `strategy`, `simd_groups` (1 x 2), `simd_tiles` (2 x 4), `threads` (8 x 8), `registers` (4 x 4), `tile_k` (8), `shared` (on), `element_threads` (128) |
+| `conv2d` | the same strategies over each output row (pixels as rows, output channels as columns), `kh`, `kw` outside the tiled channel loop; scalar tiles stack `image_rows` output rows per threadgroup on `thread.z`, staging the weights | as `matmul`, plus `image_rows` (1; 2 or 4 for rows of 16 or 8 pixels), `simd_k` (32) |
+| `depthwise_conv2d`, `pool` | one thread per output element, the window loops unrolled, the result kept in a register for the epilogue | `threads` (128), `unroll_window` (on) |
+| `reduce`, `softmax`, `layernorm` | `rows`: a threadgroup per row, its threads splitting every reduction (SIMD-group functions, then threadgroup memory), the reduced values in threadgroup memory; `columns`: one thread per row when rows are the contiguous dimension | `strategy` (`columns` when INNER is at least 32), `threads` (256 or the row length), `rows_per_group` (1), `column_threads` (128) |
+| `injective` | every block inlined, the loops fused and split over threadgroups, threads and elements per thread | `threads` (256), `per_thread` (1) |
+
 ## The runtime
 
 `shim.m` is about 400 lines of Objective-C compiled with
@@ -228,8 +301,9 @@ to Python is a retained Objective-C object behind a `void*`, released by a
 generates every kernel of an `ExecutionPlan` into one MSL source
 (`sources()["kernels.metal"]`), compiles one library, and allocates one buffer
 each for the arena, the constant blob, every model input and every model
-output. Each launch binds its parameters to (buffer, offset) pairs taken from
-the plan's `BufferRef`s, after checking that every region fits.
+output, each followed by the padding the microkernels may read. Each launch
+binds its parameters to (buffer, offset) pairs taken from the plan's
+`BufferRef`s, after checking that every region fits.
 
 A launch gets a barrier only if it reads bytes written, or writes bytes read
 or written, by a launch since the last barrier (`plan_barriers`, checked by a
@@ -275,6 +349,24 @@ previous one costs about 3.2 µs of GPU time with the concurrent encoder and
 command buffer with one launch takes about 180 µs from encoding until the CPU
 sees it complete, which is why a model runs as one command buffer.
 
+**GEMM** (`results/metal/gemm.md`, provisional, measured on a busy machine,
+GPU time per call with the default configurations): on square sizes 512 to
+2048 and the four BERT and GPT-2 projection shapes, the SIMD-group path ran
+1240 to 2310 GFLOPS against 985 to 2163 for `torch.matmul` on MPS; at 4096 it
+ran 1056 against MPS's 1614. On the smallest shapes (256 x 256 x 256, the 12-head
+attention products), MPS's time includes PyTorch's dispatch between calls,
+which dominates there.
+
+**Threadgroup shape** (`results/metal/shape.md`, provisional): the same
+SIMD-group kernels launched flat and shaped were within 6% of each other on
+five of six configurations; the sixth (1024³, 1 x 2 SIMD groups) ran 1.71
+times faster flat.
+
+**ResNet-50 convolutions** (`results/metal/conv.md`, provisional): with the
+generated scalar loops, the 53 convolutions took 54.3 ms against MPS's 11.0 ms.
+That file predates the SIMD-group convolutions; it is regenerated in the final
+measurement run.
+
 ## Limitations
 
 - Kernels compute in float32 (float16 buffers are read and converted).
@@ -285,3 +377,8 @@ sees it complete, which is why a model runs as one command buffer.
 - Cross-thread reductions run over `thread.x` only and support sums, maxima
   and minima.
 - The code generator assumes the 32-lane SIMD groups of Apple GPUs.
+- The SIMD-group microkernel needs the rows of each tile within the matrix and
+  a reduction that is a multiple of 8; other shapes use scalar tiles.
+- A strided convolution whose output width is not a multiple of 8 uses scalar
+  tiles: tensorize refuses an edge tile on a loop that indexes the input with a
+  stride (three 1 x 1 and three 3 x 3 layers of ResNet-50).
