@@ -54,14 +54,18 @@ def test_unscheduled_function_is_one_thread() -> None:
     assert "c[i] = max(a[i] + b[i], 0.0f);" in kernel.source
     assert [p.written for p in kernel.params] == [False, False, True]
     assert "device const float* a [[buffer(0)]]" in kernel.source
-    assert "thread_pos" not in kernel.source
+    assert "thread_index" not in kernel.source
 
 
 def test_thread_bindings_give_the_launch_shape() -> None:
     kernel = generate(matmul_bound(10, 12, 5, RNG, tile=8).func)
     assert kernel.grid == (2, 2, 1)
-    assert kernel.threads == (8, 8, 1)
-    assert "const int tx = (int)thread_pos.x;" in kernel.source
+    # Threadgroups are launched flat; each axis position comes from the flat index.
+    assert kernel.threads == (64, 1, 1)
+    assert kernel.shape == (8, 8, 1)
+    assert "uint thread_index [[thread_index_in_threadgroup]]" in kernel.source
+    assert "const int tx = (int)(thread_index % 8);" in kernel.source
+    assert "const int ty = (int)(thread_index / 8);" in kernel.source
     assert "const int by = (int)threadgroup_pos.y;" in kernel.source
     assert "if (vi < 10 && vj < 12)" in kernel.source
     assert "[[max_total_threads_per_threadgroup(64)]]" in kernel.source
@@ -146,6 +150,24 @@ def test_smaller_thread_loop_is_guarded() -> None:
     kernel = generate(prim_func("guarded", [out], body, alloc=[sh]))
     assert kernel.threads == (256, 1, 1)
     assert "if (t1 < 100) {" in kernel.source
+
+
+def test_three_thread_axes_unflatten_x_fastest() -> None:
+    out = Buffer("out", (2, 3, 4))
+    x, y, z = Var("x"), Var("y"), Var("z")
+    body = bound(
+        z,
+        2,
+        "thread.z",
+        bound(
+            y, 3, "thread.y", bound(x, 4, "thread.x", BufferStore(out, FloatImm(1.0), (z, y, x)))
+        ),
+    )
+    kernel = generate(prim_func("xyz", [out], body))
+    assert kernel.threads == (24, 1, 1)
+    assert "const int x = (int)(thread_index % 4);" in kernel.source
+    assert "const int y = (int)(thread_index / 4 % 3);" in kernel.source
+    assert "const int z = (int)(thread_index / 12);" in kernel.source
 
 
 def test_barrier_under_a_thread_dependent_branch_is_rejected() -> None:
@@ -334,7 +356,7 @@ def test_thread_loops_with_an_offset() -> None:
         ]
     )
     source = generate(prim_func("offset", [out], body)).source
-    assert "const int t = (int)thread_pos.x;" in source
+    assert "const int t = (int)thread_index;" in source
     assert "const int t_1 = 8 + t;" in source
     assert "out[t_1] = 1.0f;" in source
     assert "out[t] = 2.0f;" in source

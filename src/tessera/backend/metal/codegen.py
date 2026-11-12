@@ -6,10 +6,14 @@ but the thread's position on one grid axis:
 
 - ``threadgroup.{x,y,z}`` loops read ``threadgroup_position_in_grid`` and
   their extents give the number of threadgroups;
-- ``thread.{x,y,z}`` loops read ``thread_position_in_threadgroup`` and their
-  extents give the threadgroup size. Two loops bound to the same axis may have
-  different extents: the launch uses the largest and the smaller loop is
-  guarded.
+- ``thread.{x,y,z}`` loops give the threadgroup's shape. Two loops bound to
+  the same axis may have different extents: the launch uses the largest and
+  the smaller loop is guarded. Threadgroups are launched one-dimensional and
+  each axis position is computed from ``thread_index_in_threadgroup`` (x
+  fastest): a SIMD-group matrix multiply runs about 1.35 times faster in a
+  64 x 1 x 1 threadgroup than in the same 64 threads shaped 32 x 2 x 1, and
+  scalar kernels run the same either way (``python -m
+  tessera.backend.metal.bench shape``).
 
 Buffers allocated inside the function become ``threadgroup`` arrays
 (``shared``), thread-private arrays (``local``) or scratch device buffers
@@ -100,7 +104,8 @@ class Kernel:
     params: tuple[KernelBuffer, ...]  # one per PrimFunc parameter, bound first
     scratch: tuple[KernelBuffer, ...]  # global intermediates, bound after the params
     grid: tuple[int, int, int]  # threadgroups per grid
-    threads: tuple[int, int, int]  # threads per threadgroup
+    threads: tuple[int, int, int]  # threads per threadgroup, as launched (one-dimensional)
+    shape: tuple[int, int, int]  # the threadgroup's thread.{x,y,z} extents
     threadgroup_memory: int  # bytes of threadgroup arrays
     index_type: str  # "int" or "long"
     helpers: frozenset[str] = frozenset()  # prelude functions the kernel calls
@@ -112,6 +117,10 @@ class Kernel:
     @property
     def num_threads(self) -> int:
         return self.threads[0] * self.threads[1] * self.threads[2]
+
+    @property
+    def thread_tags(self) -> dict[str, int]:
+        return {f"thread.{a}": e for a, e in zip("xyz", self.shape, strict=True)}
 
 
 # Helpers the generated code may call; each is emitted once per module, in this order.
@@ -499,26 +508,25 @@ def _emit_allreduce(writer: _KernelWriter, call: Call) -> str:
         assert isinstance(scratch, AddressOf)
         groups = width // SIMD_WIDTH
         red = writer.namer(scratch.buffer)
-        writer.uses.add("thread_pos")
-        ys, zs = writer.bindings.get("thread.y", 1), writer.bindings.get("thread.z", 1)
-        row = "0"
-        if ys > 1 and zs > 1:
-            row = f"(thread_pos.y + {ys} * thread_pos.z)"
-        elif ys > 1:
-            row = "thread_pos.y"
-        elif zs > 1:
-            row = "thread_pos.z"
-        base = "" if row == "0" else f"{row} * {groups} + "
-        first = "0" if row == "0" else f"{row} * {groups}"
+        _, y, z = writer.shape
+        # Positions on the thread axes; a row is the threads that share y and z.
+        tx = writer.namer(writer.axis_vars["thread.x"])
+        ty = writer.namer(writer.axis_vars["thread.y"]) if y > 1 else None
+        tz = writer.namer(writer.axis_vars["thread.z"]) if z > 1 else None
+        rows = [f"{ty} * {groups}" if ty else None, f"{tz} * {y * groups}" if tz else None]
+        row = " + ".join(r for r in rows if r)
+        first = row or "0"
+        row = f"{row} + " if row else ""
+        group = f"{tx} / {SIMD_WIDTH}"
         lines += [
             "threadgroup_barrier(mem_flags::mem_threadgroup);",
-            f"if (thread_pos.x % {SIMD_WIDTH} == 0) {{",
-            f"  {red}[{base}thread_pos.x / {SIMD_WIDTH}] = {v};",
+            f"if ({tx} % {SIMD_WIDTH} == 0) {{",
+            f"  {red}[{row}{group}] = {v};",
             "}",
             "threadgroup_barrier(mem_flags::mem_threadgroup);",
             f"{v} = {red}[{first}];",
             f"for (uint group = 1; group < {groups}; ++group) {{",
-            f"  {v} = {combine(v, f'{red}[{base}group]')};",
+            f"  {v} = {combine(v, f'{red}[{row}group]')};",
             "}",
         ]
     return "\n".join(lines)
@@ -538,6 +546,128 @@ register_intrinsic(
     collective=True,
     barrier=_allreduce_synchronizes,
 )
+
+
+# SIMD-group matrices (simdgroup_matrix): 8 x 8 tiles held by the 32 lanes of a SIMD
+# group together. Arguments that are tiles point into a local buffer whose only uses are
+# these calls; the code generator declares it as an array of simdgroup_float8x8.
+SIMD_LANES = 32
+TILE = (8, 8)
+FRAGMENT_ARGS = {
+    "metal.simdgroup_fill": (0,),
+    "metal.simdgroup_load": (0,),
+    "metal.simdgroup_store": (0,),
+    "metal.simdgroup_mma": (0, 1, 2, 3),
+}
+
+
+def _fragment_buffers(body: Stmt) -> set[Buffer]:
+    out: set[Buffer] = set()
+    for s in _walk_stmt(body):
+        if isinstance(s, Evaluate) and isinstance(s.value, Call):
+            for i in FRAGMENT_ARGS.get(s.value.name, ()):
+                arg = s.value.args[i]
+                if not isinstance(arg, AddressOf) or arg.buffer.scope != "local":
+                    raise CodegenError(
+                        f"{s.value.name}: argument {i} must point into a local buffer"
+                    )
+                buffer = arg.buffer
+                if buffer.ndim < 2 or buffer.shape[-2] % 8 or buffer.shape[-1] % 8:
+                    raise CodegenError(
+                        f"{buffer.name} holds SIMD-group matrices, so its last two dimensions "
+                        f"must be multiples of 8, not {buffer.shape}"
+                    )
+                if buffer.dtype not in (DType.float32, DType.float16):
+                    raise CodegenError(
+                        f"SIMD-group matrices hold float32 or float16, not {buffer.dtype}"
+                    )
+                out.add(buffer)
+    return out
+
+
+def _fragment_count(buffer: Buffer) -> int:
+    return buffer.numel // 64
+
+
+def _emit_fill(writer: _KernelWriter, call: Call) -> str:
+    frag, value = call.args
+    ctype = _BUFFER_TYPES[_fragment_dtype(frag)]
+    return (
+        f"{writer.fragment(frag)} = make_filled_simdgroup_matrix<{ctype}, 8, 8>"
+        f"({writer.expr(value)[0]});"
+    )
+
+
+def _fragment_dtype(arg: Expr) -> DType:
+    assert isinstance(arg, AddressOf)
+    return arg.buffer.dtype
+
+
+def _emit_load(writer: _KernelWriter, call: Call) -> str:
+    frag, src, ld, transpose = call.args
+    text = f"simdgroup_load({writer.fragment(frag)}, {writer.expr(src)[0]}, {writer.expr(ld)[0]}"
+    if isinstance(transpose, IntImm) and transpose.value:
+        text += ", ulong2(0, 0), true"
+    return text + ");"
+
+
+def _emit_store(writer: _KernelWriter, call: Call) -> str:
+    frag, dst, ld = call.args
+    return f"simdgroup_store({writer.fragment(frag)}, {writer.expr(dst)[0]}, {writer.expr(ld)[0]});"
+
+
+def _emit_mma(writer: _KernelWriter, call: Call) -> str:
+    d, a, b, c = (writer.fragment(x) for x in call.args)
+    return f"simdgroup_multiply_accumulate({d}, {a}, {b}, {c});"
+
+
+register_intrinsic(
+    "metal.simdgroup_fill", _emit_fill, writes=(0,), extents={0: TILE}, collective=True
+)
+register_intrinsic(
+    "metal.simdgroup_load",
+    _emit_load,
+    writes=(0,),
+    extents={0: TILE, 1: TILE},
+    collective=True,
+)
+register_intrinsic(
+    "metal.simdgroup_store",
+    _emit_store,
+    writes=(1,),
+    extents={0: TILE, 1: TILE},
+    collective=True,
+)
+register_intrinsic(
+    "metal.simdgroup_mma",
+    _emit_mma,
+    writes=(0,),
+    extents={0: TILE, 1: TILE, 2: TILE, 3: TILE},
+    collective=True,
+)
+
+
+def simdgroup_fill(frag: AddressOf, value: Expr) -> Evaluate:
+    """Set the 8 x 8 tile at ``frag`` to ``value``."""
+    return Evaluate(Call("metal.simdgroup_fill", (frag, value), DType.int32))
+
+
+def simdgroup_load(
+    frag: AddressOf, src: AddressOf, ld: int, *, transpose: bool = False
+) -> Evaluate:
+    """Load the 8 x 8 tile at ``src`` (rows ``ld`` elements apart) into ``frag``."""
+    args = (frag, src, IntImm(ld), IntImm(int(transpose)))
+    return Evaluate(Call("metal.simdgroup_load", args, DType.int32))
+
+
+def simdgroup_store(frag: AddressOf, dst: AddressOf, ld: int) -> Evaluate:
+    """Store the tile ``frag`` at ``dst`` (rows ``ld`` elements apart)."""
+    return Evaluate(Call("metal.simdgroup_store", (frag, dst, IntImm(ld)), DType.int32))
+
+
+def simdgroup_mma(d: AddressOf, a: AddressOf, b: AddressOf, c: AddressOf) -> Evaluate:
+    """``d = a @ b + c`` on 8 x 8 tiles."""
+    return Evaluate(Call("metal.simdgroup_mma", (d, a, b, c), DType.int32))
 
 
 # -- expressions ----------------------------------------------------------------------
@@ -589,7 +719,7 @@ _RESERVED_WORDS = """
     exp log sqrt rsqrt tanh erf abs fabs floor ceil fma min max pow powr fmod copysign
     clamp select precise fast simd_sum simd_max simd_min simd_shuffle_down
     simdgroup_barrier threadgroup_barrier mem_flags INFINITY NAN
-    threadgroup_pos thread_pos simd_lane simd_group
+    threadgroup_pos thread_index simd_lane simd_group group offset
 """
 RESERVED = frozenset(_RESERVED_WORDS.split())
 
@@ -736,6 +866,16 @@ def fold(expr: Expr) -> Expr:
                     return IntImm(0, expr.dtype)
             if op in ("floordiv", "div") and _is_int(b, 1):
                 return a
+            if (
+                op == "floordiv"
+                and isinstance(b, IntImm)
+                and b.value > 0
+                and isinstance(a, Binary)
+                and a.op == "mul"
+                and isinstance(a.b, IntImm)
+                and a.b.value % b.value == 0
+            ):
+                return fold(a.a * (a.b.value // b.value))
             if op == "floormod" and _is_int(b, 1):
                 return IntImm(0, expr.dtype)
             return Binary(op, a, b)
@@ -822,6 +962,8 @@ class _KernelWriter:
         self.subst: dict[Var, Expr] = {}
         self.uses: set[str] = set()  # builtin kernel arguments the body reads
         self.bindings: dict[str, int] = {}  # grid axis -> launch extent
+        self.fragments: set[Buffer] = set()  # local buffers held as SIMD-group matrices
+        self.shape: tuple[int, int, int] = (1, 1, 1)  # thread.{x,y,z} extents
         self.axis_vars: dict[str, Var] = {}  # grid axis -> the variable that reads it
         self.narrow = True
 
@@ -879,6 +1021,16 @@ class _KernelWriter:
         func = self.func
         threads = _xyz(analysis.bindings, "thread")
         grid = _xyz(analysis.bindings, "threadgroup")
+        self.fragments = _fragment_buffers(func.body)
+        if self.fragments:
+            # SIMD-group matrices are held by the 32 lanes of a SIMD group together:
+            # the lanes run on thread.x, and thread.y and thread.z index SIMD groups.
+            if threads[0] not in (1, SIMD_LANES):
+                raise CodegenError(
+                    f"{func.name} uses SIMD-group matrices, so thread.x must be its "
+                    f"{SIMD_LANES} lanes, not {threads[0]} threads"
+                )
+            threads = (SIMD_LANES, threads[1], threads[2])
         num_threads = threads[0] * threads[1] * threads[2]
         if num_threads > 1024:
             raise CodegenError(f"{num_threads} threads per threadgroup (Metal allows 1024)")
@@ -922,20 +1074,31 @@ class _KernelWriter:
         for b in shared:
             self.line(f"threadgroup {_BUFFER_TYPES[b.dtype]} {self.namer(b)}[{b.numel}];")
         for b in local:
+            if b in self.fragments:
+                count = _fragment_count(b)
+                suffix = "" if count == 1 else f"[{count}]"
+                self.line(f"simdgroup_{_BUFFER_TYPES[b.dtype]}8x8 {self.namer(b)}{suffix};")
+                continue
             suffix = "" if b.numel == 1 else f"[{b.numel}]"
             self.line(f"{_BUFFER_TYPES[b.dtype]} {self.namer(b)}{suffix};")
         # One name per grid axis; every loop bound to the axis reads it.
+        self.shape = threads
         for tag in THREAD_TAGS:
             if tag in self.axis_vars:
                 level, axis = tag.split(".")
-                builtin = "threadgroup_pos" if level == "threadgroup" else "thread_pos"
-                self.uses.add(builtin)
                 var = self.axis_vars[tag]
                 self.nonneg.add(var)
-                if level == "thread":
-                    self.thread_vars.add(var)
                 ctype = self.value_type(var.dtype)
-                self.line(f"const {ctype} {self.namer(var)} = ({ctype}){builtin}.{axis};")
+                if level == "threadgroup":
+                    self.uses.add("threadgroup_pos")
+                    position = f"({ctype})threadgroup_pos.{axis}"
+                else:
+                    self.thread_vars.add(var)
+                    position = self.thread_position(axis)
+                    position = f"({ctype})" + (
+                        position if position.isidentifier() else f"({position})"
+                    )
+                self.line(f"const {ctype} {self.namer(var)} = {position};")
         self.stmt(body, _Scope())
 
         signature = [
@@ -945,8 +1108,8 @@ class _KernelWriter:
         ]
         if "threadgroup_pos" in self.uses:
             signature.append("    uint3 threadgroup_pos [[threadgroup_position_in_grid]]")
-        if "thread_pos" in self.uses:
-            signature.append("    uint3 thread_pos [[thread_position_in_threadgroup]]")
+        if "thread_index" in self.uses:
+            signature.append("    uint thread_index [[thread_index_in_threadgroup]]")
         for builtin, attr in (
             ("simd_lane", "thread_index_in_simdgroup"),
             ("simd_group", "simdgroup_index_in_threadgroup"),
@@ -954,7 +1117,8 @@ class _KernelWriter:
             if builtin in self.uses:
                 signature.append(f"    uint {builtin} [[{attr}]]")
         header = [
-            f"// {func.name}: {_dims(grid)} threadgroups of {_dims(threads)} threads",
+            f"// {func.name}: {_dims(grid)} threadgroups of {num_threads} threads"
+            + (f" ({_dims(threads)})" if num_threads > max(threads) else ""),
         ]
         if num_threads > 1:
             header.append(f"[[max_total_threads_per_threadgroup({num_threads})]]")
@@ -966,7 +1130,8 @@ class _KernelWriter:
             params=tuple(params),
             scratch=tuple(scratch_buffers),
             grid=grid,
-            threads=threads,
+            threads=(num_threads, 1, 1),
+            shape=threads,
             threadgroup_memory=threadgroup_memory,
             index_type=self.index_type,
             helpers=frozenset(self.helpers),
@@ -975,6 +1140,17 @@ class _KernelWriter:
     @property
     def index_type(self) -> str:
         return "int" if self.narrow else "long"
+
+    def thread_position(self, axis: str) -> str:
+        """The position on thread axis ``axis`` from the flat thread index."""
+        self.uses.add("thread_index")
+        x, y, z = self.shape
+        if axis == "x":
+            return "thread_index" if x == x * y * z else f"thread_index % {x}"
+        if axis == "y":
+            inner = "thread_index" if x == 1 else f"thread_index / {x}"
+            return inner if z == 1 else f"{inner} % {y}"
+        return "thread_index" if x * y == 1 else f"thread_index / {x * y}"
 
     def line(self, text: str) -> None:
         self.lines.append("  " * self.indent + text)
@@ -1174,6 +1350,10 @@ class _KernelWriter:
 
     def access(self, buffer: Buffer, indices: Sequence[Expr]) -> str:
         name = self.namer(buffer)
+        if buffer in self.fragments:
+            raise CodegenError(
+                f"{buffer.name} holds SIMD-group matrices: only simdgroup intrinsics can use it"
+            )
         if buffer.scope == "local" and buffer.numel == 1:
             return name
         if len(indices) != buffer.ndim:
@@ -1187,6 +1367,26 @@ class _KernelWriter:
             flat = term if flat is None else fold(flat + term)
         if flat is None:
             flat = IntImm(0)
+        return f"{name}[{self.expr(flat)[0]}]"
+
+    def fragment(self, arg: Expr) -> str:
+        """The SIMD-group matrix holding the 8 x 8 tile that starts at ``arg``."""
+        if not isinstance(arg, AddressOf) or arg.buffer not in self.fragments:
+            raise CodegenError(f"expected a pointer into a SIMD-group matrix buffer, got {arg}")
+        buffer = arg.buffer
+        name = self.namer(buffer)
+        if _fragment_count(buffer) == 1:
+            return name
+        # Tiles in row-major order: the last two dimensions count 8 x 8 tiles.
+        tiles = (*buffer.shape[:-2], buffer.shape[-2] // 8, buffer.shape[-1] // 8)
+        indices = [fold(self.subst_expr(i)) for i in arg.indices]
+        indices[-2] = fold(indices[-2] // 8)
+        indices[-1] = fold(indices[-1] // 8)
+        flat: Expr = IntImm(0)
+        stride = 1
+        for index, extent in zip(reversed(indices), reversed(tiles), strict=True):
+            flat = fold(flat + (fold(index * stride) if stride != 1 else index))
+            stride *= extent
         return f"{name}[{self.expr(flat)[0]}]"
 
     def operand(self, expr: Expr, prec: int, *, right: bool = False) -> str:

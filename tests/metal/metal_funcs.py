@@ -509,3 +509,81 @@ def row_reduce(
         return {"add": total, "max": np.maximum(total, 0), "min": np.minimum(total, 0)}[op]
 
     return Case(prim_func(f"row_{op}", [x, out], body), reference, [rand(rng, rows, k)])
+
+
+def matmul_simdgroup(
+    m: int,
+    n: int,
+    k: int,
+    rng: np.random.Generator,
+    *,
+    groups: tuple[int, int] = (1, 2),
+    frags: tuple[int, int] = (2, 4),
+) -> Case:
+    """What tensorizing a matmul with SIMD-group matrices leaves: ``groups`` SIMD
+    groups per threadgroup (rows on thread.z, columns on thread.y), each holding
+    ``frags`` 8 x 8 accumulator tiles, with A and B tiles loaded from device memory
+    every 8 steps of K. The fragment buffers have the whole tensor's shape."""
+    from tessera.backend.metal.codegen import (
+        simdgroup_fill,
+        simdgroup_load,
+        simdgroup_mma,
+        simdgroup_store,
+    )
+
+    (gm, gn), (fm, fn) = groups, frags
+    bm, bn = gm * fm * 8, gn * fn * 8
+    a, b, c = Buffer("A", (m, k)), Buffer("B", (k, n)), Buffer("C", (m, n))
+    c_frag = Buffer("C_frag", (m, n), scope="local")
+    a_frag = Buffer("A_frag", (m, k), scope="local")
+    b_frag = Buffer("B_frag", (k, n), scope="local")
+    by, bx, sm, sn, ko = Var("by"), Var("bx"), Var("sm"), Var("sn"), Var("ko")
+    row0, col0 = by * bm + sm * (fm * 8), bx * bn + sn * (fn * 8)
+
+    def tiles(body: Callable[[Expr, Expr], Stmt]) -> Stmt:
+        i, j = Var("i"), Var("j")
+        return loop(
+            i, fm, loop(j, fn, body(row0 + i * 8, col0 + j * 8), ForKind.UNROLLED), ForKind.UNROLLED
+        )
+
+    def rows(body: Callable[[Expr], Stmt], count: int, base: Expr) -> Stmt:
+        i = Var("i")
+        return loop(i, count, body(base + i * 8), ForKind.UNROLLED)
+
+    kk = ko * 8
+    step = seq(
+        [
+            rows(lambda r: simdgroup_load(a_frag.address(r, kk), a.address(r, kk), k), fm, row0),
+            rows(
+                lambda col: simdgroup_load(b_frag.address(kk, col), b.address(kk, col), n), fn, col0
+            ),
+            tiles(
+                lambda r, col: simdgroup_mma(
+                    c_frag.address(r, col),
+                    a_frag.address(r, kk),
+                    b_frag.address(kk, col),
+                    c_frag.address(r, col),
+                )
+            ),
+        ]
+    )
+    body = seq(
+        [
+            tiles(lambda r, col: simdgroup_fill(c_frag.address(r, col), FloatImm(0.0))),
+            loop(ko, k // 8, step),
+            tiles(lambda r, col: simdgroup_store(c_frag.address(r, col), c.address(r, col), n)),
+        ]
+    )
+    nest = bound(
+        by,
+        m // bm,
+        "threadgroup.y",
+        bound(
+            bx, n // bn, "threadgroup.x", bound(sm, gm, "thread.z", bound(sn, gn, "thread.y", body))
+        ),
+    )
+    return Case(
+        prim_func("matmul_simdgroup", [a, b, c], nest, alloc=[c_frag, a_frag, b_frag]),
+        lambda xs: xs[0] @ xs[1],
+        [rand(rng, m, k), rand(rng, k, n)],
+    )
