@@ -257,11 +257,10 @@ from validation) and none fewer than 21, so most tasks shared by twelve
 kernels had two rounds. Two rounds without progress say little about a
 space of thousands of configurations. With `0.5 / rounds`, a task stays in
 the running for a number of rounds roughly proportional to its share of
-the model's time. Resuming `c:sme` with the fix, 7,349 more measurements
-went first to the matmuls that BERT's and GPT-2's twelve layers share (the
-six busiest tasks got 1,132, 1,116, 700, 684, 588 and 508), and the busiest
-task's share fell to 15%; the Metal run, made with the fix from the start,
-gave its busiest task 9.2% of 14,294 measurements and the median task 44.
+the model's time. In the committed logs, made with the fix, the busiest
+task is again GPT-2's vocabulary projection, but with 13.7% of the 8,200
+search measurements on `c:sme` and 8.5% of Metal's, and the next ones are
+matmuls that twelve layers share (10.1% and 9.4% on `c:sme`).
 
 ## Testing
 
