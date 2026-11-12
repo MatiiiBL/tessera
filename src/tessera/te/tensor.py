@@ -18,7 +18,7 @@ from __future__ import annotations
 import itertools
 import math
 import weakref
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -40,6 +40,7 @@ from tessera.tir.expr import (
 from tessera.tir.functor import ExprVisitor, substitute
 from tessera.tir.stmt import (
     TRUE,
+    Annotations,
     Block,
     BlockRealize,
     Buffer,
@@ -108,6 +109,7 @@ class ComputeOp:
     combiner: Combiner | None
     init: Expr | None
     inputs: tuple[Tensor, ...]
+    annotations: Annotations = ()
 
 
 type Operation = PlaceholderOp | ComputeOp
@@ -199,30 +201,42 @@ def compute(
     fcompute: Callable[..., ExprLike],
     name: str = "compute",
     axis_names: Sequence[str] | None = None,
+    annotations: Mapping[str, int | float | str] | None = None,
+    init: Callable[..., ExprLike] | None = None,
 ) -> Tensor:
     """A stage: ``out[i0, i1, ...] = fcompute(i0, i1, ...)``. The body may be a
-    ``sum``/``max``/``min`` reduction."""
+    ``sum``/``max``/``min`` reduction; ``init(i0, i1, ...)`` then replaces the
+    reduction's identity as the starting value (a convolution's bias).
+    ``annotations`` are attached to the stage's block."""
     shape = tuple(int(d) for d in shape)
     names = list(axis_names) if axis_names is not None else [f"i{d}" for d in range(len(shape))]
     if len(names) != len(shape):
         raise ValueError(f"{name}: {len(names)} axis names for rank {len(shape)}")
     axis = tuple(IterVar(Var(n), Range.of(e)) for n, e in zip(names, shape, strict=True))
     result = fcompute(*(a.var for a in axis))
+    start: Expr | None
     if isinstance(result, Reduce):
-        body, combiner, init, raxis = result.source, result.combiner, result.init, result.axis
+        body, combiner, raxis = result.source, result.combiner, result.axis
+        start = result.init if init is None else as_expr(init(*(a.var for a in axis)), body.dtype)
     else:
-        body, combiner, init, raxis = as_expr(result, DType.float32), None, None, ()
+        if init is not None:
+            raise ValueError(f"{name}: init is only for reductions")
+        body, combiner, start, raxis = as_expr(result, DType.float32), None, None, ()
     if isinstance(body, Reduce):
         raise ValueError(f"{name}: reductions cannot be nested")
     loads = _Loads()
     loads.visit_expr(body)
+    if start is not None:
+        loads.visit_expr(start)
     inputs: list[Tensor] = []
     for buf in loads.buffers:
         t = _TENSORS.get(id(buf))
         if t is None or t.buffer is not buf:
             raise ValueError(f"{name} reads {buf.name}, which is not a te tensor")
         inputs.append(t)
-    op = ComputeOp(name, axis, raxis, body, combiner, init, tuple(inputs))
+    op = ComputeOp(
+        name, axis, raxis, body, combiner, start, tuple(inputs), tuple((annotations or {}).items())
+    )
     return Tensor(shape, body.dtype, name, op)
 
 
@@ -287,10 +301,10 @@ def _stage(t: Tensor, block_name: str) -> Stmt:
         current = BufferLoad(t.buffer, idx)
         combined = Binary(_COMBINE[op.combiner], current, body_expr)
         body = BufferStore(t.buffer, combined, idx)
-        init = BufferStore(t.buffer, op.init, idx)
+        init = BufferStore(t.buffer, substitute(op.init, dict(block_vars)), idx)
     block = Block(block_name, iter_vars, (), (), body, init)
     reads, writes = infer_regions(block)
-    block = Block(block_name, iter_vars, reads, writes, body, init)
+    block = Block(block_name, iter_vars, reads, writes, body, init, (), op.annotations)
     stmt: Stmt = BlockRealize(tuple(loop_vars), TRUE, block)
     for lv, a in zip(reversed(loop_vars), reversed(all_axes), strict=True):
         stmt = For(lv, a.dom.min, a.dom.extent, ForKind.SERIAL, stmt)
