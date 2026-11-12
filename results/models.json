@@ -1,12 +1,12 @@
 {
   "environment": {
-    "commit": "beb8516",
+    "commit": "e047e7f",
     "cores": 10,
-    "date": "2026-11-12T11:00:56Z",
+    "date": "2026-11-12T13:49:45Z",
     "load_average": [
-      2.33,
-      2.44,
-      2.62
+      2.2,
+      2.23,
+      2.33
     ],
     "machine": "Apple M4",
     "memory_gb": 16,
@@ -33,12 +33,13 @@
             "intermediate_bytes": 45266944,
             "kernels": 56,
             "latency": {
-              "median": 0.024777291666396195,
-              "p10": 0.019276654168061215,
-              "p90": 0.025384183328424115,
+              "median": 0.015491583333641756,
+              "p10": 0.011873733333777637,
+              "p90": 0.01651768333395012,
               "runs": 50
             },
-            "measured": "2026-11-12T10:56:21Z",
+            "measured": "2026-11-12T13:43:48Z",
+            "processes": 5,
             "system": "full",
             "threads": 4,
             "tuned_kernels": 0
@@ -56,12 +57,13 @@
             "intermediate_bytes": 106385312,
             "kernels": 123,
             "latency": {
-              "median": 0.019963749997259583,
-              "p10": 0.018793866669147972,
-              "p90": 0.025764333335973787,
+              "median": 0.012066458337358199,
+              "p10": 0.011927583331998903,
+              "p90": 0.012287045835546451,
               "runs": 50
             },
-            "measured": "2026-11-12T10:56:21Z",
+            "measured": "2026-11-12T13:43:48Z",
+            "processes": 5,
             "system": "fusion off",
             "threads": 4,
             "tuned_kernels": 0
@@ -79,20 +81,21 @@
             "intermediate_bytes": 45266944,
             "kernels": 56,
             "latency": {
-              "median": 0.0243280208305805,
-              "p10": 0.018104104165831813,
-              "p90": 0.024796699998842087,
+              "median": 0.01199177083617542,
+              "p10": 0.01186786249963916,
+              "p90": 0.016011054160480855,
               "runs": 50
             },
-            "measured": "2026-11-12T10:56:21Z",
+            "measured": "2026-11-12T13:43:48Z",
+            "processes": 5,
             "system": "graph rewrites off",
             "threads": 4,
             "tuned_kernels": 0
           },
           "no schedule": {
             "agreement": {
-              "max_abs": 2.7418136596679688e-06,
-              "max_rel": 5.919877393676685e-07,
+              "max_abs": 2.6226043701171875e-06,
+              "max_rel": 5.662491420038569e-07,
               "top1": 1.0
             },
             "arena_bytes": 10436608,
@@ -102,12 +105,13 @@
             "intermediate_bytes": 45266944,
             "kernels": 56,
             "latency": {
-              "median": 2.9469355625005846,
-              "p10": 2.9298642458328685,
-              "p90": 2.966523579168279,
+              "median": 2.936760187498294,
+              "p10": 2.9306574749978607,
+              "p90": 2.9483394249968113,
               "runs": 20
             },
-            "measured": "2026-11-12T10:56:21Z",
+            "measured": "2026-11-12T13:43:48Z",
+            "processes": 1,
             "system": "no schedule",
             "threads": 4,
             "tuned_kernels": 0
@@ -127,12 +131,13 @@
             "intermediate_bytes": 45266944,
             "kernels": 56,
             "latency": {
-              "median": 0.016952750000200467,
-              "p10": 0.016849787497631042,
-              "p90": 0.017061312497389736,
+              "median": 0.01696904166965396,
+              "p10": 0.016905062507430558,
+              "p90": 0.01710180416557705,
               "runs": 50
             },
-            "measured": "2026-11-12T10:56:21Z",
+            "measured": "2026-11-12T13:43:48Z",
+            "processes": 1,
             "system": "full",
             "threads": null,
             "tuned_kernels": 0
@@ -150,12 +155,13 @@
             "intermediate_bytes": 106385312,
             "kernels": 123,
             "latency": {
-              "median": 0.01746089583321009,
-              "p10": 0.017364629171061095,
-              "p90": 0.01753610000014305,
+              "median": 0.017370312503771856,
+              "p10": 0.01730260000404087,
+              "p90": 0.01745727916350006,
               "runs": 50
             },
-            "measured": "2026-11-12T10:56:21Z",
+            "measured": "2026-11-12T13:43:48Z",
+            "processes": 1,
             "system": "fusion off",
             "threads": null,
             "tuned_kernels": 0
@@ -173,31 +179,32 @@
             "intermediate_bytes": 45266944,
             "kernels": 56,
             "latency": {
-              "median": 0.016903333333175397,
-              "p10": 0.01680637916579144,
-              "p90": 0.016995541670621606,
+              "median": 0.016908687499380903,
+              "p10": 0.016844779170060064,
+              "p90": 0.017032179157831707,
               "runs": 50
             },
-            "measured": "2026-11-12T10:56:21Z",
+            "measured": "2026-11-12T13:43:48Z",
+            "processes": 1,
             "system": "graph rewrites off",
             "threads": null,
             "tuned_kernels": 0
           },
           "no schedule": {
-            "measured": "2026-11-12T10:56:21Z",
+            "measured": "2026-11-12T13:43:48Z",
             "skipped": "not measured: unscheduled Metal kernels run on one GPU thread",
             "system": "no schedule"
           }
         }
       },
       "environment": {
-        "commit": "beb8516",
+        "commit": "e047e7f",
         "cores": 10,
-        "date": "2026-11-12T10:56:21Z",
+        "date": "2026-11-12T13:43:48Z",
         "load_average": [
-          2.28,
-          2.67,
-          2.76
+          1.42,
+          1.94,
+          2.32
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
@@ -210,13 +217,13 @@
       "model": "resnet50",
       "runs": [
         {
-          "commit": "beb8516",
+          "commit": "e047e7f",
           "cores": 10,
-          "date": "2026-11-12T10:56:21Z",
+          "date": "2026-11-12T13:43:48Z",
           "load_average": [
-            2.28,
-            2.67,
-            2.76
+            1.42,
+            1.94,
+            2.32
           ],
           "machine": "Apple M4",
           "memory_gb": 16,
@@ -236,12 +243,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.011272353498497978,
-            "p10": 0.011191412801417755,
-            "p90": 0.011347670794202713,
+            "median": 0.012140020498918602,
+            "p10": 0.012082841702795121,
+            "p90": 0.012236588101950474,
             "runs": 50
           },
-          "measured": "2026-11-12T10:56:21Z",
+          "measured": "2026-11-12T13:43:48Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -253,12 +260,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.013124833501933608,
-            "p10": 0.013008162498590537,
-            "p90": 0.013346796102268854,
+            "median": 0.013177707998693222,
+            "p10": 0.01308419529814273,
+            "p90": 0.01352781600508024,
             "runs": 50
           },
-          "measured": "2026-11-12T10:56:21Z",
+          "measured": "2026-11-12T13:43:48Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -270,12 +277,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.012292958002944943,
-            "p10": 0.012184453605732415,
-            "p90": 0.012856379798176932,
+            "median": 0.012280811999517027,
+            "p10": 0.012190282699884846,
+            "p90": 0.012379683600011048,
             "runs": 50
           },
-          "measured": "2026-11-12T10:56:21Z",
+          "measured": "2026-11-12T13:43:48Z",
           "system": "pytorch-mps",
           "threads": 4
         },
@@ -292,12 +299,13 @@
           "intermediate_bytes": 45266944,
           "kernels": 56,
           "latency": {
-            "median": 0.012516562503151363,
-            "p10": 0.01233687083076802,
-            "p90": 0.01259537083824398,
+            "median": 0.011524812496645609,
+            "p10": 0.011172683326731204,
+            "p90": 0.015048491664492758,
             "runs": 50
           },
-          "measured": "2026-11-12T10:56:21Z",
+          "measured": "2026-11-12T13:43:48Z",
+          "processes": 5,
           "system": "tessera-c:sme",
           "threads": 4,
           "tuned_kernels": 56
@@ -315,12 +323,13 @@
           "intermediate_bytes": 45266944,
           "kernels": 56,
           "latency": {
-            "median": 0.02023195833680802,
-            "p10": 0.017962200000329175,
-            "p90": 0.024711425002169562,
+            "median": 0.012023104165564291,
+            "p10": 0.011804629171820125,
+            "p90": 0.01634106250203331,
             "runs": 50
           },
-          "measured": "2026-11-12T10:56:21Z",
+          "measured": "2026-11-12T13:43:48Z",
+          "processes": 5,
           "system": "tessera-c:sme-untuned",
           "threads": 4,
           "tuned_kernels": 0
@@ -338,12 +347,13 @@
           "intermediate_bytes": 45266944,
           "kernels": 56,
           "latency": {
-            "median": 0.02611131250523613,
-            "p10": 0.025756337498751235,
-            "p90": 0.026937524993263653,
+            "median": 0.02603179166908376,
+            "p10": 0.02561157500313129,
+            "p90": 0.02646267499658279,
             "runs": 50
           },
-          "measured": "2026-11-12T10:56:21Z",
+          "measured": "2026-11-12T13:43:48Z",
+          "processes": 5,
           "system": "tessera-c:neon-untuned",
           "threads": 4,
           "tuned_kernels": 0
@@ -361,12 +371,13 @@
           "intermediate_bytes": 45266944,
           "kernels": 56,
           "latency": {
-            "median": 0.01073952083606855,
-            "p10": 0.01064510000651353,
-            "p90": 0.010884129165060586,
+            "median": 0.010714500003814464,
+            "p10": 0.010656749999179737,
+            "p90": 0.010789741666667397,
             "runs": 50
           },
-          "measured": "2026-11-12T10:56:21Z",
+          "measured": "2026-11-12T13:43:48Z",
+          "processes": 1,
           "system": "tessera-metal",
           "threads": null,
           "tuned_kernels": 56
@@ -384,12 +395,13 @@
           "intermediate_bytes": 45266944,
           "kernels": 56,
           "latency": {
-            "median": 0.016935041665419703,
-            "p10": 0.016828283333597937,
-            "p90": 0.01710594166870578,
+            "median": 0.016924062500038417,
+            "p10": 0.016852754171850393,
+            "p90": 0.01704051666529267,
             "runs": 50
           },
-          "measured": "2026-11-12T10:56:21Z",
+          "measured": "2026-11-12T13:43:48Z",
+          "processes": 1,
           "system": "tessera-metal-untuned",
           "threads": null,
           "tuned_kernels": 0
@@ -412,12 +424,13 @@
             "intermediate_bytes": 26717568,
             "kernels": 54,
             "latency": {
-              "median": 0.0033413541641493794,
-              "p10": 0.0032469666650285943,
-              "p90": 0.0034276083337317687,
+              "median": 0.0031758958284626715,
+              "p10": 0.003051416669768514,
+              "p90": 0.003285224994760938,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:17Z",
+            "measured": "2026-11-12T13:46:01Z",
+            "processes": 5,
             "system": "full",
             "threads": 4,
             "tuned_kernels": 0
@@ -435,12 +448,13 @@
             "intermediate_bytes": 52612384,
             "kernels": 101,
             "latency": {
-              "median": 0.0031655833372497,
-              "p10": 0.00312020833735005,
-              "p90": 0.0032466208322148304,
+              "median": 0.003291166663984768,
+              "p10": 0.0032162500014237595,
+              "p90": 0.0033590541665034835,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:17Z",
+            "measured": "2026-11-12T13:46:01Z",
+            "processes": 5,
             "system": "fusion off",
             "threads": 4,
             "tuned_kernels": 0
@@ -458,20 +472,21 @@
             "intermediate_bytes": 26717568,
             "kernels": 54,
             "latency": {
-              "median": 0.0033345625015499536,
-              "p10": 0.003250662502250634,
-              "p90": 0.0034092499998223504,
+              "median": 0.0031756874959683046,
+              "p10": 0.0030709958300576545,
+              "p90": 0.0034714749999693595,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:17Z",
+            "measured": "2026-11-12T13:46:01Z",
+            "processes": 5,
             "system": "graph rewrites off",
             "threads": 4,
             "tuned_kernels": 0
           },
           "no schedule": {
             "agreement": {
-              "max_abs": 5.364418029785156e-06,
-              "max_rel": 1.483731282152869e-06,
+              "max_abs": 5.4836273193359375e-06,
+              "max_rel": 1.5167030884229329e-06,
               "top1": 1.0
             },
             "arena_bytes": 6823936,
@@ -481,12 +496,13 @@
             "intermediate_bytes": 26717568,
             "kernels": 54,
             "latency": {
-              "median": 0.08848385416422389,
-              "p10": 0.08825601250355249,
-              "p90": 0.09005457083694637,
+              "median": 0.08923816666356288,
+              "p10": 0.08888890832895413,
+              "p90": 0.09069900833128486,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:17Z",
+            "measured": "2026-11-12T13:46:01Z",
+            "processes": 5,
             "system": "no schedule",
             "threads": 4,
             "tuned_kernels": 0
@@ -506,12 +522,13 @@
             "intermediate_bytes": 26717568,
             "kernels": 54,
             "latency": {
-              "median": 0.0019509375015331898,
-              "p10": 0.0019150666637870017,
-              "p90": 0.002010391670046374,
+              "median": 0.0019374375006009359,
+              "p10": 0.0019017541613720822,
+              "p90": 0.0019924291722418276,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:17Z",
+            "measured": "2026-11-12T13:46:01Z",
+            "processes": 1,
             "system": "full",
             "threads": null,
             "tuned_kernels": 0
@@ -529,12 +546,13 @@
             "intermediate_bytes": 52612384,
             "kernels": 101,
             "latency": {
-              "median": 0.002312645836354932,
-              "p10": 0.0022606166632613165,
-              "p90": 0.0023606833317899147,
+              "median": 0.0022968541670707054,
+              "p10": 0.002260641663451679,
+              "p90": 0.0023607583381817674,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:17Z",
+            "measured": "2026-11-12T13:46:01Z",
+            "processes": 1,
             "system": "fusion off",
             "threads": null,
             "tuned_kernels": 0
@@ -552,31 +570,32 @@
             "intermediate_bytes": 26717568,
             "kernels": 54,
             "latency": {
-              "median": 0.0019410208296903875,
-              "p10": 0.0018817625008523465,
-              "p90": 0.00199762916599866,
+              "median": 0.0018802916711138096,
+              "p10": 0.001835220831708284,
+              "p90": 0.00196126666633063,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:17Z",
+            "measured": "2026-11-12T13:46:01Z",
+            "processes": 1,
             "system": "graph rewrites off",
             "threads": null,
             "tuned_kernels": 0
           },
           "no schedule": {
-            "measured": "2026-11-12T10:58:17Z",
+            "measured": "2026-11-12T13:46:01Z",
             "skipped": "not measured: unscheduled Metal kernels run on one GPU thread",
             "system": "no schedule"
           }
         }
       },
       "environment": {
-        "commit": "beb8516",
+        "commit": "e047e7f",
         "cores": 10,
-        "date": "2026-11-12T10:58:17Z",
+        "date": "2026-11-12T13:46:01Z",
         "load_average": [
-          1.91,
-          2.44,
-          2.66
+          2.12,
+          2.07,
+          2.32
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
@@ -589,13 +608,13 @@
       "model": "mobilenet_v2",
       "runs": [
         {
-          "commit": "beb8516",
+          "commit": "e047e7f",
           "cores": 10,
-          "date": "2026-11-12T10:58:17Z",
+          "date": "2026-11-12T13:46:01Z",
           "load_average": [
-            1.91,
-            2.44,
-            2.66
+            2.12,
+            2.07,
+            2.32
           ],
           "machine": "Apple M4",
           "memory_gb": 16,
@@ -615,12 +634,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.0023849999997764826,
-            "p10": 0.0023303707988816314,
-            "p90": 0.0025163375001284296,
+            "median": 0.0024327079991053324,
+            "p10": 0.0023540422014775688,
+            "p90": 0.0025615832964831498,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:17Z",
+          "measured": "2026-11-12T13:46:01Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -632,12 +651,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.01515083400227013,
-            "p10": 0.014804770795308286,
-            "p90": 0.015530103896890069,
+            "median": 0.015247854003973771,
+            "p10": 0.01482347050041426,
+            "p90": 0.01536798329470912,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:17Z",
+          "measured": "2026-11-12T13:46:01Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -649,19 +668,19 @@
           },
           "error": null,
           "latency": {
-            "median": 0.006655082997895079,
-            "p10": 0.0064237496990244836,
-            "p90": 0.006865049703628756,
+            "median": 0.006621020998863969,
+            "p10": 0.0064914085982309185,
+            "p90": 0.00672777500221855,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:17Z",
+          "measured": "2026-11-12T13:46:01Z",
           "system": "pytorch-mps",
           "threads": 4
         },
         {
           "agreement": {
-            "max_abs": 7.3909759521484375e-06,
-            "max_rel": 1.9255843954315104e-06,
+            "max_abs": 8.463859558105469e-06,
+            "max_rel": 2.5085594876263712e-06,
             "top1": 1.0
           },
           "arena_bytes": 6823936,
@@ -671,12 +690,13 @@
           "intermediate_bytes": 26717568,
           "kernels": 54,
           "latency": {
-            "median": 0.0019013124983757734,
-            "p10": 0.0018906375022197607,
-            "p90": 0.0020289499989303295,
+            "median": 0.002147666662494885,
+            "p10": 0.002124529164575506,
+            "p90": 0.002166804167063674,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:17Z",
+          "measured": "2026-11-12T13:46:01Z",
+          "processes": 5,
           "system": "tessera-c:sme",
           "threads": 4,
           "tuned_kernels": 54
@@ -694,12 +714,13 @@
           "intermediate_bytes": 26717568,
           "kernels": 54,
           "latency": {
-            "median": 0.003345916666148696,
-            "p10": 0.0032496541694854385,
-            "p90": 0.00344168332812842,
+            "median": 0.0031500625009357464,
+            "p10": 0.0030383958350284957,
+            "p90": 0.003292462500394322,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:17Z",
+          "measured": "2026-11-12T13:46:01Z",
+          "processes": 5,
           "system": "tessera-c:sme-untuned",
           "threads": 4,
           "tuned_kernels": 0
@@ -717,12 +738,13 @@
           "intermediate_bytes": 26717568,
           "kernels": 54,
           "latency": {
-            "median": 0.0028930625012435485,
-            "p10": 0.0028431874961825088,
-            "p90": 0.0029721124992647674,
+            "median": 0.00300716666970402,
+            "p10": 0.002897783333901316,
+            "p90": 0.003168004166218452,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:17Z",
+          "measured": "2026-11-12T13:46:01Z",
+          "processes": 5,
           "system": "tessera-c:neon-untuned",
           "threads": 4,
           "tuned_kernels": 0
@@ -740,12 +762,13 @@
           "intermediate_bytes": 26717568,
           "kernels": 54,
           "latency": {
-            "median": 0.00175760416459525,
-            "p10": 0.0017279499988944735,
-            "p90": 0.0018191583360021469,
+            "median": 0.001736187499773223,
+            "p10": 0.0017043749969161582,
+            "p90": 0.0017872708282084203,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:17Z",
+          "measured": "2026-11-12T13:46:01Z",
+          "processes": 1,
           "system": "tessera-metal",
           "threads": null,
           "tuned_kernels": 54
@@ -763,12 +786,13 @@
           "intermediate_bytes": 26717568,
           "kernels": 54,
           "latency": {
-            "median": 0.001955250001628883,
-            "p10": 0.0019193583313608543,
-            "p90": 0.002022637506161118,
+            "median": 0.001949645833519753,
+            "p10": 0.0018537416704930366,
+            "p90": 0.0020154499972704796,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:17Z",
+          "measured": "2026-11-12T13:46:01Z",
+          "processes": 1,
           "system": "tessera-metal-untuned",
           "threads": null,
           "tuned_kernels": 0
@@ -791,12 +815,13 @@
             "intermediate_bytes": 75563008,
             "kernels": 134,
             "latency": {
-              "median": 0.027956645830272464,
-              "p10": 0.027350529167597414,
-              "p90": 0.028295658333809114,
+              "median": 0.0220579166598327,
+              "p10": 0.021964274992933498,
+              "p90": 0.022278929161984706,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:45Z",
+            "measured": "2026-11-12T13:46:56Z",
+            "processes": 5,
             "system": "full",
             "threads": 4,
             "tuned_kernels": 0
@@ -814,12 +839,13 @@
             "intermediate_bytes": 185286912,
             "kernels": 320,
             "latency": {
-              "median": 0.0232106041694351,
-              "p10": 0.022522987503180047,
-              "p90": 0.023637833326210965,
+              "median": 0.022523416664625984,
+              "p10": 0.022422058328811546,
+              "p90": 0.022832025004026944,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:45Z",
+            "measured": "2026-11-12T13:46:56Z",
+            "processes": 5,
             "system": "fusion off",
             "threads": 4,
             "tuned_kernels": 0
@@ -837,20 +863,21 @@
             "intermediate_bytes": 94437376,
             "kernels": 146,
             "latency": {
-              "median": 0.060412062499381136,
-              "p10": 0.059622241662145824,
-              "p90": 0.06304947916796663,
+              "median": 0.022937395835469943,
+              "p10": 0.022834204175887864,
+              "p90": 0.023225304162042448,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:45Z",
+            "measured": "2026-11-12T13:46:56Z",
+            "processes": 5,
             "system": "graph rewrites off",
             "threads": 4,
             "tuned_kernels": 0
           },
           "no schedule": {
             "agreement": {
-              "max_abs": 1.043081283569336e-05,
-              "max_rel": 1.2007973623847797e-06,
+              "max_abs": 1.3958662748336792e-05,
+              "max_rel": 1.6069241845913464e-06,
               "top1": null
             },
             "arena_bytes": 2424832,
@@ -860,12 +887,13 @@
             "intermediate_bytes": 75563008,
             "kernels": 134,
             "latency": {
-              "median": 8.927494770836347,
-              "p10": 8.920700062502874,
-              "p90": 8.969207854166598,
+              "median": 9.173327312506444,
+              "p10": 9.14740620833254,
+              "p90": 9.220599916669016,
               "runs": 6
             },
-            "measured": "2026-11-12T10:58:45Z",
+            "measured": "2026-11-12T13:46:56Z",
+            "processes": 1,
             "system": "no schedule",
             "threads": 4,
             "tuned_kernels": 0
@@ -885,12 +913,13 @@
             "intermediate_bytes": 75563008,
             "kernels": 134,
             "latency": {
-              "median": 0.012292145835090196,
-              "p10": 0.012181641661300091,
-              "p90": 0.012388491668389179,
+              "median": 0.01037437499689986,
+              "p10": 0.010267362501326715,
+              "p90": 0.01046758749653236,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:45Z",
+            "measured": "2026-11-12T13:46:56Z",
+            "processes": 1,
             "system": "full",
             "threads": null,
             "tuned_kernels": 0
@@ -908,12 +937,13 @@
             "intermediate_bytes": 185286912,
             "kernels": 320,
             "latency": {
-              "median": 0.011087645834777504,
-              "p10": 0.010885304166004061,
-              "p90": 0.01134079583644052,
+              "median": 0.011307729171676328,
+              "p10": 0.011181904165277956,
+              "p90": 0.0114149916684255,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:45Z",
+            "measured": "2026-11-12T13:46:56Z",
+            "processes": 1,
             "system": "fusion off",
             "threads": null,
             "tuned_kernels": 0
@@ -931,31 +961,32 @@
             "intermediate_bytes": 94437376,
             "kernels": 146,
             "latency": {
-              "median": 0.02161829167016549,
-              "p10": 0.021500345835374902,
-              "p90": 0.021850800001993777,
+              "median": 0.011750208333978662,
+              "p10": 0.011593974997958867,
+              "p90": 0.01182610416872194,
               "runs": 50
             },
-            "measured": "2026-11-12T10:58:45Z",
+            "measured": "2026-11-12T13:46:56Z",
+            "processes": 1,
             "system": "graph rewrites off",
             "threads": null,
             "tuned_kernels": 0
           },
           "no schedule": {
-            "measured": "2026-11-12T10:58:45Z",
+            "measured": "2026-11-12T13:46:56Z",
             "skipped": "not measured: unscheduled Metal kernels run on one GPU thread",
             "system": "no schedule"
           }
         }
       },
       "environment": {
-        "commit": "beb8516",
+        "commit": "e047e7f",
         "cores": 10,
-        "date": "2026-11-12T10:58:45Z",
+        "date": "2026-11-12T13:46:56Z",
         "load_average": [
-          1.94,
-          2.4,
-          2.64
+          2.17,
+          2.09,
+          2.31
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
@@ -968,13 +999,13 @@
       "model": "bert",
       "runs": [
         {
-          "commit": "beb8516",
+          "commit": "e047e7f",
           "cores": 10,
-          "date": "2026-11-12T10:58:45Z",
+          "date": "2026-11-12T13:46:56Z",
           "load_average": [
-            1.94,
-            2.4,
-            2.64
+            2.17,
+            2.09,
+            2.31
           ],
           "machine": "Apple M4",
           "memory_gb": 16,
@@ -994,12 +1025,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.020683228998677805,
-            "p10": 0.020315812797343825,
-            "p90": 0.02096517499667243,
+            "median": 0.02196633299536188,
+            "p10": 0.021869983099168166,
+            "p90": 0.022231691599154148,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:45Z",
+          "measured": "2026-11-12T13:46:56Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -1011,12 +1042,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.026527104499109555,
-            "p10": 0.026360408404434564,
-            "p90": 0.02701137530602864,
+            "median": 0.026457603995368117,
+            "p10": 0.026280203901114872,
+            "p90": 0.026824374702118802,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:45Z",
+          "measured": "2026-11-12T13:46:56Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -1028,12 +1059,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.014853729000606108,
-            "p10": 0.014613804399414222,
-            "p90": 0.015021266396070132,
+            "median": 0.014847291997284628,
+            "p10": 0.01461223690348561,
+            "p90": 0.0152934666024521,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:45Z",
+          "measured": "2026-11-12T13:46:56Z",
           "system": "pytorch-mps",
           "threads": 4
         },
@@ -1050,12 +1081,13 @@
           "intermediate_bytes": 75563008,
           "kernels": 134,
           "latency": {
-            "median": 0.027846229164424585,
-            "p10": 0.027728016667242627,
-            "p90": 0.02843570833429112,
+            "median": 0.0180591458301933,
+            "p10": 0.01765571665528114,
+            "p90": 0.020307270832563517,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:45Z",
+          "measured": "2026-11-12T13:46:56Z",
+          "processes": 5,
           "system": "tessera-c:sme",
           "threads": 4,
           "tuned_kernels": 134
@@ -1073,12 +1105,13 @@
           "intermediate_bytes": 75563008,
           "kernels": 134,
           "latency": {
-            "median": 0.027567437500692904,
-            "p10": 0.02716246250201948,
-            "p90": 0.02783320416783681,
+            "median": 0.021980291669024155,
+            "p10": 0.02188426666762098,
+            "p90": 0.02207304582989309,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:45Z",
+          "measured": "2026-11-12T13:46:56Z",
+          "processes": 5,
           "system": "tessera-c:sme-untuned",
           "threads": 4,
           "tuned_kernels": 0
@@ -1096,20 +1129,21 @@
           "intermediate_bytes": 75563008,
           "kernels": 134,
           "latency": {
-            "median": 0.06422335416573333,
-            "p10": 0.06305004583482514,
-            "p90": 0.0646620250059641,
+            "median": 0.06079031249464606,
+            "p10": 0.059529383329936535,
+            "p90": 0.06183713750215247,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:45Z",
+          "measured": "2026-11-12T13:46:56Z",
+          "processes": 5,
           "system": "tessera-c:neon-untuned",
           "threads": 4,
           "tuned_kernels": 0
         },
         {
           "agreement": {
-            "max_abs": 1.4066696166992188e-05,
-            "max_rel": 1.6193610144160458e-06,
+            "max_abs": 1.3113021850585938e-05,
+            "max_rel": 1.5095738269980088e-06,
             "top1": null
           },
           "arena_bytes": 2424832,
@@ -1119,12 +1153,13 @@
           "intermediate_bytes": 75563008,
           "kernels": 134,
           "latency": {
-            "median": 0.011784770831582136,
-            "p10": 0.01163917083395063,
-            "p90": 0.011884887504129438,
+            "median": 0.010309083329048008,
+            "p10": 0.010171916667604818,
+            "p90": 0.01042278749810066,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:45Z",
+          "measured": "2026-11-12T13:46:56Z",
+          "processes": 1,
           "system": "tessera-metal",
           "threads": null,
           "tuned_kernels": 134
@@ -1142,12 +1177,13 @@
           "intermediate_bytes": 75563008,
           "kernels": 134,
           "latency": {
-            "median": 0.012500895834818948,
-            "p10": 0.012351033333106897,
-            "p90": 0.012598462501046015,
+            "median": 0.01053560416403343,
+            "p10": 0.010415462497621774,
+            "p90": 0.010683929166407324,
             "runs": 50
           },
-          "measured": "2026-11-12T10:58:45Z",
+          "measured": "2026-11-12T13:46:56Z",
+          "processes": 1,
           "system": "tessera-metal-untuned",
           "threads": null,
           "tuned_kernels": 0
@@ -1170,12 +1206,13 @@
             "intermediate_bytes": 76283904,
             "kernels": 111,
             "latency": {
-              "median": 0.047275749999244,
-              "p10": 0.04607715833553812,
-              "p90": 0.04832978333361097,
+              "median": 0.03239060416672146,
+              "p10": 0.032168187498609765,
+              "p90": 0.033510241664771456,
               "runs": 50
             },
-            "measured": "2026-11-12T11:00:56Z",
+            "measured": "2026-11-12T13:49:45Z",
+            "processes": 5,
             "system": "full",
             "threads": 4,
             "tuned_kernels": 0
@@ -1193,12 +1230,13 @@
             "intermediate_bytes": 199360512,
             "kernels": 304,
             "latency": {
-              "median": 0.03415283333379193,
-              "p10": 0.033628016665170436,
-              "p90": 0.03785270000662422,
+              "median": 0.03242447915908997,
+              "p10": 0.03228145000539371,
+              "p90": 0.032805483337142505,
               "runs": 50
             },
-            "measured": "2026-11-12T11:00:56Z",
+            "measured": "2026-11-12T13:49:45Z",
+            "processes": 5,
             "system": "fusion off",
             "threads": 4,
             "tuned_kernels": 0
@@ -1216,20 +1254,21 @@
             "intermediate_bytes": 99483648,
             "kernels": 134,
             "latency": {
-              "median": 0.0784022499974526,
-              "p10": 0.07655727499804925,
-              "p90": 0.07984119583416031,
+              "median": 0.039415583334630355,
+              "p10": 0.03922569166315952,
+              "p90": 0.03985548750206362,
               "runs": 50
             },
-            "measured": "2026-11-12T11:00:56Z",
+            "measured": "2026-11-12T13:49:45Z",
+            "processes": 5,
             "system": "graph rewrites off",
             "threads": 4,
             "tuned_kernels": 0
           },
           "no schedule": {
             "agreement": {
-              "max_abs": 0.000457763671875,
-              "max_rel": 1.7018262070117283e-06,
+              "max_abs": 0.0006256103515625,
+              "max_rel": 2.325829149582695e-06,
               "top1": null
             },
             "arena_bytes": 3538944,
@@ -1239,12 +1278,13 @@
             "intermediate_bytes": 76283904,
             "kernels": 111,
             "latency": {
-              "median": 11.058092624996789,
-              "p10": 10.996061633330829,
-              "p90": 11.268992358331161,
+              "median": 11.215884625002218,
+              "p10": 11.193144616662176,
+              "p90": 11.229868483338214,
               "runs": 5
             },
-            "measured": "2026-11-12T11:00:56Z",
+            "measured": "2026-11-12T13:49:45Z",
+            "processes": 1,
             "system": "no schedule",
             "threads": 4,
             "tuned_kernels": 0
@@ -1264,12 +1304,13 @@
             "intermediate_bytes": 76283904,
             "kernels": 111,
             "latency": {
-              "median": 0.016624500003672438,
-              "p10": 0.016393658331799087,
-              "p90": 0.016845533333253115,
+              "median": 0.014530625001498265,
+              "p10": 0.014381774995854357,
+              "p90": 0.014660404164897046,
               "runs": 50
             },
-            "measured": "2026-11-12T11:00:56Z",
+            "measured": "2026-11-12T13:49:45Z",
+            "processes": 1,
             "system": "full",
             "threads": null,
             "tuned_kernels": 0
@@ -1287,12 +1328,13 @@
             "intermediate_bytes": 199360512,
             "kernels": 304,
             "latency": {
-              "median": 0.015371854173281463,
-              "p10": 0.015115950004837942,
-              "p90": 0.015622845834877807,
+              "median": 0.01546095833691652,
+              "p10": 0.01524842916041962,
+              "p90": 0.015555687501910142,
               "runs": 50
             },
-            "measured": "2026-11-12T11:00:56Z",
+            "measured": "2026-11-12T13:49:45Z",
+            "processes": 1,
             "system": "fusion off",
             "threads": null,
             "tuned_kernels": 0
@@ -1310,31 +1352,32 @@
             "intermediate_bytes": 99483648,
             "kernels": 134,
             "latency": {
-              "median": 0.021640354167175246,
-              "p10": 0.021413654163916364,
-              "p90": 0.021844870827771957,
+              "median": 0.01570229167191428,
+              "p10": 0.015513766669027974,
+              "p90": 0.01580988750283723,
               "runs": 50
             },
-            "measured": "2026-11-12T11:00:56Z",
+            "measured": "2026-11-12T13:49:45Z",
+            "processes": 1,
             "system": "graph rewrites off",
             "threads": null,
             "tuned_kernels": 0
           },
           "no schedule": {
-            "measured": "2026-11-12T11:00:56Z",
+            "measured": "2026-11-12T13:49:45Z",
             "skipped": "not measured: unscheduled Metal kernels run on one GPU thread",
             "system": "no schedule"
           }
         }
       },
       "environment": {
-        "commit": "beb8516",
+        "commit": "e047e7f",
         "cores": 10,
-        "date": "2026-11-12T11:00:56Z",
+        "date": "2026-11-12T13:49:45Z",
         "load_average": [
-          2.33,
-          2.44,
-          2.62
+          2.2,
+          2.23,
+          2.33
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
@@ -1347,13 +1390,13 @@
       "model": "gpt2",
       "runs": [
         {
-          "commit": "beb8516",
+          "commit": "e047e7f",
           "cores": 10,
-          "date": "2026-11-12T11:00:56Z",
+          "date": "2026-11-12T13:49:45Z",
           "load_average": [
-            2.33,
-            2.44,
-            2.62
+            2.2,
+            2.23,
+            2.33
           ],
           "machine": "Apple M4",
           "memory_gb": 16,
@@ -1373,12 +1416,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.029680291499971645,
-            "p10": 0.028652604395028904,
-            "p90": 0.030124816398165423,
+            "median": 0.030537583501427434,
+            "p10": 0.03029526729733334,
+            "p90": 0.03155651659835712,
             "runs": 50
           },
-          "measured": "2026-11-12T11:00:56Z",
+          "measured": "2026-11-12T13:49:45Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -1390,12 +1433,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.039113020997319836,
-            "p10": 0.03888038369768765,
-            "p90": 0.04096145890071057,
+            "median": 0.03909706250124145,
+            "p10": 0.03893100000423146,
+            "p90": 0.039634308601671366,
             "runs": 50
           },
-          "measured": "2026-11-12T11:00:56Z",
+          "measured": "2026-11-12T13:49:45Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -1407,12 +1450,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.02227070799926878,
-            "p10": 0.021957490997738204,
-            "p90": 0.023070499995810678,
+            "median": 0.022133124999527354,
+            "p10": 0.021913095497438917,
+            "p90": 0.023342025000602007,
             "runs": 50
           },
-          "measured": "2026-11-12T11:00:56Z",
+          "measured": "2026-11-12T13:49:45Z",
           "system": "pytorch-mps",
           "threads": 4
         },
@@ -1429,12 +1472,13 @@
           "intermediate_bytes": 76283904,
           "kernels": 111,
           "latency": {
-            "median": 0.05663737500071875,
-            "p10": 0.05331888333457755,
-            "p90": 0.059053533335827524,
+            "median": 0.03267929167486727,
+            "p10": 0.0318968583313108,
+            "p90": 0.03343675000796793,
             "runs": 50
           },
-          "measured": "2026-11-12T11:00:56Z",
+          "measured": "2026-11-12T13:49:45Z",
+          "processes": 5,
           "system": "tessera-c:sme",
           "threads": 4,
           "tuned_kernels": 111
@@ -1452,12 +1496,13 @@
           "intermediate_bytes": 76283904,
           "kernels": 111,
           "latency": {
-            "median": 0.04735560416884255,
-            "p10": 0.04712807083269581,
-            "p90": 0.04782117916693096,
+            "median": 0.03235706249688519,
+            "p10": 0.032172675000037995,
+            "p90": 0.034552624994830694,
             "runs": 50
           },
-          "measured": "2026-11-12T11:00:56Z",
+          "measured": "2026-11-12T13:49:45Z",
+          "processes": 5,
           "system": "tessera-c:sme-untuned",
           "threads": 4,
           "tuned_kernels": 0
@@ -1475,20 +1520,21 @@
           "intermediate_bytes": 76283904,
           "kernels": 111,
           "latency": {
-            "median": 0.09537631249986589,
-            "p10": 0.09374041666887933,
-            "p90": 0.10326096666540252,
+            "median": 0.09443302083673188,
+            "p10": 0.0890587583235174,
+            "p90": 0.1339684375008801,
             "runs": 50
           },
-          "measured": "2026-11-12T11:00:56Z",
+          "measured": "2026-11-12T13:49:45Z",
+          "processes": 5,
           "system": "tessera-c:neon-untuned",
           "threads": 4,
           "tuned_kernels": 0
         },
         {
           "agreement": {
-            "max_abs": 0.00025177001953125,
-            "max_rel": 9.360044138564505e-07,
+            "max_abs": 0.000396728515625,
+            "max_rel": 1.474916046076831e-06,
             "top1": null
           },
           "arena_bytes": 3538944,
@@ -1498,12 +1544,13 @@
           "intermediate_bytes": 76283904,
           "kernels": 111,
           "latency": {
-            "median": 0.015775562504131813,
-            "p10": 0.015439241666172165,
-            "p90": 0.01627358332989388,
+            "median": 0.014181854163325625,
+            "p10": 0.013650845827942248,
+            "p90": 0.014922587500041117,
             "runs": 50
           },
-          "measured": "2026-11-12T11:00:56Z",
+          "measured": "2026-11-12T13:49:45Z",
+          "processes": 1,
           "system": "tessera-metal",
           "threads": null,
           "tuned_kernels": 111
@@ -1521,12 +1568,13 @@
           "intermediate_bytes": 76283904,
           "kernels": 111,
           "latency": {
-            "median": 0.016809999997349223,
-            "p10": 0.016640883329819188,
-            "p90": 0.01693789166456554,
+            "median": 0.014652666668553138,
+            "p10": 0.01437064999336144,
+            "p90": 0.015097449994209455,
             "runs": 50
           },
-          "measured": "2026-11-12T11:00:56Z",
+          "measured": "2026-11-12T13:49:45Z",
+          "processes": 1,
           "system": "tessera-metal-untuned",
           "threads": null,
           "tuned_kernels": 0
