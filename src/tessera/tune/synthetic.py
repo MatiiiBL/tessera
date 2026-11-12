@@ -28,7 +28,9 @@ from dataclasses import dataclass
 from functools import cached_property
 from math import ceil
 
+from tessera.backend.base import Prebuilder, get_backend
 from tessera.dtype import DType
+from tessera.target import Target
 from tessera.tir.expr import FloatImm, IntImm, Var
 from tessera.tir.stmt import (
     TRUE,
@@ -199,3 +201,45 @@ def _split(value: KnobValue) -> tuple[int, ...]:
 def _unit_hash(config: Mapping[str, KnobValue]) -> float:
     digest = hashlib.sha256(config_json(config).encode()).digest()
     return int.from_bytes(digest[:8], "little") / 2**64
+
+
+@dataclass(frozen=True)
+class MeasuredMatmul:
+    """The loop nests of a ``SyntheticMatmul``, timed on a real backend.
+
+    The same space and the same functions, but ``build`` and ``measure`` go
+    through the target's backend (``prebuild`` and ``measure``), so the
+    tuner's process runner and search are exercised against real timings
+    without needing a lowered group or a template.
+    """
+
+    shape: SyntheticMatmul
+    target: Target
+    repeat: int = 3
+    min_seconds: float = 0.02
+
+    @property
+    def key(self) -> str:
+        return self.shape.key.replace("synthetic-matmul", "matmul-loops")
+
+    @property
+    def target_key(self) -> str:
+        return self.target.key
+
+    @property
+    def space(self) -> ConfigSpace:
+        return self.shape.space
+
+    def schedule(self, config: Mapping[str, KnobValue]) -> PrimFunc:
+        return self.shape.schedule(config)
+
+    def build(self, config: Mapping[str, KnobValue]) -> PrimFunc:
+        func = self.schedule(config)
+        backend = get_backend(self.target.kind)
+        if isinstance(backend, Prebuilder):
+            backend.prebuild(func, self.target)
+        return func
+
+    def measure(self, built: PrimFunc) -> float:
+        backend = get_backend(self.target.kind)
+        return backend.measure(built, self.target, repeat=self.repeat, min_seconds=self.min_seconds)
