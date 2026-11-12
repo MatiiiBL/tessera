@@ -45,7 +45,6 @@ def schedule_matmul(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: 
     *batch, i, j = spatial
     m, n = sch.extent(i), sch.extent(j)
     work = prod(sch.extent(v) for v in loops)
-    b_index = read_index(sch, main, uses=j, avoids=i)
 
     rows = register_options(m)
     tile_m = choose_int(cfg, "tile_m", rows, nearest(rows, 4))
@@ -55,7 +54,7 @@ def schedule_matmul(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: 
         cfg, "tile_n", columns, max(preferred) if preferred else nearest(columns, 16)
     )
     order = choose(cfg, "order", ["nm", "mn"], "nm")
-    pack_b = choose_bool(cfg, "pack_b", b_index is not None)
+    pack_b = choose_bool(cfg, "pack_b", True)
     enabled = parallel_knob(cfg, work)
 
     io, ii = sch.split(i, [None, tile_m])
@@ -63,6 +62,7 @@ def schedule_matmul(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: 
     if order == "nm":
         sch.reorder(jo, io, *reduce, ii, ji)
         tile_loops(sch, main, group.epilogue_block, io, reduce[0], ii, ji)
+        b_index = read_index(sch, main, uses=[jo, *reduce], avoids=io)
         if pack_b and b_index is not None:
             sch.compute_at(sch.cache_read(main, b_index, "local"), jo)
         parallelize(sch, [*batch, jo], enabled)
