@@ -323,7 +323,7 @@ def tune_command(
     from tessera.tune.measure import LocalRunner
     from tessera.tune.search import EvolutionarySearch, RandomSearch
     from tessera.tune.space import config_json
-    from tessera.tune.task import Task
+    from tessera.tune.task import Task, merge_task
     from tessera.tune.tuner import Round, tune, validate
 
     by_key: dict[str, Task] = {}
@@ -331,12 +331,8 @@ def tune_command(
     for model in models:
         comp = _lower(model, target, shape, untuned=True)
         kernels += len(comp.kernels)
-        for key, task in comp.tasks.items():
-            if key in by_key:
-                by_key[key].weight += task.weight
-                by_key[key].names += task.names
-            else:
-                by_key[key] = task
+        for task in comp.tasks.values():
+            merge_task(by_key, task)
     tasks = list(by_key.values())
     if not tasks:
         console.print("nothing to tune: no kernel of these models has a template")

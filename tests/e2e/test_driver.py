@@ -239,3 +239,27 @@ def test_backend_lowering_options_reach_every_group(
     comp = lower(mlp(), target="c:generic")
     expected = {"pad_block": True, "isa": "generic"} if capable else {}
     assert calls == [expected] * len(comp.kernels)
+
+
+def test_groups_differing_in_constant_inputs_cannot_share_a_task() -> None:
+    from onnx import TensorProto, helper, numpy_helper
+
+    # h = x @ w (w a constant) and o = h @ z (z an input): the same loop nest.
+    w = numpy_helper.from_array(np.ones((64, 64), np.float32), "w")
+    graph = helper.make_graph(
+        [
+            helper.make_node("MatMul", ["x", "w"], ["h"]),
+            helper.make_node("MatMul", ["h", "z"], ["o"]),
+        ],
+        "mixed",
+        [
+            helper.make_tensor_value_info("x", TensorProto.FLOAT, [8, 64]),
+            helper.make_tensor_value_info("z", TensorProto.FLOAT, [64, 64]),
+        ],
+        [helper.make_tensor_value_info("o", TensorProto.FLOAT, [8, 64])],
+        [w],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)], ir_version=9)
+    with pytest.raises(ValueError, match="different constant inputs"):
+        lower(model, target="c:generic")
+    lower(model, target="c:generic", schedule=False)  # without templates there are no tasks

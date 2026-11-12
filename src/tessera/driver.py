@@ -65,7 +65,7 @@ from tessera.tir.stmt import (
 )
 from tessera.tune.log import BestConfigs
 from tessera.tune.space import ApplyConfig, ConfigSpace, KnobValue
-from tessera.tune.task import Task
+from tessera.tune.task import Task, merge_task
 
 type ModelLike = str | os.PathLike[str] | onnx.ModelProto | Graph
 type LogsLike = str | os.PathLike[str] | Sequence[str | os.PathLike[str]] | BestConfigs | None
@@ -221,11 +221,8 @@ def lower(
             kernels.append(Kernel(func, args, group, lowered))
             continue
         task = Task.create(lowered, template, tgt)
-        if task.key in tasks:
-            tasks[task.key].weight += 1
-            tasks[task.key].names.append(group.name)
-        else:
-            tasks[task.key] = task
+        merge_task(tasks, task)
+        task = tasks[task.key]
         kernels.append(schedule_kernel(group, lowered, args, template, task, best, tgt))
 
     for index, value in enumerate(graph.outputs):
