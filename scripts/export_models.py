@@ -182,14 +182,26 @@ EXPORTS = {
     ),
     "bert": Export(
         "bert",
-        {"library": "transformers", "name": "bert-base-uncased", "class": "AutoModel"},
+        {
+            "library": "transformers",
+            "name": "bert-base-uncased",
+            "class": "AutoModel",
+            "output": "last_hidden_state",
+            "exported_with": "attn_implementation=eager, token_type_ids=zeros, use_cache=False",
+        },
         bert_inputs,
         ["last_hidden_state"],
         bert_module,
     ),
     "gpt2": Export(
         "gpt2",
-        {"library": "transformers", "name": "gpt2", "class": "GPT2LMHeadModel"},
+        {
+            "library": "transformers",
+            "name": "gpt2",
+            "class": "GPT2LMHeadModel",
+            "output": "logits",
+            "exported_with": "attn_implementation=eager, attention_mask=ones, use_cache=False",
+        },
         gpt2_inputs,
         ["logits"],
         gpt2_module,
@@ -286,22 +298,27 @@ def export(spec: Export, directory: Path) -> dict[str, Any]:
     }
 
 
-def use_system_certificates() -> None:
-    """Verify downloads against the operating system's certificates.
+def use_certificate_bundle() -> None:
+    """Give ``urllib`` (torchvision's downloader) a certificate bundle.
 
-    torchvision downloads with ``urllib``, which only sees OpenSSL's bundle;
-    some Python installations (python.org's on macOS) ship without one.
-    ``truststore`` comes with the Hugging Face client.
+    Some Python installations (python.org's on macOS) ship without one, and
+    the download fails certificate verification. ``SSL_CERT_FILE`` is set only
+    when it is unset: to certifi's bundle if certifi is installed, otherwise
+    to the system's ``/etc/ssl/cert.pem`` if it exists.
     """
-    try:
-        import truststore
-    except ImportError:
+    if os.environ.get("SSL_CERT_FILE"):
         return
-    truststore.inject_into_ssl()
+    try:
+        import certifi
+
+        os.environ["SSL_CERT_FILE"] = certifi.where()
+    except ImportError:
+        if Path("/etc/ssl/cert.pem").exists():
+            os.environ["SSL_CERT_FILE"] = "/etc/ssl/cert.pem"
 
 
 def main(argv: list[str]) -> int:
-    use_system_certificates()
+    use_certificate_bundle()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "names", nargs="*", metavar="NAME", help=f"{', '.join(EXPORTS)} (default: all)"
