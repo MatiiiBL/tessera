@@ -243,7 +243,14 @@ line of Apple's performance cores); `tsr_now` reads `mach_absolute_time`
 (or `CLOCK_MONOTONIC`).
 
 **Math.** Branch-free single-precision functions that clang vectorizes: all
-cases are computed and the result picked with selects.
+cases are computed and the result picked with selects. Their polynomials
+step with `tsr_fma`, which is `fmaf` where the target has an FMA
+instruction (Arm, x86-64 with `-mfma`) and otherwise computes a * b + c in
+double: on the x86-64 baseline clang splits `fmaf` into a multiplication
+and an addition (fast-math contraction allows it), which cost up to 1.5 ulp
+(logf 1.4, tanhf 5.7, erff 7.0, sigmoidf 3.0 on Linux CI). The product of
+two floats is exact in double, so the result matches a fused operation, and
+the bounds below hold either way (`test_error_in_ulp` checks both builds).
 
 | function | method | error (tests/c/test_c_math.py) |
 |---|---|---|

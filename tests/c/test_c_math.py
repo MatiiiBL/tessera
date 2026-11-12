@@ -41,13 +41,20 @@ def _source() -> dict[str, str]:
     }
 
 
+# The build of a target without an FMA instruction (the x86-64 baseline), on
+# any machine: the macros that announce one undefined, and no contraction of
+# a multiplication and an addition into one.
+NO_FMA = ("-U__FP_FAST_FMAF", "-U__FMA__", "-U__ARM_FEATURE_FMA", "-ffp-contract=off")
+
+
 @functools.cache
-def _library() -> ctypes.CDLL:
-    return ctypes.CDLL(str(cbuild.build(_source(), "math.c", Target())))
+def _library(fma: bool = True) -> ctypes.CDLL:
+    target = Target() if fma else Target(cflags=NO_FMA)
+    return ctypes.CDLL(str(cbuild.build(_source(), "math.c", target)))
 
 
-def _apply(name: str, x: NDArray) -> NDArray:
-    fn = getattr(_library(), f"apply_{name}")
+def _apply(name: str, x: NDArray, *, fma: bool = True) -> NDArray:
+    fn = getattr(_library(fma), f"apply_{name}")
     fn.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64]
     xs = np.ascontiguousarray(x, np.float32)
     ys = np.empty_like(xs)
@@ -70,11 +77,14 @@ REFERENCES: dict[str, tuple[Callable[[NDArray], NDArray], NDArray, float]] = {
 }
 
 
+@pytest.mark.parametrize("fma", [True, False], ids=["fma", "no-fma"])
 @pytest.mark.parametrize("name", FUNCTIONS)
-def test_error_in_ulp(name: str) -> None:
+def test_error_in_ulp(name: str, fma: bool) -> None:
+    # The same bounds hold without an FMA instruction: tsr_fma then computes
+    # in double instead of letting clang split each step into two roundings.
     reference, inputs, bound = REFERENCES[name]
     x = inputs.astype(np.float32)
-    got = _apply(name, x).astype(np.float64)
+    got = _apply(name, x, fma=fma).astype(np.float64)
     want = reference(x.astype(np.float64))
     normal = (np.abs(want) > 1.2e-38) & (np.abs(want) < 3.4e38)
     ulp = np.spacing(np.abs(want[normal]).astype(np.float32)).astype(np.float64)

@@ -96,6 +96,20 @@ static inline float tsr_rsqrtf(float x) { return 1.0f / sqrtf(x); }
  * against float64 over its whole range.
  */
 
+/* a * b + c, rounded once. Without an FMA instruction (the x86-64 baseline
+ * clang targets by default) clang turns fmaf into a multiplication and an
+ * addition, since -ffp-contract=fast and -fassociative-math allow it, and
+ * the polynomials below lose up to 1.5 ulp. In double the product of two
+ * floats is exact and the sum rounds far below float precision, so the
+ * result is that of a fused operation (to a double rounding, rarely). */
+static inline float tsr_fma(float a, float b, float c) {
+#if defined(__FP_FAST_FMAF) || defined(__FMA__) || defined(__ARM_FEATURE_FMA)
+  return fmaf(a, b, c);
+#else
+  return (float)((double)a * (double)b + (double)c);
+#endif
+}
+
 static inline float tsr_bits_float(int32_t bits) {
   union { int32_t i; float f; } u = {bits};
   return u.f;
@@ -110,15 +124,15 @@ static inline float tsr_expf(float x) {
   /* x = n ln2 + r with |r| <= ln2 / 2; exp(x) = 2^n exp(r). */
   float xc = fminf(fmaxf(x, -104.0f), 88.7228394f);
   float n = rintf(xc * 1.44269504088896341f);
-  float r = fmaf(n, -0.693359375f, xc);
-  r = fmaf(n, 2.12194440e-4f, r);
+  float r = tsr_fma(n, -0.693359375f, xc);
+  r = tsr_fma(n, 2.12194440e-4f, r);
   float p = 1.9875691500e-4f;
-  p = fmaf(p, r, 1.3981999507e-3f);
-  p = fmaf(p, r, 8.3334519073e-3f);
-  p = fmaf(p, r, 4.1665795894e-2f);
-  p = fmaf(p, r, 1.6666665459e-1f);
-  p = fmaf(p, r, 5.0000001201e-1f);
-  p = fmaf(p, r * r, r) + 1.0f;
+  p = tsr_fma(p, r, 1.3981999507e-3f);
+  p = tsr_fma(p, r, 8.3334519073e-3f);
+  p = tsr_fma(p, r, 4.1665795894e-2f);
+  p = tsr_fma(p, r, 1.6666665459e-1f);
+  p = tsr_fma(p, r, 5.0000001201e-1f);
+  p = tsr_fma(p, r * r, r) + 1.0f;
   /* Multiply by 2^n by adding n to the exponent of p (in [0.7, 1.42]): one
    * integer add, which reassociation cannot turn into an overflowing 2^128.
    * Results below the normal range are made 2^64 times larger, then scaled
@@ -144,19 +158,19 @@ static inline float tsr_logf(float x) {
   float f = (low ? m + m : m) - 1.0f;
   float z = f * f;
   float p = 7.0376836292e-2f;
-  p = fmaf(p, f, -1.1514610310e-1f);
-  p = fmaf(p, f, 1.1676998740e-1f);
-  p = fmaf(p, f, -1.2420140846e-1f);
-  p = fmaf(p, f, 1.4249322787e-1f);
-  p = fmaf(p, f, -1.6668057665e-1f);
-  p = fmaf(p, f, 2.0000714765e-1f);
-  p = fmaf(p, f, -2.4999993993e-1f);
-  p = fmaf(p, f, 3.3333331174e-1f);
+  p = tsr_fma(p, f, -1.1514610310e-1f);
+  p = tsr_fma(p, f, 1.1676998740e-1f);
+  p = tsr_fma(p, f, -1.2420140846e-1f);
+  p = tsr_fma(p, f, 1.4249322787e-1f);
+  p = tsr_fma(p, f, -1.6668057665e-1f);
+  p = tsr_fma(p, f, 2.0000714765e-1f);
+  p = tsr_fma(p, f, -2.4999993993e-1f);
+  p = tsr_fma(p, f, 3.3333331174e-1f);
   float y = f * z * p;
-  y = fmaf(e, -2.12194440e-4f, y);
-  y = fmaf(z, -0.5f, y);
+  y = tsr_fma(e, -2.12194440e-4f, y);
+  y = tsr_fma(z, -0.5f, y);
   y = f + y;
-  y = fmaf(e, 0.693359375f, y);
+  y = tsr_fma(e, 0.693359375f, y);
   y = x == INFINITY ? INFINITY : y;
   y = x == 0.0f ? -INFINITY : y;
   return x < 0.0f || x != x ? NAN : y;
@@ -169,16 +183,16 @@ static inline float tsr_tanhf(float x) {
   float xc = fminf(fmaxf(x, -7.90531110763549805f), 7.90531110763549805f);
   float z = xc * xc;
   float p = -2.76076847742355e-16f;
-  p = fmaf(p, z, 2.00018790482477e-13f);
-  p = fmaf(p, z, -8.60467152213735e-11f);
-  p = fmaf(p, z, 5.12229709037114e-08f);
-  p = fmaf(p, z, 1.48572235717979e-05f);
-  p = fmaf(p, z, 6.37261928875436e-04f);
-  p = fmaf(p, z, 4.89352455891786e-03f);
+  p = tsr_fma(p, z, 2.00018790482477e-13f);
+  p = tsr_fma(p, z, -8.60467152213735e-11f);
+  p = tsr_fma(p, z, 5.12229709037114e-08f);
+  p = tsr_fma(p, z, 1.48572235717979e-05f);
+  p = tsr_fma(p, z, 6.37261928875436e-04f);
+  p = tsr_fma(p, z, 4.89352455891786e-03f);
   float q = 1.19825839466702e-06f;
-  q = fmaf(q, z, 1.18534705686654e-04f);
-  q = fmaf(q, z, 2.26843463243900e-03f);
-  q = fmaf(q, z, 4.89352518554385e-03f);
+  q = tsr_fma(q, z, 1.18534705686654e-04f);
+  q = tsr_fma(q, z, 2.26843463243900e-03f);
+  q = tsr_fma(q, z, 4.89352518554385e-03f);
   float y = xc * p / q;
   y = fabsf(x) < 0.0004f ? x : y;
   y = fabsf(x) > 9.0f ? copysignf(1.0f, x) : y; /* tanh(9) rounds to 1 */
@@ -189,17 +203,17 @@ static inline float tsr_erff(float x) {
   float xc = fminf(fmaxf(x, -4.0f), 4.0f);
   float z = xc * xc;
   float p = -2.72614225801306e-10f;
-  p = fmaf(p, z, 2.77068142495902e-08f);
-  p = fmaf(p, z, -2.10102402082508e-06f);
-  p = fmaf(p, z, -5.69250639462346e-05f);
-  p = fmaf(p, z, -7.34990630326855e-04f);
-  p = fmaf(p, z, -2.95459980854025e-03f);
-  p = fmaf(p, z, -1.60960333262415e-02f);
+  p = tsr_fma(p, z, 2.77068142495902e-08f);
+  p = tsr_fma(p, z, -2.10102402082508e-06f);
+  p = tsr_fma(p, z, -5.69250639462346e-05f);
+  p = tsr_fma(p, z, -7.34990630326855e-04f);
+  p = tsr_fma(p, z, -2.95459980854025e-03f);
+  p = tsr_fma(p, z, -1.60960333262415e-02f);
   float q = -1.45660718464996e-05f;
-  q = fmaf(q, z, -2.13374055278905e-04f);
-  q = fmaf(q, z, -1.68282697438203e-03f);
-  q = fmaf(q, z, -7.37332916720468e-03f);
-  q = fmaf(q, z, -1.42647390514189e-02f);
+  q = tsr_fma(q, z, -2.13374055278905e-04f);
+  q = tsr_fma(q, z, -1.68282697438203e-03f);
+  q = tsr_fma(q, z, -7.37332916720468e-03f);
+  q = tsr_fma(q, z, -1.42647390514189e-02f);
   float y = xc * p / q;
   y = fabsf(x) > 3.92f ? copysignf(1.0f, x) : y; /* erf(3.92) rounds to 1 */
   return x != x ? x : y;

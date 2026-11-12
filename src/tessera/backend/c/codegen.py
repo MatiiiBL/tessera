@@ -99,7 +99,7 @@ _MATH_F32 = {
     "abs": "fabsf",
     "floor": "floorf",
     "ceil": "ceilf",
-    "fma": "fmaf",
+    "fma": "tsr_fma",
     "sigmoid": "tsr_sigmoidf",
     "rsqrt": "tsr_rsqrtf",
 }
