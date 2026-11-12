@@ -10,7 +10,7 @@ search that is good on average but sometimes stuck is not good.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,9 +18,11 @@ from typing import Any
 import numpy as np
 
 from tessera.bench.report import markdown_table
+from tessera.tir.stmt import PrimFunc
 from tessera.tune.log import TuningLog
 from tessera.tune.measure import InlineRunner, Runner
 from tessera.tune.search import EvolutionarySearch, RandomSearch, SearchStrategy, TaskState
+from tessera.tune.space import ConfigSpace, KnobValue, config_json
 from tessera.tune.synthetic import SyntheticMatmul
 from tessera.tune.task import Task, TuningTask
 from tessera.tune.tuner import tune
@@ -174,6 +176,52 @@ def heaviest_tasks(model: Path, target: str, count: int, *, repeat: int = 5) -> 
     return [comp.tasks[key] for key in ranked[:count]]
 
 
+@dataclass(frozen=True)
+class Replay:
+    """A real task whose times come from measuring its whole space once.
+
+    ``schedule`` is the real task's (the cost model sees real loop nests);
+    ``measure`` looks the configuration up. Every strategy and seed then
+    sees the same measurements, noise included, and the optimum is known.
+    """
+
+    task: TuningTask
+    table: Mapping[str, float | None]  # config_json -> seconds (None: failed)
+
+    @property
+    def key(self) -> str:
+        return self.task.key
+
+    @property
+    def target_key(self) -> str:
+        return self.task.target_key
+
+    @property
+    def space(self) -> ConfigSpace:
+        return self.task.space
+
+    def schedule(self, config: Mapping[str, KnobValue]) -> PrimFunc:
+        return self.task.schedule(config)
+
+    def build(self, config: Mapping[str, KnobValue]) -> str:
+        return config_json(config)
+
+    def measure(self, built: str) -> float:
+        seconds = self.table[built]
+        if seconds is None:
+            raise RuntimeError("this configuration failed when the space was measured")
+        return seconds
+
+    def optimum(self) -> float:
+        return min(s for s in self.table.values() if s is not None)
+
+
+def measure_space(task: TuningTask, runner: Runner, log: TuningLog) -> dict[str, float | None]:
+    """Measure every configuration of ``task`` (resuming from ``log``)."""
+    state = tune([task], RandomSearch(), trials=task.space.size, runner=runner, log=log)[0]
+    return dict(state.measured)
+
+
 def compare_real(
     models: Sequence[Path],
     *,
@@ -181,14 +229,21 @@ def compare_real(
     tasks_per_model: int,
     trials: int,
     seeds: Sequence[int],
-    log_dir: Path | None = None,
+    log_dir: Path,
     on_run: Callable[[str, str, int], None] | None = None,
 ) -> list[Comparison]:
-    """The comparison on the heaviest tasks of real models, measured on ``target``."""
+    """The comparison on the heaviest tasks of real models, replayed from one
+    exhaustive measurement of each task's space on ``target``."""
     from tessera.tune.measure import LocalRunner
 
     tasks = [t for m in models for t in heaviest_tasks(m, target, tasks_per_model)]
     with LocalRunner() as runner:
-        return compare(
-            tasks, trials=trials, seeds=seeds, runner=runner, log_dir=log_dir, on_run=on_run
-        )
+        replays = [
+            Replay(t, measure_space(t, runner, TuningLog(_log_path(log_dir, t, "all", 0))))
+            for t in tasks
+        ]
+
+    def optimum(task: TuningTask) -> float | None:
+        return task.optimum() if isinstance(task, Replay) else None
+
+    return compare(replays, trials=trials, seeds=seeds, optimum=optimum, on_run=on_run)

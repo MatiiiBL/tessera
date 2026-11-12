@@ -398,6 +398,9 @@ def bench_command(
             "and BERT, measured on the first target (0: synthetic tasks only)."
         ),
     ] = 0,
+    real_trials: Annotated[
+        int, typer.Option(help="Tuning suite: trials per search on the real tasks.")
+    ] = 96,
     provisional: Annotated[
         bool | None,
         typer.Option(
@@ -444,12 +447,14 @@ def bench_command(
                 [specs[name].onnx_path() for name in ("resnet50", "bert")],
                 target=targets[0],
                 tasks_per_model=real_tasks,
-                trials=trials,
+                trials=real_trials,
                 seeds=range(seeds),
-                log_dir=default_logs() / "search",
+                log_dir=default_logs() / "spaces",
                 on_run=lambda task, s, seed: console.print(f"{task}: {s}, seed {seed}"),
             )
-            command += f" --real-tasks {real_tasks} --target {targets[0]}"
+            command += (
+                f" --real-tasks {real_tasks} --real-trials {real_trials} --target {targets[0]}"
+            )
         written.append(
             pages.tuning_page(
                 real=real, trials=trials, seeds=seeds, provisional=provisional, command=command

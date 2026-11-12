@@ -90,3 +90,27 @@ def test_heaviest_tasks_rank_by_profiled_time(
     assert all(t.key.startswith("matmul:") for t in tasks)
     dims = [t.lowered.dims["N"] * t.lowered.dims["K"] for t in tasks]
     assert dims == sorted(dims, reverse=True)  # the 64x512 layers outweigh 64x10
+
+
+def test_replay_of_an_exhaustively_measured_space(tmp_path: Path) -> None:
+    from tessera.bench.tuning import Replay, measure_space
+    from tessera.tune.log import TuningLog
+    from tessera.tune.measure import InlineRunner
+    from tessera.tune.space import config_json
+
+    task = SyntheticMatmul(8, 8, 4)
+    log = TuningLog(tmp_path / "space.jsonl")
+    table = measure_space(task, InlineRunner(), log)
+    assert len(table) == task.space.size
+    assert len(log.records()) == task.space.size
+    assert measure_space(task, InlineRunner(), log) == table  # resumed, nothing new
+    replay = Replay(task, table)
+    best, seconds = task.optimum()
+    assert replay.optimum() == seconds
+    assert replay.measure(replay.build(best)) == seconds
+    assert replay.key == task.key
+    [c] = compare([replay], trials=12, seeds=[0, 1], optimum=lambda t: replay.optimum())
+    assert c.reference == seconds
+    failed = Replay(task, {**table, config_json(best): None})
+    with pytest.raises(RuntimeError, match="failed"):
+        failed.measure(config_json(best))
