@@ -74,9 +74,9 @@ def test_markdown_tables() -> None:
     ]
     variant = {
         "kernels": 54,
-        "bytes_moved": 2_000_000,
-        "arena_bytes": 1_000_000,
-        "intermediate_bytes": 3_000_000,
+        "bytes_moved": 2 * 2**20,
+        "arena_bytes": 2**20,
+        "intermediate_bytes": 3 * 2**20,
         "latency": lat.as_dict(),
     }
     ablations = {"c:sme": {"full": variant, "fusion off": {"error": "ValueError: x"}}}
@@ -84,7 +84,7 @@ def test_markdown_tables() -> None:
     assert "| tessera-c:sme | 5.00 (4.00 to 6.00) | 2.00x | 1.00e-05 | 2.00e-06 | 100% |" in text
     assert "54 kernels, 50 tuned" in text
     assert "| pytorch-mps | failed |" in text
-    assert "| c:sme | full | 54 | 2.0 | 1.0 | 3.0 | 10.00 |" in text
+    assert "| c:sme | full | 54 | 2.0 | 1.0 | 3.0 | 10.00 | 50 |" in text
     assert "| c:sme | fusion off | failed |" in text
 
 

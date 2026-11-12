@@ -40,6 +40,7 @@ from tessera.plan import StorageKind
 CLASSIFIER_SAMPLES = 16
 WARMUP = 10
 RUNS = 50
+MIB = 2**20
 ROW_SECONDS = 60.0  # timing budget of one row: slower rows get fewer runs (at least 3)
 
 # Ablation variants of the untuned pipeline: (fuse, optimize, schedule) for lower().
@@ -306,8 +307,11 @@ def _notes(s: SystemResult) -> str:
     notes = []
     if s.latency is not None and s.latency.runs < RUNS:
         notes.append(f"{s.latency.runs} runs")
-    if s.threads:
+    on_gpu = s.system.endswith("-mps") or "metal" in s.system
+    if s.threads and not on_gpu:
         notes.append(f"{s.threads} threads")
+    elif s.system == "onnxruntime-cpu":
+        notes.append("default threads")
     if "kernels" in s.details:
         notes.append(f"{s.details['kernels']} kernels")
         if s.details.get("tuned_kernels"):
@@ -320,7 +324,7 @@ def _ablation_table(r: ModelResult) -> str:
     for target, variants in r.ablations.items():
         for name, v in variants.items():
             if v.get("error"):
-                rows.append([target, name, "failed", "", "", "", v["error"][:80]])
+                rows.append([target, name, "failed", "", "", "", "", v["error"][:80]])
                 continue
             lat = v["latency"]
             rows.append(
@@ -328,10 +332,11 @@ def _ablation_table(r: ModelResult) -> str:
                     target,
                     name,
                     v["kernels"],
-                    f"{v['bytes_moved'] / 1e6:.1f}",
-                    f"{v['arena_bytes'] / 1e6:.1f}",
-                    f"{v['intermediate_bytes'] / 1e6:.1f}",
+                    f"{v['bytes_moved'] / MIB:.1f}",
+                    f"{v['arena_bytes'] / MIB:.1f}",
+                    f"{v['intermediate_bytes'] / MIB:.1f}",
                     f"{lat['median'] * 1e3:.2f}",
+                    lat["runs"],
                 ]
             )
     return f"Ablations of {r.model} (untuned):\n\n" + markdown_table(
@@ -339,10 +344,11 @@ def _ablation_table(r: ModelResult) -> str:
             "target",
             "pipeline",
             "kernels",
-            "bytes moved (MB)",
-            "arena (MB)",
-            "intermediates (MB)",
+            "bytes moved (MiB)",
+            "arena (MiB)",
+            "intermediates (MiB)",
             "ms (median)",
+            "runs",
         ],
         rows,
     )

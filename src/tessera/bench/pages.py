@@ -58,7 +58,9 @@ def models_page(
         )
         kept[name] = {**result.as_dict(), "environment": env}
     entries = [kept[n] for n in [*MODELS, *sorted(set(kept) - set(MODELS))] if n in kept]
-    env = environment(provisional=any(e["environment"]["provisional"] for e in entries))
+    # The page's provenance is its latest model's; each model states its own below.
+    latest = max((e["environment"] for e in entries), key=lambda e: str(e["date"]))
+    env = {**latest, "provisional": any(e["environment"]["provisional"] for e in entries)}
     sections = []
     for entry in entries:
         e = entry["environment"]
