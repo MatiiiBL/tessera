@@ -19,8 +19,10 @@ class MetalBackend:
     name = "metal"
 
     def templates(self, target: Target | None = None) -> Mapping[str, Template]:
-        """The GPU schedule template of every pattern that has one."""
-        return {}
+        """The GPU schedule template of every pattern (the same for every target)."""
+        from tessera.backend.metal.templates import TEMPLATES
+
+        return TEMPLATES
 
     def build(self, plan: ExecutionPlan, target: Target) -> MetalModel:
         """Compile every kernel of ``plan`` into one library and wire its launches."""
