@@ -244,7 +244,7 @@ def test_backend_lowering_options_reach_every_group(
     assert calls == [expected] * len(comp.kernels)
 
 
-def test_groups_differing_in_constant_inputs_cannot_share_a_task() -> None:
+def test_groups_differing_in_constant_inputs_are_different_tasks() -> None:
     from onnx import TensorProto, helper, numpy_helper
 
     # h = x @ w (w a constant) and o = h @ z (z an input): the same loop nest.
@@ -263,6 +263,8 @@ def test_groups_differing_in_constant_inputs_cannot_share_a_task() -> None:
         [w],
     )
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)], ir_version=9)
-    with pytest.raises(ValueError, match="different constant inputs"):
-        lower(model, target="c:generic")
-    lower(model, target="c:generic", schedule=False)  # without templates there are no tasks
+    comp = lower(model, target="c:generic")
+    keys = [k.task_key for k in comp.kernels]
+    assert len(keys) == 2
+    assert keys[0] != keys[1]
+    assert sorted(t.constants for t in comp.tasks.values()) == [(), (1,)]

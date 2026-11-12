@@ -91,3 +91,15 @@ def test_tessera_compile_is_the_entry_point() -> None:
     assert relative_error(out["probs"], ort["probs"]) < TOLERANCE
     with pytest.raises(AttributeError, match="no attribute 'nope'"):
         _ = tessera.nope  # type: ignore[attr-defined]
+
+
+@pytest.mark.models
+@pytest.mark.parametrize("name", ["resnet50", "mobilenet_v2", "bert", "gpt2"])
+@pytest.mark.parametrize("target", ["c:sme", "metal"])
+def test_every_ablation_lowers_the_benchmark_models(name: str, target: str) -> None:
+    from tessera.bench.zoo import load_manifest
+
+    spec = load_manifest()[name]
+    for fuse, optimize in ((True, True), (False, True), (True, False)):
+        comp = lower(spec.onnx_path(), target=target, fuse=fuse, optimize=optimize, tuned=False)
+        assert comp.kernels

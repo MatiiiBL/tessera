@@ -12,6 +12,7 @@ the cost model are tested without a backend.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
@@ -69,31 +70,29 @@ def constant_inputs(lowered: LoweredGroup) -> tuple[int, ...]:
 
 
 def merge_task(tasks: dict[str, Task], task: Task) -> None:
-    """Add ``task`` to ``tasks`` by key, or count it in the task with its key.
-
-    The key covers the loop nest, not which inputs are constants, and
-    backends treat constants differently (weights are packed once at load),
-    so two groups with the same loop nest but different constant inputs
-    must not share a task. None of the benchmark models has such a pair;
-    should one appear, this refuses it instead of tuning one for the other.
-    """
+    """Add ``task`` to ``tasks`` by key, or count it in the task with its key."""
     known = tasks.get(task.key)
     if known is None:
         tasks[task.key] = task
-        return
-    if known.constants != task.constants:
-        raise ValueError(
-            f"groups {known.names[0]} and {task.names[0]} have the same loop nest "
-            f"(task {task.key}) but different constant inputs ({known.constants} and "
-            f"{task.constants}), so they cannot share a tuning task"
-        )
-    known.weight += task.weight
-    known.names += task.names
+    else:
+        known.weight += task.weight
+        known.names += task.names
 
 
 def task_key(lowered: LoweredGroup) -> str:
-    """``<pattern>:<structural hash>`` of a lowered group (names do not matter)."""
-    return f"{lowered.pattern}:{structural_hash(lowered.func)[:16]}"
+    """``<pattern>:<hash>`` of a lowered group: the structural hash of its function
+    (names do not matter) and, if it has any, which of its inputs are constants.
+
+    Backends treat constants differently from other inputs (a model prepares
+    its weights once, when it is loaded), so a matmul by a weight and a
+    matmul of two activations of the same shapes are different tasks.
+    """
+    digest = structural_hash(lowered.func)
+    constants = constant_inputs(lowered)
+    if constants:
+        text = f"{digest} constants {','.join(map(str, constants))}"
+        digest = hashlib.sha256(text.encode()).hexdigest()
+    return f"{lowered.pattern}:{digest[:16]}"
 
 
 @dataclass
@@ -152,13 +151,19 @@ class Task:
         func = self.schedule(config)
         backend = self._backend()
         if isinstance(backend, Prebuilder):
-            backend.prebuild(func, self.target)
+            backend.prebuild(func, self.target, constants=frozenset(self.constants))
         return func
 
     def measure(self, built: PrimFunc) -> float:
         backend = self._backend()
         return float(
-            backend.measure(built, self.target, repeat=self.repeat, min_seconds=self.min_seconds)
+            backend.measure(
+                built,
+                self.target,
+                repeat=self.repeat,
+                min_seconds=self.min_seconds,
+                constants=frozenset(self.constants),
+            )
         )
 
     def _backend(self) -> Any:

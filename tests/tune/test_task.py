@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from tessera.backend.base import Prebuilder
@@ -9,6 +10,7 @@ from tessera.dtype import DType
 from tessera.ir.graph import Node, TensorType, Value
 from tessera.plan import FusedGroup, LoweredGroup
 from tessera.target import Target
+from tessera.tir import structural_hash
 from tessera.tir.schedule import Schedule
 from tessera.tir.stmt import TRUE, Block, BlockRealize, Buffer, PrimFunc, SeqStmt
 from tessera.tune.space import Config
@@ -64,13 +66,25 @@ class FakeBackend:
     def __init__(self, prebuilds: bool) -> None:
         self.built: list[str] = []
         self.timed: list[str] = []
+        self.constants: list[frozenset[int]] = []
         if prebuilds:
-            self.prebuild = lambda func, target: self.built.append(func.name)
+            self.prebuild = self._prebuild
+
+    def _prebuild(self, func: PrimFunc, target: Target, *, constants: frozenset[int]) -> None:
+        self.built.append(func.name)
+        self.constants.append(constants)
 
     def measure(
-        self, func: PrimFunc, target: Target, *, repeat: int = 5, min_seconds: float = 0.05
+        self,
+        func: PrimFunc,
+        target: Target,
+        *,
+        repeat: int = 5,
+        min_seconds: float = 0.05,
+        constants: frozenset[int] = frozenset(),
     ) -> float:
         self.timed.append(func.name)
+        self.constants.append(constants)
         return 0.25
 
 
@@ -86,3 +100,23 @@ def test_build_prebuilds_when_the_backend_can(
     assert fake.built == (["mm"] if prebuilds else [])
     assert task.measure(built) == 0.25
     assert fake.timed == ["mm"]
+    assert fake.constants == [frozenset()] * (2 if prebuilds else 1)
+
+
+def test_constant_inputs_are_part_of_the_key_and_reach_the_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plain = lowered("mm", 8)
+    a, b = plain.group.inputs
+    weight = Value("w", b.type, data=np.zeros(b.type.shape, np.float32))
+    group = FusedGroup("mmw", plain.group.nodes, [a, weight], plain.group.output, None, "matmul")
+    with_weight = LoweredGroup(group, plain.func, "C", None, plain.dims)
+    assert task_key(plain) == f"matmul:{structural_hash(plain.func)[:16]}"
+    assert task_key(with_weight) != task_key(plain)
+    assert task_key(with_weight).startswith("matmul:")
+    task = Task.create(with_weight, template, Target())
+    assert task.constants == (1,)
+    fake = FakeBackend(prebuilds=True)
+    monkeypatch.setattr(Task, "_backend", lambda self: fake)
+    task.measure(task.build(task.space.default()))
+    assert fake.constants == [frozenset({1}), frozenset({1})]
