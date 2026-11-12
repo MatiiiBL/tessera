@@ -154,8 +154,11 @@ def trials_to_reach(c: Comparison, strategy: str, fraction: float) -> float | No
 
 
 def _log_path(directory: Path, task: TuningTask, strategy: str, seed: int) -> Path:
-    safe = task.key.replace(":", "-")
-    return directory / f"{safe}-{strategy}-seed{seed}.jsonl"
+    return directory / f"{_safe(task.key)}-{strategy}-seed{seed}.jsonl"
+
+
+def _safe(key: str) -> str:
+    return key.replace(":", "-")
 
 
 def heaviest_tasks(model: Path, target: str, count: int, *, repeat: int = 5) -> list[Task]:
@@ -239,7 +242,7 @@ def compare_real(
     tasks = [t for m in models for t in heaviest_tasks(m, target, tasks_per_model)]
     with LocalRunner() as runner:
         replays = [
-            Replay(t, measure_space(t, runner, TuningLog(_log_path(log_dir, t, "all", 0))))
+            Replay(t, measure_space(t, runner, TuningLog(log_dir / f"{_safe(t.key)}.jsonl")))
             for t in tasks
         ]
 

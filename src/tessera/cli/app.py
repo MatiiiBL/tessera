@@ -438,9 +438,9 @@ def bench_command(
         real = []
         command = f"tessera bench tuning --trials {trials} --seeds {seeds}"
         if real_tasks:
+            from tessera.bench.report import repo_root
             from tessera.bench.tuning import compare_real
             from tessera.bench.zoo import load_manifest
-            from tessera.driver import default_logs
 
             specs = load_manifest()
             real = compare_real(
@@ -449,7 +449,7 @@ def bench_command(
                 tasks_per_model=real_tasks,
                 trials=real_trials,
                 seeds=range(seeds),
-                log_dir=default_logs() / "spaces",
+                log_dir=repo_root() / "data" / "tuning" / "spaces",
                 on_run=lambda task, s, seed: console.print(f"{task}: {s}, seed {seed}"),
             )
             command += (
