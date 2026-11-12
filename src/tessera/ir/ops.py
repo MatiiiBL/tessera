@@ -36,23 +36,37 @@ class OpKind(enum.IntEnum):
 
 type InferFn = Callable[[Sequence[TensorType], Mapping[str, Attr]], list[TensorType]]
 type ReferenceFn = Callable[[Sequence[NDArray], Mapping[str, Attr]], list[NDArray]]
+type NormalizeFn = Callable[[Sequence[TensorType], Mapping[str, Attr]], dict[str, Attr]]
+
+
+class ShapeError(ValueError):
+    """Shape inference rejected an operator's inputs or attributes."""
 
 
 @dataclass(frozen=True)
 class OpDef:
-    """One operator: its name, fusion kind, shape inference and reference."""
+    """One operator: its name, fusion kind, shape inference and reference.
+
+    ``infer`` accepts only normalized attributes (every attribute present,
+    axes non-negative, one entry per dimension) and raises ``ShapeError``
+    otherwise. ``normalize``, when given, turns the lenient spelling a
+    builder or importer uses (defaults omitted, negative axes, lists) into
+    that form; ``Graph.add_node`` applies it.
+    """
 
     name: str
     kind: OpKind
     infer: InferFn
     reference: ReferenceFn
     doc: str = ""
+    normalize: NormalizeFn | None = None
 
 
 _REGISTRY: dict[str, OpDef] = {}
 
 
 def register_op(opdef: OpDef) -> OpDef:
+    """Add an operator to the registry (each name once)."""
     if opdef.name in _REGISTRY:
         raise ValueError(f"operator {opdef.name} is registered twice")
     _REGISTRY[opdef.name] = opdef
@@ -60,6 +74,7 @@ def register_op(opdef: OpDef) -> OpDef:
 
 
 def get_op(name: str) -> OpDef:
+    """The definition of operator ``name``; ``KeyError`` if there is none."""
     _load_definitions()
     try:
         return _REGISTRY[name]
@@ -67,7 +82,18 @@ def get_op(name: str) -> OpDef:
         raise KeyError(f"unknown operator {name!r}") from None
 
 
+def normalize_attrs(
+    name: str, types: Sequence[TensorType], attrs: Mapping[str, Attr]
+) -> dict[str, Attr]:
+    """The normalized attributes of operator ``name`` applied to inputs of ``types``."""
+    opdef = get_op(name)
+    if opdef.normalize is None:
+        return dict(attrs)
+    return opdef.normalize(types, attrs)
+
+
 def registered_ops() -> list[str]:
+    """Names of every registered operator, sorted."""
     _load_definitions()
     return sorted(_REGISTRY)
 

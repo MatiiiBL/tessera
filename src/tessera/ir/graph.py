@@ -204,12 +204,21 @@ class Graph:
         name: str | None = None,
         output_types: Sequence[TensorType] | None = None,
     ) -> Node:
-        """Append a node; output types come from the op's shape inference unless given."""
-        attrs = dict(attrs or {})
-        if output_types is None:
-            from tessera.ir.ops import get_op
+        """Append a node; output types come from the op's shape inference unless given.
 
-            output_types = get_op(op).infer([v.type for v in inputs], attrs)
+        Attributes are normalized first (defaults filled in, negative axes made
+        non-negative), so ``attrs`` may use the lenient ONNX-like spelling.
+        """
+        from tessera.ir.ops import ShapeError, get_op
+
+        opdef = get_op(op)
+        types = [v.type for v in inputs]
+        try:
+            attrs = opdef.normalize(types, attrs or {}) if opdef.normalize else dict(attrs or {})
+            if output_types is None:
+                output_types = opdef.infer(types, attrs)
+        except ShapeError as e:
+            raise ShapeError(f"{op} node {name or op.lower()!r}: {e}") from None
         node_name = self.fresh_name(name or op.lower())
         outs = [
             Value(node_name if len(output_types) == 1 else self.fresh_name(f"{node_name}_{i}"), t)
@@ -287,26 +296,50 @@ class Graph:
         self.nodes = [n for n in self.nodes if id(n) not in dead]
 
     def topo_sort(self) -> None:
-        """Reorder nodes so that every value is defined before it is read (stable)."""
-        defined = {id(v) for v in self.inputs}
-        pending = list(self.nodes)
+        """Reorder nodes so that every value is defined before it is read.
+
+        Nodes keep their order where it is already valid; a node that comes
+        too late moves to just before its first reader.
+        """
+        members = {id(n) for n in self.nodes}
+        inputs = {id(v) for v in self.inputs}
+        placed: set[int] = set()
+        on_stack: set[int] = set()
         ordered: list[Node] = []
-        while pending:
-            rest: list[Node] = []
-            for node in pending:
-                if all(v.is_constant or id(v) in defined for v in node.inputs):
+        for root in self.nodes:
+            if id(root) in placed:
+                continue
+            stack: list[tuple[Node, int]] = [(root, 0)]
+            on_stack.add(id(root))
+            while stack:
+                node, i = stack[-1]
+                if i == len(node.inputs):
+                    stack.pop()
+                    on_stack.discard(id(node))
+                    placed.add(id(node))
                     ordered.append(node)
-                    defined.update(id(v) for v in node.outputs)
-                else:
-                    rest.append(node)
-            if len(rest) == len(pending):
-                raise ValueError(f"graph has a cycle or undefined values near {rest[0]!r}")
-            pending = rest
+                    continue
+                stack[-1] = (node, i + 1)
+                v = node.inputs[i]
+                if v.is_constant or id(v) in inputs:
+                    continue
+                producer = v.producer
+                if producer is None or id(producer) not in members:
+                    raise ValueError(f"{node!r} reads {v!r}, which no node defines")
+                if id(producer) in placed:
+                    continue
+                if id(producer) in on_stack:
+                    raise ValueError(f"graph has a cycle through {producer!r}")
+                on_stack.add(id(producer))
+                stack.append((producer, 0))
         self.nodes = ordered
 
     def verify(self) -> None:
-        """Check SSA form, topological order, names and types; raise ValueError if broken."""
-        from tessera.ir.ops import get_op
+        """Check SSA form, topological order, names and types; raise ValueError if broken.
+
+        Attributes must be normalized: ``ShapeError`` (a ValueError) names the node otherwise.
+        """
+        from tessera.ir.ops import ShapeError, get_op
 
         defined: set[int] = {id(v) for v in self.inputs}
         names: dict[str, Value] = {}
@@ -326,7 +359,10 @@ class Graph:
                     define(v)
                 elif id(v) not in defined:
                     raise ValueError(f"{node!r} reads {v!r} before it is defined")
-            expected = get_op(node.op).infer([v.type for v in node.inputs], node.attrs)
+            try:
+                expected = get_op(node.op).infer([v.type for v in node.inputs], node.attrs)
+            except ShapeError as e:
+                raise ShapeError(f"{node!r}: {e}") from None
             if [v.type for v in node.outputs] != list(expected):
                 got = [str(v.type) for v in node.outputs]
                 raise ValueError(f"{node!r}: output types {got} != inferred {expected}")
