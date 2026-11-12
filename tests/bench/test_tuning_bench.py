@@ -114,3 +114,37 @@ def test_replay_of_an_exhaustively_measured_space(tmp_path: Path) -> None:
     failed = Replay(task, {**table, config_json(best): None})
     with pytest.raises(RuntimeError, match="failed"):
         failed.measure(config_json(best))
+
+
+@pytest.mark.parametrize("limit", [0, 2048])
+def test_real_comparison_replays_small_spaces_and_searches_large_ones_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: int
+) -> None:
+    import onnx
+
+    import tessera.bench.tuning as tuning
+    from e2e.onnx_models import mlp
+    from tessera.backend.c import CBackend
+
+    # A module-level template: the build processes import it by name.
+    monkeypatch.setattr(CBackend, "templates", lambda self, target=None: {"matmul": split_template})
+    monkeypatch.setattr(tuning, "EXHAUSTIVE_LIMIT", limit)
+    path = tmp_path / "mlp.onnx"
+    onnx.save(mlp(sizes=(64, 512, 64)), path)
+    [c] = tuning.compare_real(
+        [path],
+        target="c:generic",
+        tasks_per_model=1,
+        trials=6,
+        seeds=[0],
+        log_dir=tmp_path / "logs",
+    )
+    assert c.reference_kind == ("optimum" if limit else "best found")
+    assert 0 < c.reference < float("inf")
+    assert set(c.runs) == {"random", "model"}
+    assert all(len(curve) == 6 for curves in c.runs.values() for curve in curves)
+
+
+def split_template(sch: Any, lowered: Any, cfg: Any) -> None:
+    loop = next(lp for lp in sch.get_loops(lowered.main_block) if sch.extent(lp) > 1)
+    sch.split(loop, list(cfg.split("tile", sch.extent(loop), parts=2)))

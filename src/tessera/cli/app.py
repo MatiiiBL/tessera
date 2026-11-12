@@ -469,6 +469,9 @@ def bench_command(
     real_trials: Annotated[
         int, typer.Option(help="Tuning suite: trials per search on the real tasks.")
     ] = 96,
+    real_seeds: Annotated[
+        int, typer.Option(help="Tuning suite: seeds per strategy on the real tasks.")
+    ] = 3,
     provisional: Annotated[
         bool | None,
         typer.Option(
@@ -516,12 +519,13 @@ def bench_command(
                 target=targets[0],
                 tasks_per_model=real_tasks,
                 trials=real_trials,
-                seeds=range(seeds),
+                seeds=range(real_seeds),
                 log_dir=repo_root() / "data" / "tuning" / "spaces",
                 on_run=lambda task, s, seed: console.print(f"{task}: {s}, seed {seed}"),
             )
             command += (
-                f" --real-tasks {real_tasks} --real-trials {real_trials} --target {targets[0]}"
+                f" --real-tasks {real_tasks} --real-trials {real_trials}"
+                f" --real-seeds {real_seeds} --target {targets[0]}"
             )
         written.append(
             pages.tuning_page(

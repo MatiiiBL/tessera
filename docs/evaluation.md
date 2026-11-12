@@ -51,10 +51,15 @@ handicap PyTorch.
 - **Latency:** wall-clock time of one inference with the inputs already in
   place (on the device for MPS; the call waits for the GPU to finish).
   Each system runs 10 untimed warmup inferences, then at least 50 timed
-  ones; the tables give the median and the 10th and 90th percentiles. A
-  row that cannot run 60 inferences within 60 seconds (only the
-  unscheduled pipeline, below) gets as many as fit, at least 3, and says
-  how many.
+  ones; the tables give the median and the 10th and 90th percentiles.
+  Tessera's CPU rows pool their 50 runs from 5 fresh processes of 10 runs
+  each (each after its own warmup): macOS sometimes keeps one of the C
+  runtime's SME workers on the efficiency cluster for a whole process, which
+  then runs with one thread fewer (docs/cpu.md, Limitations), so a single
+  process's runs would all share that placement. The kernel benchmarks on
+  the CPU are pooled the same way. A row that cannot run 60 inferences
+  within 60 seconds (only the unscheduled pipeline, below) gets as many as
+  fit in one process, at least 3, and says how many.
 - **Agreement** with ONNX Runtime on the CPU, the reference: the largest
   absolute difference over every output element, the largest difference
   relative to the largest magnitude of the reference output, and, for the

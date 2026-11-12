@@ -104,8 +104,10 @@ def test_results_round_trip_through_json() -> None:
 def test_pages_merge_models_measured_separately(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import tessera.bench.models
     from tessera.bench.pages import models_page
 
+    monkeypatch.setattr(tessera.bench.models, "PROCESSES", 1)
     zoo = tiny_zoo(tmp_path)
     manifest = json.loads((zoo / "manifest.json").read_text())
     manifest["mobilenet_v2"] = manifest["resnet50"]
@@ -171,3 +173,23 @@ def test_unscheduled_metal_is_not_measured(tmp_path: Path) -> None:
     text = markdown([ModelResult("resnet50", [], {"metal": out})])
     assert "| metal | no schedule |" in text
     assert "one GPU thread" in text
+
+
+def test_cpu_latency_is_pooled_from_fresh_processes(tmp_path: Path) -> None:
+    from e2e.onnx_models import mlp, random_inputs
+    from tessera.bench.latency import fresh_process_runs
+
+    path = tmp_path / "mlp.onnx"
+    model = mlp()
+    onnx.save(model, path)
+    seconds = fresh_process_runs(
+        path,
+        random_inputs(model),
+        target="c:generic",
+        options={"tuned": False},
+        processes=3,
+        runs=4,
+        warmup=1,
+    )
+    assert len(seconds) == 12
+    assert all(s >= 0 for s in seconds)

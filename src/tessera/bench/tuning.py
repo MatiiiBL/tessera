@@ -31,6 +31,7 @@ STRATEGIES: dict[str, Callable[[], SearchStrategy]] = {
     "random": RandomSearch,
     "model": EvolutionarySearch,
 }
+EXHAUSTIVE_LIMIT = 2048  # configurations a real task may have to be measured exhaustively
 SYNTHETIC_SHAPES = ((64, 64, 64), (256, 128, 192), (32, 512, 64))
 
 
@@ -235,18 +236,31 @@ def compare_real(
     log_dir: Path,
     on_run: Callable[[str, str, int], None] | None = None,
 ) -> list[Comparison]:
-    """The comparison on the heaviest tasks of real models, replayed from one
-    exhaustive measurement of each task's space on ``target``."""
+    """The comparison on the heaviest tasks of real models on ``target``.
+
+    A task whose space has at most ``EXHAUSTIVE_LIMIT`` configurations is
+    measured exhaustively once and every search replays those measurements
+    (the reference is the true optimum). A larger task is searched live: each
+    strategy and seed measures its own candidates, and the reference is the
+    best time any run found.
+    """
     from tessera.tune.measure import LocalRunner
 
     tasks = [t for m in models for t in heaviest_tasks(m, target, tasks_per_model)]
+    out: list[Comparison] = []
     with LocalRunner() as runner:
         replays = [
             Replay(t, measure_space(t, runner, TuningLog(log_dir / f"{_safe(t.key)}.jsonl")))
             for t in tasks
+            if t.space.size <= EXHAUSTIVE_LIMIT
         ]
+        live = [t for t in tasks if t.space.size > EXHAUSTIVE_LIMIT]
 
-    def optimum(task: TuningTask) -> float | None:
-        return task.optimum() if isinstance(task, Replay) else None
+        def optimum(task: TuningTask) -> float | None:
+            return task.optimum() if isinstance(task, Replay) else None
 
-    return compare(replays, trials=trials, seeds=seeds, optimum=optimum, on_run=on_run)
+        out += compare(replays, trials=trials, seeds=seeds, optimum=optimum, on_run=on_run)
+        out += compare(
+            live, trials=trials, seeds=seeds, runner=runner, log_dir=log_dir / "runs", on_run=on_run
+        )
+    return out

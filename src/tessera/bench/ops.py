@@ -15,9 +15,11 @@ the same shape on the CPU and on MPS (channels-last, without the epilogue).
 
 from __future__ import annotations
 
+import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -25,9 +27,10 @@ import onnx
 from onnx import TensorProto, helper, numpy_helper
 
 from tessera.bench.baselines import torch_available
+from tessera.bench.latency import fresh_process_profile, fresh_process_runs
 from tessera.bench.report import markdown_table
 from tessera.bench.stats import Latency, time_runs
-from tessera.driver import lower
+from tessera.driver import lower, resolve_target
 from tessera.ir.graph import NDArray, Node
 
 SQUARE = (256, 512, 1024, 2048)
@@ -37,6 +40,7 @@ GEMM_SHAPES: tuple[tuple[int, int, int], ...] = (
     *TRANSFORMER,
 )  # (M, N, K)
 RUNS = 50
+PROCESSES = 5  # fresh processes CPU timings are pooled from (tessera.bench.latency)
 
 
 @dataclass(frozen=True)
@@ -127,7 +131,16 @@ def _gemm_tessera(model: onnx.ModelProto, target: str, x: NDArray) -> Latency:
     error = float(np.max(np.abs(got - expected)) / np.max(np.abs(expected)))
     if error > 1e-4:
         raise ValueError(f"wrong result: relative error {error:.2e}")
-    return Latency.of(compiled.benchmark({"x": x}, warmup=10, repeat=RUNS))
+    if resolve_target(target).kind != "c":
+        return Latency.of(compiled.benchmark({"x": x}, warmup=10, repeat=RUNS))
+    # Thread placement is decided per process on the CPU: pool fresh processes.
+    with tempfile.TemporaryDirectory(prefix="tessera-gemm-") as tmp:
+        path = Path(tmp) / "gemm.onnx"
+        onnx.save(model, path)
+        runs = fresh_process_runs(
+            path, {"x": x}, target=target, options={}, processes=PROCESSES, runs=RUNS // PROCESSES
+        )
+    return Latency.of(runs)
 
 
 def _attempt(op: str, system: str, flops: int, fn: Callable[[], Latency]) -> OpResult:
@@ -224,10 +237,15 @@ def bench_convs(
 
     progress(f"convolutions: compiling for {target}")
     comp = lower(model, target=target, input_shapes=input_shapes)
-    compiled = comp.build()
-    times = {
-        t.kernel: t.seconds for t in compiled.profile(random_inputs(comp.graph), repeat=repeat)
-    }
+    inputs = random_inputs(comp.graph)
+    if comp.target.kind == "c":  # placement is per process: pool fresh processes
+        pooled = fresh_process_profile(
+            Path(model), inputs, target=target, options={}, processes=PROCESSES, repeat=repeat
+        )
+        times = {kernel: float(np.median(s)) for kernel, s in pooled.items()}
+    else:
+        compiled = comp.build()
+        times = {t.kernel: t.seconds for t in compiled.profile(inputs, repeat=repeat)}
     by_shape: dict[ConvShape, list[float]] = {}
     for k in comp.kernels:
         group = k.group

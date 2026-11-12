@@ -77,8 +77,11 @@ def test_markdown_has_a_column_per_system() -> None:
 def test_ops_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import json
 
+    import tessera.bench.ops
     from bench.test_models_bench import tiny_zoo
     from tessera.bench.pages import ops_page
+
+    monkeypatch.setattr(tessera.bench.ops, "PROCESSES", 1)
 
     (tmp_path / "zoo").mkdir()
     monkeypatch.setenv("TESSERA_MODELS", str(tiny_zoo(tmp_path / "zoo")))
@@ -98,3 +101,19 @@ def test_ops_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     convs = [r for r in data["convolutions"] if r["system"] == "tessera-c:generic"]
     assert convs
     assert all(r["op"].startswith("conv ") for r in convs)
+
+
+def test_profiles_are_pooled_from_fresh_processes(tmp_path: Path) -> None:
+    import onnx
+
+    from e2e.onnx_models import mlp, random_inputs
+    from tessera.bench.latency import fresh_process_profile
+
+    model = mlp()
+    path = tmp_path / "mlp.onnx"
+    onnx.save(model, path)
+    pooled = fresh_process_profile(
+        path, random_inputs(model), target="c:generic", options={}, processes=2, repeat=2
+    )
+    assert pooled
+    assert all(len(seconds) == 2 for seconds in pooled.values())

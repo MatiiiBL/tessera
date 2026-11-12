@@ -30,6 +30,7 @@ from functools import partial
 from typing import Any
 
 from tessera.bench.baselines import Runner, onnxruntime_cpu, torch_available, torch_eager
+from tessera.bench.latency import fresh_process_runs
 from tessera.bench.report import markdown_table
 from tessera.bench.stats import Agreement, Latency, agreement, time_runs
 from tessera.bench.zoo import ModelSpec
@@ -42,6 +43,7 @@ WARMUP = 10
 RUNS = 50
 MIB = 2**20
 METAL_UNSCHEDULED = "not measured: unscheduled Metal kernels run on one GPU thread"
+PROCESSES = 5  # fresh processes the runs of a CPU row are pooled from
 ROW_SECONDS = 60.0  # timing budget of one row: slower rows get fewer runs (at least 3)
 
 # Ablation variants of the untuned pipeline: (fuse, optimize, schedule) for lower().
@@ -139,26 +141,44 @@ def measure_compilation(
     spec: ModelSpec,
     inputs: Sequence[Mapping[str, NDArray]],
     reference: list[dict[str, NDArray]],
+    options: Mapping[str, bool],
 ) -> SystemResult:
     """Build ``comp``, then time it and compare its outputs like a baseline.
 
-    A model that runs too slowly for ``RUNS`` runs within ``ROW_SECONDS`` (the
-    unscheduled pipeline) gets as many runs as fit, at least 3; the latency
-    records how many.
+    ``options`` are the ``lower`` options ``comp`` was made with. On the CPU
+    the runs are pooled from ``PROCESSES`` fresh processes (see
+    ``tessera.bench.latency``), because the placement of the runtime's
+    threads is decided per process. A model that runs too slowly for
+    ``RUNS`` runs within ``ROW_SECONDS`` (the unscheduled pipeline) gets as
+    many runs as fit, at least 3, in this process; the latency records how
+    many.
     """
     compiled = comp.build()
     outputs = [compiled.run(x) for x in inputs]
     first = compiled.benchmark(inputs[0], warmup=0, repeat=1)[0]
-    if first * (RUNS + WARMUP) <= ROW_SECONDS:
-        seconds = compiled.benchmark(inputs[0], warmup=WARMUP, repeat=RUNS)
-    else:
+    processes = 1
+    if first * (RUNS + WARMUP) > ROW_SECONDS:
         seconds = compiled.benchmark(inputs[0], warmup=0, repeat=max(3, int(ROW_SECONDS / first)))
+    elif comp.target.kind == "c":
+        processes = PROCESSES
+        seconds = fresh_process_runs(
+            spec.onnx_path(),
+            inputs[0],
+            target=comp.target.kind + ":" + comp.target.isa,
+            options=options,
+            input_shapes=spec.input_shapes,
+            processes=PROCESSES,
+            runs=RUNS // PROCESSES,
+            warmup=WARMUP,
+        )
+    else:
+        seconds = compiled.benchmark(inputs[0], warmup=WARMUP, repeat=RUNS)
     return SystemResult(
         name,
         Latency.of(seconds),
         agreement(outputs, reference, classifier=spec.classifier),
         comp.target.threads if comp.target.kind == "c" else None,
-        details=plan_stats(comp),
+        details={**plan_stats(comp), "processes": processes},
     )
 
 
@@ -213,7 +233,7 @@ def bench_model(
 
     def tessera(label: str, target: str, tuned: bool) -> SystemResult:
         comp = lower(spec.onnx_path(), target=target, input_shapes=spec.input_shapes, tuned=tuned)
-        return measure_compilation(label, comp, spec, inputs, reference)
+        return measure_compilation(label, comp, spec, inputs, reference, {"tuned": tuned})
 
     for name in baselines:
         if not name.startswith("pytorch-") or torch_available(name.removeprefix("pytorch-")):
@@ -259,7 +279,9 @@ def ablate(
                 optimize=optimize,
                 schedule=schedule,
             )
-            out[name] = measure_compilation(name, comp, spec, inputs, reference).as_dict()
+            options = {"tuned": False, "fuse": fuse, "optimize": optimize, "schedule": schedule}
+            measured = measure_compilation(name, comp, spec, inputs, reference, options)
+            out[name] = measured.as_dict()
         except Exception as e:  # report the variant as failed, keep the others
             out[name] = {"system": name, "error": f"{type(e).__name__}: {e}"}
     return out

@@ -105,7 +105,10 @@ def test_bench_tuning_writes_results(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 
 def test_bench_models_on_a_stand_in_zoo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import tessera.bench.models
     from bench.test_models_bench import tiny_zoo
+
+    monkeypatch.setattr(tessera.bench.models, "PROCESSES", 1)  # one fresh process per row
 
     (tmp_path / "models").mkdir()
     zoo = tiny_zoo(tmp_path / "models")
