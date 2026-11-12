@@ -108,8 +108,9 @@ def _micro_knobs(cfg: Config, m: int, n: int, batches: int, target: CpuTarget) -
     """The microkernel path's knobs. Tiles are the unit of parallel work and of
     epilogue fusion; inside a tile the microkernel blocks for the caches
     itself, but it packs its operands at every call, so tiles are wide. By
-    default a tile has up to 256 rows, and its width gives every thread a
-    whole number of tiles at most 256 columns wide (``balanced_tile``).
+    default a tile has up to 256 rows (one block of A, which the microkernel
+    then packs once per call), and its width gives every thread a whole
+    number of tiles at most 1024 columns wide (``balanced_tile``).
     Every thread is used on SME too: the performance cores share one SME
     unit, but packing, the init and the epilogue run on NEON, and other
     threads overlap them with one thread's streaming computation."""
@@ -123,7 +124,7 @@ def _micro_knobs(cfg: Config, m: int, n: int, batches: int, target: CpuTarget) -
     columns = tile_options(n, 1024)
     row_tiles = batches * -(-m // default_m)
     tile_n = choose_int(
-        cfg, "micro_n", columns, balanced_tile(n, row_tiles, target.threads, columns)
+        cfg, "micro_n", columns, balanced_tile(n, row_tiles, target.threads, columns, 1024)
     )
     return MicroKnobs(enabled, tile_m, tile_n, threads)
 

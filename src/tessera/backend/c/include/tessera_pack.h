@@ -188,6 +188,10 @@ typedef struct {
  *       for each block of mc rows:           pack A (mc x kc) into mr-high panels
  *         macro: every mr x nr block of the mc x nc block of C
  *
+ * When A is a single block of rows (m <= mc), the column loop moves inside
+ * the reduction loop, so A is packed once per block of the reduction rather
+ * than once per block of columns.
+ *
  * B[q, j] is B[q * ldb + j], or B[j * ldb + q] with b_transposed.
  */
 static void tsr_blocked_gemm(const tsr_blocking* blk, int64_t m, int64_t n, int64_t k,
@@ -204,6 +208,28 @@ static void tsr_blocked_gemm(const tsr_blocking* blk, int64_t m, int64_t n, int6
   int64_t nc_max = n < blk->nc ? n : blk->nc;
   float* bp = tsr_pack_buffer(0, (size_t)((nc_max + blk->nr - 1) / blk->nr * blk->nr * kc_max));
   float* ap = tsr_pack_buffer(1, (size_t)((mc_max + blk->mr - 1) / blk->mr * blk->mr * kc_max));
+  if (m <= blk->mc) {
+    /* One block of rows (the skinny products of a transformer): pack A once
+     * per block of the reduction and walk every block of columns under it. */
+    for (int64_t p0 = 0; p0 < k; p0 += blk->kc) {
+      int64_t kc = k - p0 < blk->kc ? k - p0 : blk->kc;
+      if (lhs->conv) {
+        tsr_pack_im2col(blk->mr, m, kc, lhs->p0, p0, lhs->a, lhs->conv, ap);
+      } else {
+        tsr_pack_rows(blk->mr, m, kc, lhs->a + p0, lhs->lda, ap);
+      }
+      for (int64_t j0 = 0; j0 < n; j0 += blk->nc) {
+        int64_t nc = n - j0 < blk->nc ? n - j0 : blk->nc;
+        if (b_transposed) {
+          tsr_pack_rows(blk->nr, nc, kc, B + j0 * ldb + p0, ldb, bp);
+        } else {
+          tsr_pack_cols(blk->nr, kc, nc, B + p0 * ldb + j0, ldb, bp);
+        }
+        blk->macro(m, nc, kc, ap, bp, C + j0, ldc, accumulate || p0 > 0);
+      }
+    }
+    return;
+  }
   for (int64_t j0 = 0; j0 < n; j0 += blk->nc) {
     int64_t nc = n - j0 < blk->nc ? n - j0 : blk->nc;
     for (int64_t p0 = 0; p0 < k; p0 += blk->kc) {

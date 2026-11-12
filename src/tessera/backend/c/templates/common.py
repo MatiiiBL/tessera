@@ -60,14 +60,16 @@ def tile_options(extent: int, most: int) -> list[int]:
     return sorted(options)
 
 
-def balanced_tile(extent: int, others: int, threads: int, options: Sequence[int]) -> int:
+def balanced_tile(
+    extent: int, others: int, threads: int, options: Sequence[int], widest: int = 256
+) -> int:
     """A tile size for ``extent`` (with ``others`` tiles in the other
     directions) that gives every thread a whole number of tiles, the fewest
-    that keep a tile at most 256 wide: wider tiles repack the operands less
+    that keep a tile at most ``widest``: wider tiles repack the operands less
     often, more tiles keep the threads busy."""
     per_thread = 1
     want = -(-extent * others // threads)
-    while want > 256:
+    while want > widest:
         per_thread *= 2
         want = -(-extent * others // (threads * per_thread))
     want = min(want, extent)
