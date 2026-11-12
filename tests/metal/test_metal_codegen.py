@@ -64,9 +64,10 @@ def test_thread_bindings_give_the_launch_shape() -> None:
     assert kernel.threads == (64, 1, 1)
     assert kernel.shape == (8, 8, 1)
     assert "uint thread_index [[thread_index_in_threadgroup]]" in kernel.source
-    assert "const int tx = (int)(thread_index % 8);" in kernel.source
-    assert "const int ty = (int)(thread_index / 8);" in kernel.source
-    assert "const int by = (int)threadgroup_pos.y;" in kernel.source
+    assert "const int thread_x = (int)(thread_index % 8);" in kernel.source
+    assert "const int thread_y = (int)(thread_index / 8);" in kernel.source
+    assert "const int vi = group_y * 8 + thread_y;" in kernel.source
+    assert "const int group_y = (int)threadgroup_pos.y;" in kernel.source
     assert "if (vi < 10 && vj < 12)" in kernel.source
     assert "[[max_total_threads_per_threadgroup(64)]]" in kernel.source
 
@@ -149,7 +150,7 @@ def test_smaller_thread_loop_is_guarded() -> None:
     )
     kernel = generate(prim_func("guarded", [out], body, alloc=[sh]))
     assert kernel.threads == (256, 1, 1)
-    assert "if (t1 < 100) {" in kernel.source
+    assert "if (thread_x < 100) {" in kernel.source
 
 
 def test_three_thread_axes_unflatten_x_fastest() -> None:
@@ -165,9 +166,9 @@ def test_three_thread_axes_unflatten_x_fastest() -> None:
     )
     kernel = generate(prim_func("xyz", [out], body))
     assert kernel.threads == (24, 1, 1)
-    assert "const int x = (int)(thread_index % 4);" in kernel.source
-    assert "const int y = (int)(thread_index / 4 % 3);" in kernel.source
-    assert "const int z = (int)(thread_index / 12);" in kernel.source
+    assert "const int thread_x = (int)(thread_index % 4);" in kernel.source
+    assert "const int thread_y = (int)(thread_index / 4 % 3);" in kernel.source
+    assert "const int thread_z = (int)(thread_index / 12);" in kernel.source
 
 
 def test_barrier_under_a_thread_dependent_branch_is_rejected() -> None:
@@ -334,7 +335,7 @@ def test_block_iteration_values_are_named_once() -> None:
         ),
     )
     source = generate(prim_func("named", [out], body)).source
-    assert "const int vi = t / 8;" in source
+    assert "const int vi = thread_x / 8;" in source
     assert "out[vi * 8 + vj] = 1.0f;" in source
 
 
@@ -356,10 +357,10 @@ def test_thread_loops_with_an_offset() -> None:
         ]
     )
     source = generate(prim_func("offset", [out], body)).source
-    assert "const int t = (int)thread_index;" in source
-    assert "const int t_1 = 8 + t;" in source
-    assert "out[t_1] = 1.0f;" in source
-    assert "out[t] = 2.0f;" in source
+    assert "const int thread_x = (int)thread_index;" in source
+    assert "const int t = 8 + thread_x;" in source
+    assert "out[t] = 1.0f;" in source
+    assert "out[thread_x] = 2.0f;" in source
 
 
 def test_condition_on_a_substituted_thread_variable_is_divergent() -> None:

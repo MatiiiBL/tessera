@@ -33,10 +33,10 @@ def test_wide_reductions_use_simd_functions_and_threadgroup_memory() -> None:
     assert "out_partial = simd_sum(out_partial);" in source
     assert "threadgroup float out_red[8];" in source
     assert source.count("threadgroup_barrier(mem_flags::mem_threadgroup);") == 2
-    assert "if (tx % 32 == 0) {" in source
-    assert "out_red[tx / 32] = out_partial;" in source
+    assert "if (thread_x % 32 == 0) {" in source
+    assert "out_red[thread_x / 32] = out_partial;" in source
     # One thread writes the row: the init value combined with the total.
-    assert "if (tx == 0 && vi_1 < 4) {\n    out[vi_1] = out_partial;" in source
+    assert "if (thread_x == 0 && vi_1 < 4) {\n    out[vi_1] = out_partial;" in source
 
 
 def test_the_write_has_its_own_block_variables() -> None:
@@ -61,8 +61,8 @@ def test_narrow_reductions_shuffle_within_the_simd_group() -> None:
 
 def test_rows_on_thread_y_index_the_scratch() -> None:
     source = generate(row_reduce(8, 300, RNG, threads=64, op="min", rows_per_group=4).func).source
-    assert "out_red[ty * 2 + tx / 32] = out_partial;" in source
-    assert "out_partial = out_red[ty * 2];" in source
+    assert "out_red[thread_y * 2 + thread_x / 32] = out_partial;" in source
+    assert "out_partial = out_red[thread_y * 2];" in source
 
 
 def _sum_block(op: str, tag: str) -> object:

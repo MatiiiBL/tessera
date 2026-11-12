@@ -34,13 +34,13 @@ def test_fragments_become_simdgroup_matrices_sized_for_one_simd_group() -> None:
         "simdgroup_multiply_accumulate(C_frag[j_1 + i_3 * 4], A_frag[i_3], B_frag[j_1], " in source
     )
     assert (
-        "simdgroup_load(A_frag[i_1], &A[(by * 16 + sm * 16 + i_1 * 8) * 32 + ko * 8], 32);"
-        in source
+        "simdgroup_load(A_frag[i_1], "
+        "&A[(group_y * 16 + thread_z * 16 + i_1 * 8) * 32 + ko * 8], 32);" in source
     )
     # Two SIMD groups of 32 lanes, launched as one 64-thread row.
     assert kernel.shape == (32, 2, 1)
     assert kernel.threads == (64, 1, 1)
-    assert "const int sn = (int)(thread_index / 32);" in source
+    assert "const int thread_y = (int)(thread_index / 32);" in source
 
 
 def test_fragments_are_only_used_through_simdgroup_calls() -> None:

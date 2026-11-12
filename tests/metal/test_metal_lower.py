@@ -29,7 +29,7 @@ def test_cache_buffers_shrink_to_one_thread_and_one_threadgroup() -> None:
     assert "threadgroup float A_shared[128];" in kernel.source
     assert "float C_local[4];" in kernel.source
     assert "C_local[i * 2 + j] = 0.0f;" in kernel.source
-    assert "A_shared[e * 64 + ty * 8 + tx] = A[" in kernel.source
+    assert "A_shared[e * 64 + thread_y * 8 + thread_x] = A[" in kernel.source
 
 
 def test_local_buffer_used_by_one_thread_loop_keeps_the_thread_fixed() -> None:
@@ -71,7 +71,7 @@ def test_shared_buffer_spans_every_thread_of_the_group() -> None:
     )
     func = prim_func("group", [out], body, alloc=[sh])
     assert shapes(func) == {"sh": (1, 32)}
-    assert "sh[31 - t]" in generate(func).source
+    assert "sh[31 - thread_x]" in generate(func).source
 
 
 def test_unknown_accesses_keep_the_full_shape() -> None:

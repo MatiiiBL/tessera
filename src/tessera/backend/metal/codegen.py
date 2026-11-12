@@ -778,6 +778,7 @@ _RESERVED_WORDS = """
     clamp select precise fast simd_sum simd_max simd_min simd_shuffle_down
     simdgroup_barrier threadgroup_barrier mem_flags INFINITY NAN
     threadgroup_pos thread_index simd_lane simd_group group offset
+    group_x group_y group_z thread_x thread_y thread_z
 """
 RESERVED = frozenset(_RESERVED_WORDS.split())
 
@@ -795,6 +796,11 @@ class _Namer:
     def __init__(self) -> None:
         self.used: set[str] = set()
         self.names: dict[object, str] = {}
+
+    def claim(self, obj: Var | Buffer, name: str) -> None:
+        """Give ``obj`` a reserved name of the generator's own (the grid positions)."""
+        self.used.add(name)
+        self.names[obj] = name
 
     def __call__(self, obj: Var | Buffer, hint: str | None = None) -> str:
         if obj in self.names:
@@ -1065,7 +1071,10 @@ class _KernelWriter:
                 extent = stmt.extent.value
                 analysis.bindings[tag] = max(analysis.bindings.get(tag, 1), extent)
                 if tag not in self.axis_vars:
-                    self.axis_vars[tag] = Var(stmt.loop_var.name, stmt.loop_var.dtype)
+                    level, axis = tag.split(".")
+                    name = f"{'group' if level == 'threadgroup' else 'thread'}_{axis}"
+                    self.axis_vars[tag] = Var(name, stmt.loop_var.dtype)
+                    self.namer.claim(self.axis_vars[tag], name)
                 inner = active | {tag}
             self.check_bindings(stmt.body, analysis, inner)
             return
@@ -1282,6 +1291,11 @@ class _KernelWriter:
                 self.close()
             else:
                 self.stmt(loop.body, scope)
+            return
+        if _is_int(extent, 1) and not self.thread_dependent(lo):
+            # A loop of one iteration is its body with the variable at its start.
+            self.subst[var] = lo
+            self.stmt(loop.body, scope)
             return
         name = self.namer(var)
         if loop.kind is ForKind.UNROLLED:
