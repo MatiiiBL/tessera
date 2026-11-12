@@ -2,7 +2,7 @@
 
     uv run python -m tessera.backend.c.bench [--quick] [--out results/cpu]
 
-Five studies, each saved as Markdown and JSON:
+Six studies, each saved as Markdown and JSON:
 
 - ``gemm``: C = A B in fp32 for square sizes and the matrix products of a
   transformer layer, compiled through the matmul template for each ISA
@@ -12,6 +12,8 @@ Five studies, each saved as Markdown and JSON:
   NHWC, with its bias and ReLU, through the conv2d template.
 - ``schedules``: the generated-loop matmul's loop order and packing choices.
 - ``sme_template``: the matmul template's SME path on 1, 2 and 4 threads.
+- ``sme_models``: ResNet-50, BERT and GPT-2 on c:sme with the microkernels'
+  default thread count, one thread and every thread.
 - ``sme_threads``: the SME microkernel driven from 1 to 4 threads, and one
   SME thread working beside NEON threads, to show how the performance cores
   share one SME unit.
@@ -41,7 +43,7 @@ from tessera.backend.c import build as cbuild
 from tessera.backend.c.measure import build_harness, measure, run_harness
 from tessera.backend.c.microkernels import header_files, host_supports
 from tessera.backend.c.templates import make_templates
-from tessera.backend.c.templates.common import balanced_tile, tile_options
+from tessera.backend.c.templates.common import balanced_tile, overridden_defaults, tile_options
 from tessera.dtype import DType
 from tessera.ir import Graph, TensorType
 from tessera.ir.graph import Value
@@ -395,6 +397,48 @@ def sme_template_study(quick: bool) -> list[Row]:
     return rows
 
 
+SME_MODELS = ("resnet50", "bert", "gpt2")
+SME_MODEL_VARIANTS: dict[str, dict[str, KnobValue]] = {
+    "default": {},
+    "SME on 1 thread": {"micro_threads": 1},
+    "SME on every thread": {"micro_threads": performance_cores()},
+}
+
+
+def sme_models_study(quick: bool) -> list[Row]:
+    """Whole models on c:sme, compiled with the templates' defaults and with
+    the microkernels' thread count forced to one and to every thread; each
+    variant's best median latency over interleaved rounds. Needs the models
+    exported by scripts/export_models.py."""
+    import json as _json
+
+    import tessera
+    from tessera.bench.zoo import models_dir
+
+    if not host_supports("sme"):
+        return []
+    root = models_dir()
+    rows = []
+    for name in SME_MODELS[:1] if quick else SME_MODELS:
+        path, data = root / f"{name}.onnx", root / f"{name}.npz"
+        if not path.exists() or not data.exists():
+            continue
+        manifest = _json.loads((root / "manifest.json").read_text())[name]
+        reference = np.load(data)
+        feeds = {i["name"]: reference[i["name"]] for i in manifest["inputs"]}
+        models = {}
+        for label, knobs in SME_MODEL_VARIANTS.items():
+            with overridden_defaults(**knobs):
+                models[label] = tessera.compile(path, target="c:sme")
+        best = dict.fromkeys(models, float("inf"))
+        for _ in range(2 if quick else 5):
+            for label, model in models.items():
+                runs = model.benchmark(feeds, warmup=2, repeat=10)
+                best[label] = min(best[label], float(np.median(runs)))
+        rows += [Row("sme_models", name, label, s, 0.0) for label, s in best.items()]
+    return rows
+
+
 def machine() -> dict[str, Any]:
     load = os.getloadavg()[0] if hasattr(os, "getloadavg") else None
     return {
@@ -408,21 +452,30 @@ def machine() -> dict[str, Any]:
     }
 
 
-def markdown(title: str, rows: Sequence[Row], info: dict[str, Any], note: str) -> str:
-    """A table with one row per case and one column per variant (GFLOPS)."""
+def markdown(
+    title: str, rows: Sequence[Row], info: dict[str, Any], note: str, latency: bool = False
+) -> str:
+    """A table with one row per case and one column per variant (GFLOPS, or
+    milliseconds with ``latency``)."""
     cases = list(dict.fromkeys(r.case for r in rows))
     variants = list(dict.fromkeys(r.variant for r in rows))
-    value = {(r.case, r.variant): r.gflops for r in rows}
+    value = {(r.case, r.variant): r.seconds * 1e3 if latency else r.gflops for r in rows}
     lines = [f"# {title}", "", note, ""]
     lines.append(
         f"Measured {info['date']} on {info['cpu']} ({info['performance_cores']} performance "
         f"cores), {info['system']}, {info['compiler']}, NumPy {info['numpy']}; load average "
-        f"{info['load_average']:.2f} at the start. Throughput in GFLOPS (higher is better)."
+        f"{info['load_average']:.2f} at the start. "
+        + (
+            "Latency in ms (lower is better)."
+            if latency
+            else "Throughput in GFLOPS (higher is better)."
+        )
     )
     lines += ["", "| case | " + " | ".join(variants) + " |"]
     lines.append("|---|" + "---:|" * len(variants))
     for case in cases:
-        cells = [f"{value[case, v]:.0f}" if (case, v) in value else "" for v in variants]
+        digits = 1 if latency else 0
+        cells = [f"{value[case, v]:.{digits}f}" if (case, v) in value else "" for v in variants]
         lines.append(f"| {case} | " + " | ".join(cells) + " |")
     lines += ["", "Reproduce: `uv run python -m tessera.backend.c.bench`.", ""]
     return "\n".join(lines)
@@ -454,6 +507,12 @@ NOTES = {
         "of rows of C, against the NEON microkernel on the same bands; then one thread "
         "running SME on the given share of the rows while three run NEON on the rest."
     ),
+    "sme_models": (
+        "Whole models compiled for c:sme (fusion, the templates' defaults, one "
+        "library): as compiled, and with the microkernels' thread count forced to "
+        "one and to every performance core. Each variant's best median of 10 runs "
+        "over interleaved rounds."
+    ),
     "sme_template": (
         "The matmul template's SME path (tiles of C computed by the microkernel, "
         "with the init and the copy of each tile) with its tiles on one, two or four "
@@ -468,6 +527,7 @@ TITLES = {
     "schedules": "Schedule choices",
     "sme_threads": "SME and threads",
     "sme_template": "SME tiles and threads",
+    "sme_models": "SME threads on whole models",
 }
 
 
@@ -485,6 +545,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "schedules": schedules_study,
         "sme_threads": sme_threads_study,
         "sme_template": sme_template_study,
+        "sme_models": sme_models_study,
     }
     for name in args.only or list(studies):
         info = machine()
@@ -493,7 +554,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             continue
         payload = {"machine": info, "rows": [asdict(r) for r in rows]}
         (args.out / f"{name}.json").write_text(json.dumps(payload, indent=2) + "\n")
-        (args.out / f"{name}.md").write_text(markdown(TITLES[name], rows, info, NOTES[name]))
+        text = markdown(TITLES[name], rows, info, NOTES[name], latency=name == "sme_models")
+        (args.out / f"{name}.md").write_text(text)
         print(f"wrote {args.out / name}.md", flush=True)
 
 
