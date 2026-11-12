@@ -18,6 +18,7 @@ from hypothesis import strategies as st
 
 from tessera.backend.c import build as cbuild
 from tessera.backend.c import run_kernel
+from tessera.backend.c.codegen import generate_kernel
 from tessera.backend.c.executor import kernel_sources
 from tessera.dtype import DType
 from tessera.ir.graph import NDArray
@@ -125,9 +126,12 @@ def test_global_intermediate_between_two_nests() -> None:
         ForKind.PARALLEL,
     )
     func = PrimFunc("twice_relu", (x, y), root(seq([first, second]), [t]))
-    xs, ys = _rand(100), np.zeros(100, np.float32)
-    run_kernel(func, [xs, ys], Target(num_threads=4))
-    np.testing.assert_array_equal(ys, np.maximum(xs * 2, 0))
+    for _ in range(2):  # the second call reuses the intermediate's storage
+        xs, ys = _rand(100), np.zeros(100, np.float32)
+        run_kernel(func, [xs, ys], Target(num_threads=4))
+        np.testing.assert_array_equal(ys, np.maximum(xs * 2, 0))
+    text = generate_kernel(func).text
+    assert "static _Thread_local float* T_storage;" in text
 
 
 def test_select_guards_out_of_bounds_loads() -> None:

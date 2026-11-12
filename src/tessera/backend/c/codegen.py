@@ -8,7 +8,7 @@ pointer per parameter. The loop nest is printed as it is scheduled:
   variable is at its first value;
 - ``local`` buffers become stack arrays (heap blocks above ``STACK_LIMIT``)
   placed and sized by ``alloc.plan_allocations``; ``global`` intermediates
-  are allocated once per call;
+  live in storage that each calling thread allocates once and keeps;
 - a ``PARALLEL`` loop is outlined into a function that runs a contiguous range
   of iterations, and the kernel hands it to the thread pool with the values
   it captures; a parallel loop inside another runs serially;
@@ -345,16 +345,17 @@ class _Emitter:
 
     def run(self) -> KernelCode:
         params = [f"{c_type(b.dtype)}* restrict {self.names(b)}" for b in self.func.params]
-        hoisted = []
         for buf in self.plan.hoisted:
+            # Intermediate tensors live in storage each calling thread keeps
+            # across calls: allocating megabytes per call costs page faults.
             name = self.names(buf)
+            storage = self.names.fresh(f"{name}_storage")
             ctype = c_type(buf.dtype)
-            hoisted.append(name)
             nbytes = buf.numel * buf.dtype.itemsize
-            self.line(f"{ctype}* restrict {name} = ({ctype}*)tsr_alloc({nbytes});")
+            self.line(f"static _Thread_local {ctype}* {storage};")
+            self.line(f"if (!{storage}) {storage} = ({ctype}*)tsr_alloc({nbytes});")
+            self.line(f"{ctype}* restrict {name} = {storage};")
         self.stmt(self.func.body, ())
-        for name in reversed(hoisted):
-            self.line(f"tsr_free({name});")
         signature = f"static void {self.kernel}({', '.join(params) or 'void'})"
         kernel = "\n".join([signature + " {", *self.lines, "}"])
         text = "\n\n".join([*self.helpers, kernel]) + "\n"
