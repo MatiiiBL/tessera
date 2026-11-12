@@ -183,6 +183,23 @@ def transformer_block(
     return b.model([("x", (1, seq, dim))], [(y, "y")])
 
 
+def views_model() -> onnx.ModelProto:
+    """Outputs that are views of the input: no kernel writes them, so the driver copies."""
+    graph = helper.make_graph(
+        [
+            helper.make_node("Reshape", ["x", "shape"], ["y"]),
+            helper.make_node("Identity", ["x"], ["z"]),
+        ],
+        "views",
+        [helper.make_tensor_value_info("x", TensorProto.FLOAT, [2, 3, 4])],
+        [helper.make_tensor_value_info(n, TensorProto.FLOAT, None) for n in ("y", "z")],
+        [numpy_helper.from_array(np.array([6, 4], np.int64), "shape")],
+    )
+    return helper.make_model(
+        graph, opset_imports=[helper.make_opsetid("", OPSET)], ir_version=IR_VERSION
+    )
+
+
 def random_inputs(model: onnx.ModelProto, seed: int = 0) -> dict[str, np.ndarray]:
     """Standard-normal float32 inputs of every graph input's static shape."""
     rng = np.random.default_rng(seed)

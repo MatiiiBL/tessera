@@ -133,7 +133,6 @@ def lower(
     fuse: bool = True,
     optimize: bool = True,
     tuned: bool = True,
-    lower_group: Callable[[FusedGroup], LoweredGroup] | None = None,
 ) -> Compilation:
     """Run the pipeline up to the ``ExecutionPlan``; see ``compile`` for the options."""
     tgt = resolve_target(target)
@@ -144,7 +143,6 @@ def lower(
     memory = passes.plan_memory(graph, groups)
     templates = get_backend(tgt.kind).templates(tgt)
     best = best_configs(tuning_log) if tuned else BestConfigs()
-    lower_fn = lower_group if lower_group is not None else _lower_group
 
     refs = dict(memory.refs)
     taken = {g.name for g in groups}
@@ -157,7 +155,7 @@ def lower(
                 name = _unique(f"copy_{group.name}", taken)
                 kernels.append(_copy(name, group.output, args[0], args[-1], group))
             continue
-        lowered = lower_fn(group)
+        lowered = _lower_group(group)
         template = templates.get(group.pattern)
         if template is None:
             func = _named(lowered.func, group)
@@ -169,7 +167,7 @@ def lower(
             tasks[task.key].names.append(group.name)
         else:
             tasks[task.key] = task
-        kernels.append(_schedule(group, lowered, args, template, task, best, tgt))
+        kernels.append(schedule_kernel(group, lowered, args, template, task, best, tgt))
 
     for index, value in enumerate(graph.outputs):
         ref = refs[value.name]
@@ -246,7 +244,7 @@ def apply_template(
     return sch.func, list(sch.trace)
 
 
-def _schedule(
+def schedule_kernel(
     group: FusedGroup,
     lowered: LoweredGroup,
     args: tuple[BufferRef, ...],
@@ -255,6 +253,8 @@ def _schedule(
     best: BestConfigs,
     target: Target,
 ) -> Kernel:
+    """Schedule one group with the fastest logged config of its task that the
+    template accepts, or with the template's defaults."""
     record = best.lookup(target.key, task.key, accepts=lambda c: _in_space(c, task.space))
     configs = [(dict(record.config), True)] if record is not None else []
     configs.append((task.space.default(), False))
