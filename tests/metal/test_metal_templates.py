@@ -53,6 +53,7 @@ WORKLOADS = [
         "matmul", lambda: matmul(64, 64, 32, epilogue=False), id="matmul-bare", marks=WAITING
     ),
     pytest.param("matmul", lambda: matmul(32, 32, 64, batch=2), id="matmul-batched", marks=WAITING),
+    pytest.param("matmul", lambda: matmul(1, 256, 128), id="gemv", marks=WAITING),
     pytest.param("conv", lambda: conv2d((1, 8, 8, 16), 32, 3, pad=1), id="conv3x3", marks=WAITING),
     pytest.param(
         "conv",

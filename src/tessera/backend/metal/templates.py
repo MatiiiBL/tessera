@@ -24,6 +24,7 @@ threads with ``bind``; the code generator turns the result into MSL.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from functools import partial
 
 from tessera.plan import LoweredGroup
@@ -199,27 +200,19 @@ def _stage(sch: Schedule, block: str, index: int, at: Var, threads: tuple[int, i
     sch.bind(cx, "thread.x")
 
 
-def _gemm(
-    sch: Schedule,
-    lowered: LoweredGroup,
-    cfg: Config,
-    *,
-    batch: Sequence[Var],
-    rows: Sequence[Var],
-    cols: Sequence[Var],
-    reduction: Sequence[Var],
-    can_stage: bool,
-) -> None:
-    """Tile an output of ``rows x cols`` (each a list of loops to fuse) reduced
-    over ``reduction``, as described in the module docstring."""
-    main = lowered.main_block
-    assert main is not None
-    m_loop, n_loop, k_loop = fuse_all(sch, rows), fuse_all(sch, cols), fuse_all(sch, reduction)
-    assert m_loop is not None
-    assert n_loop is not None
-    assert k_loop is not None
-    m, n, k = sch.extent(m_loop), sch.extent(n_loop), sch.extent(k_loop)
+@dataclass(frozen=True)
+class GemmKnobs:
+    strategy: str  # "tiles" or "elements"
+    threads: tuple[int, int]
+    registers: tuple[int, int]
+    tile_k: int
+    shared: bool
+    element_threads: int
 
+
+def gemm_knobs(cfg: Config, m: int, n: int, k: int, outputs: int, can_stage: bool) -> GemmKnobs:
+    """Every knob of the GEMM templates, asked whatever the strategy."""
+    strategy = knob_str(cfg, "strategy", ["tiles", "elements"], "elements" if m <= 4 else "tiles")
     shapes = [s for s in THREAD_SHAPES if s[0] <= max(m, 1) * 2 and s[1] <= max(n, 32)]
     default_threads = (8, 8) if (8, 8) in shapes else shapes[0]
     threads = knob_pair(cfg, "threads", shapes, default_threads)
@@ -228,11 +221,45 @@ def _gemm(
         cfg, "tile_k", [t for t in (4, 8, 16, 32) if t <= max(k, 4)], min(8, max(k, 4))
     )
     stage = knob_bool(cfg, "shared", can_stage) and can_stage
+    options = threads_for(outputs)
+    element_threads = knob_int(cfg, "element_threads", options, min(128, options[-1]))
+    return GemmKnobs(strategy, threads, regs, tile_k, stage, element_threads)
+
+
+def _extent(sch: Schedule, loops: Sequence[Var]) -> int:
+    out = 1
+    for v in loops:
+        out *= sch.extent(v)
+    return out
+
+
+def _gemm(
+    sch: Schedule,
+    lowered: LoweredGroup,
+    knobs: GemmKnobs,
+    *,
+    batch: Sequence[Var],
+    rows: Sequence[Var],
+    cols: Sequence[Var],
+    reduction: Sequence[Var],
+) -> None:
+    """Tile an output of ``rows x cols`` (each a list of loops to fuse) reduced
+    over ``reduction``, as described in the module docstring."""
+    main = lowered.main_block
+    assert main is not None
+    if knobs.strategy == "elements":
+        _per_element(sch, lowered, knobs.element_threads, unroll=False)
+        return
+    m_loop, n_loop, k_loop = fuse_all(sch, rows), fuse_all(sch, cols), fuse_all(sch, reduction)
+    assert m_loop is not None
+    assert n_loop is not None
+    assert k_loop is not None
+    threads, regs = knobs.threads, knobs.registers
     (ty, tx), (rm, rn) = threads, regs
 
     mo, mt, mr = sch.split(m_loop, [None, ty, rm])
     no, nt, nr = sch.split(n_loop, [None, tx, rn])
-    ko, ki = sch.split(k_loop, [None, tile_k])
+    ko, ki = sch.split(k_loop, [None, knobs.tile_k])
     # The reduction steps outside the thread loops, so that the tile copies and
     # the accumulators' init and store can each get their own thread loops.
     sch.reorder(mo, no, ko, mt, nt, ki, mr, nr)
@@ -248,7 +275,7 @@ def _gemm(
         sch.reverse_compute_inline(lowered.epilogue_block)
     _tile_threads(sch, sch.get_loops(store)[-2:], threads, regs)
 
-    if stage:
+    if knobs.shared:
         for index in (0, 1):
             attempt(sch, partial(_stage, block=main, index=index, at=ko, threads=threads))
     init = sch.decompose_reduction(main, ko)
@@ -265,22 +292,16 @@ def _gemm(
 
 
 def schedule_matmul(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
-    """MatMul (batched or not) with its prologue and epilogue."""
+    """MatMul (batched or not) with its prologue and epilogue: tiles, or for a
+    matrix-vector product (few rows) one thread per output element."""
     main = lowered.main_block
     assert main is not None
     spatial, reduction = split_loops(sch, main)
     *batch, rows, cols = spatial
-    reads = find_block(sch.func, main).block.reads
-    _gemm(
-        sch,
-        lowered,
-        cfg,
-        batch=batch,
-        rows=[rows],
-        cols=[cols],
-        reduction=reduction,
-        can_stage=len(reads) == 2,
-    )
+    can_stage = len(find_block(sch.func, main).block.reads) == 2
+    m, n, k = sch.extent(rows), sch.extent(cols), _extent(sch, reduction)
+    knobs = gemm_knobs(cfg, m, n, k, _extent(sch, spatial), can_stage)
+    _gemm(sch, lowered, knobs, batch=batch, rows=[rows], cols=[cols], reduction=reduction)
 
 
 def schedule_conv2d(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
@@ -290,18 +311,11 @@ def schedule_conv2d(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
     assert main is not None
     spatial, reduction = split_loops(sch, main)
     *pixels, channels = spatial
+    m, n, k = _extent(sch, pixels), sch.extent(channels), _extent(sch, reduction)
     # The input tile of a block of output pixels is not a box (it is gathered
     # through the window), so only direct loads are scheduled.
-    _gemm(
-        sch,
-        lowered,
-        cfg,
-        batch=[],
-        rows=pixels,
-        cols=[channels],
-        reduction=reduction,
-        can_stage=False,
-    )
+    knobs = gemm_knobs(cfg, m, n, k, m * n, can_stage=False)
+    _gemm(sch, lowered, knobs, batch=[], rows=pixels, cols=[channels], reduction=reduction)
 
 
 # -- reductions ----------------------------------------------------------------------------
@@ -416,17 +430,24 @@ def _rows_as_columns(sch: Schedule, out: str, reductions: Sequence[str], threads
 
 
 def schedule_window(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
-    """One thread per output element; the window (reduction) loops unrolled."""
+    """Pooling and depthwise convolution: one thread per output element, the
+    window loops unrolled."""
+    out = output_block(sch)
+    options = threads_for(_extent(sch, split_loops(sch, out)[0]))
+    threads = knob_int(cfg, "threads", options, min(128, options[-1]))
+    unroll = knob_bool(cfg, "unroll_window", True)
+    _per_element(sch, lowered, threads, unroll=unroll)
+
+
+def _per_element(sch: Schedule, lowered: LoweredGroup, threads: int, *, unroll: bool) -> None:
+    """One thread per element of the output: the main block's reduction runs in the
+    thread, its result kept in a register for the epilogue."""
     out = output_block(sch)
     main = lowered.main_block
     inline_all(sch, {out} | ({main} if main else set()))
-    spatial, _ = split_loops(sch, out)
-    fused = fuse_all(sch, spatial)
+    fused = fuse_all(sch, split_loops(sch, out)[0])
     if fused is None:
         return
-    options = threads_for(sch.extent(fused))
-    threads = knob_int(cfg, "threads", options, min(128, options[-1]))
-    unroll = knob_bool(cfg, "unroll_window", True)
     reducing = [main] if main and main != out else []
     _registers(sch, reducing)
     group, thread = sch.split(fused, [None, threads])
@@ -434,8 +455,8 @@ def schedule_window(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
     sch.bind(thread, "thread.x")
     for red in reducing:
         sch.compute_at(red, thread)
-    for block in [*reducing, out]:
-        if unroll:
+    if unroll:
+        for block in [*reducing, out]:
             for loop in split_loops(sch, block)[1]:
                 sch.unroll(loop)
 
