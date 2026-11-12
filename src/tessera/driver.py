@@ -26,7 +26,14 @@ from pathlib import Path
 import onnx
 
 from tessera import passes
-from tessera.backend.base import CompiledModel, KernelTime, Template, get_backend
+from tessera.backend.base import (
+    Backend,
+    CompiledModel,
+    KernelTime,
+    LoweringOptions,
+    Template,
+    get_backend,
+)
 from tessera.compute import lower_group
 from tessera.frontend import onnx as onnx_frontend
 from tessera.ir.graph import Graph, NDArray, TensorType, Value
@@ -190,7 +197,9 @@ def lower(
     groups = passes.fuse(graph, enabled=fuse)
     passes.verify_groups(graph, groups)
     memory = passes.plan_memory(graph, groups)
-    templates = get_backend(tgt.kind).templates(tgt) if schedule else {}
+    backend = get_backend(tgt.kind)
+    templates = backend.templates(tgt) if schedule else {}
+    options = lowering_options(backend, tgt)
     best = best_configs(tuning_log) if tuned else BestConfigs()
 
     refs = dict(memory.refs)
@@ -204,7 +213,7 @@ def lower(
                 name = _unique(f"copy_{group.name}", taken)
                 kernels.append(_copy(name, group.output, args[0], args[-1], group))
             continue
-        lowered = lower_group(group)
+        lowered = lower_group(group, **options)
         template = templates.get(group.pattern)
         if template is None:
             func = _named(lowered.func, group)
@@ -272,6 +281,15 @@ def compile(
         tuned=tuned,
         schedule=schedule,
     ).build()
+
+
+def lowering_options(backend: Backend, target: Target) -> dict[str, object]:
+    """The keyword arguments ``backend`` wants ``compute.lower_group`` called with
+    (none unless it has the ``LoweringOptions`` capability). Tuning tasks come
+    from the same lowering, so they see the functions compilation builds."""
+    if isinstance(backend, LoweringOptions):
+        return dict(backend.lowering_options(target))
+    return {}
 
 
 def best_configs(tuning_log: LogsLike) -> BestConfigs:

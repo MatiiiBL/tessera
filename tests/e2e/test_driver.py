@@ -199,3 +199,43 @@ def test_compiled_models_use_the_onnx_names() -> None:
     assert len(compiled.profile({"input_1": x}, repeat=2)) >= 1
     assert "model.c" in compiled.sources()
     assert compiled.target == GENERIC
+
+
+@pytest.mark.parametrize("capable", [True, False])
+def test_backend_lowering_options_reach_every_group(
+    monkeypatch: pytest.MonkeyPatch, capable: bool
+) -> None:
+    import tessera.driver as driver
+    from e2e.onnx_models import mlp
+    from tessera.backend.base import LoweringOptions, get_backend
+    from tessera.compute import lower_group as real_lower_group
+
+    class Padding:
+        """The C backend, plus a lowering option."""
+
+        def __init__(self) -> None:
+            self.inner = get_backend("c")
+            self.name = "c"
+
+        def templates(self, target: Target | None = None) -> object:
+            return self.inner.templates(target)
+
+        def build(self, plan: object, target: Target) -> object:
+            return self.inner.build(plan, target)
+
+        def lowering_options(self, target: Target) -> dict[str, object]:
+            return {"pad_block": True, "isa": target.isa}
+
+    calls: list[dict[str, object]] = []
+
+    def recording_lower_group(group: FusedGroup, **options: object) -> LoweredGroup:
+        calls.append(options)
+        return real_lower_group(group)
+
+    backend = Padding() if capable else get_backend("c")
+    assert isinstance(backend, LoweringOptions) is capable
+    monkeypatch.setattr(driver, "get_backend", lambda kind: backend)
+    monkeypatch.setattr(driver, "lower_group", recording_lower_group)
+    comp = lower(mlp(), target="c:generic")
+    expected = {"pad_block": True, "isa": "generic"} if capable else {}
+    assert calls == [expected] * len(comp.kernels)
