@@ -519,3 +519,20 @@ def test_reverse_compute_at_after_an_imperfect_split() -> None:
     s.reorder(mo, no, mi, ni, k)
     s.reverse_compute_at(out, no)
     check(s, w)
+
+
+def test_reverse_compute_at_with_imperfect_tiles_too_large_to_enumerate() -> None:
+    # 1100 x 1030 tiles of 8 x 8 with a K split by 3: checked symbolically.
+    a = te.placeholder((1100, 7), DType.float32, "A")
+    b = te.placeholder((7, 1030), DType.float32, "B")
+    r = te.reduce_axis(7, "k")
+    c = te.compute((1100, 1030), lambda i, j: te.sum(a[i, r] * b[r, j], axis=r), "C", ["i", "j"])
+    s = Schedule(te.create_prim_func([a, b, c]))
+    out = s.cache_write("C", 0, "local")
+    i, j, k = s.get_loops("C")
+    io, ii = s.split(i, [None, 8])
+    jo, ji = s.split(j, [None, 8])
+    ko, ki = s.split(k, [None, 3])
+    s.reorder(io, jo, ko, ii, ji, ki)
+    s.reverse_compute_at(out, jo)
+    tir.verify(s.func)

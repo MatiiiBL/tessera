@@ -9,7 +9,7 @@ import numpy as np
 
 from tessera.tir.analysis import block_accesses, is_leaf_block
 from tessera.tir.arith import Analyzer, Interval
-from tessera.tir.expr import Binary, BufferLoad, Expr, IntImm, Var, ge, lt
+from tessera.tir.expr import Binary, BufferLoad, Compare, Expr, IntImm, Logical, Var, ge, lt
 from tessera.tir.functor import StmtMutator, free_vars, substitute, walk_stmts
 from tessera.tir.primitives.common import (
     Path,
@@ -356,7 +356,7 @@ def _access_region(
         else:
             bound = an.bound(ext).hi
             e_val = n if bound is None else bound
-        if e_val >= n:
+        if e_val > n:
             mins.append(IntImm(0))
             extents.append(n)
         else:
@@ -392,7 +392,7 @@ def _union(a: _Region | None, b: _Region, an: Analyzer, shape: tuple[int, ...]) 
         assert hi is not None
         ext = an.simplify(hi - lo + 1)
         e_val = ext.value if isinstance(ext, IntImm) else (an.bound(ext).hi or n)
-        if e_val >= n:
+        if e_val > n:
             mins.append(IntImm(0))
             extents.append(n)
         else:
@@ -592,7 +592,7 @@ def reverse_compute_at(func: PrimFunc, name: str, loop: Var) -> PrimFunc:
             for f, role in zip(loops[ti + 1 :], roles[ti + 1 :], strict=True)
             if role == "S"
         )
-        exact = w.predicate == TRUE and prod(reg.extents) == iterations
+        exact = prod(reg.extents) == iterations and _clips_to_buffer(w, stores[0], buf, an_w)
         if not exact and not _writes_box(w, loops, ti, stores[0], reg, buf):
             raise ScheduleError(
                 f"cannot move block {name}: what block {w.block.name} writes in one "
@@ -618,6 +618,43 @@ def reverse_compute_at(func: PrimFunc, name: str, loop: Var) -> PrimFunc:
     new_target = replace_for(target, body=flat_seq([*seq_items(target.body), nest]))
     out = with_body(out, rebuild(lpath, new_target))
     return _finalize(out)
+
+
+def _clips_to_buffer(w: BlockRealize, store: tuple[Expr, ...], buf: Buffer, an: Analyzer) -> bool:
+    """Every conjunct of ``w``'s predicate says only that one index of its store to
+    ``buf`` is inside the buffer (``i0 * 4 + i1 < 50257`` for an index
+    ``i0 * 4 + i1``), or only limits reduction loops: the predicate cuts a tile
+    exactly at the buffer's edge."""
+    binding = dict(zip((iv.var for iv in w.block.iter_vars), w.iter_values, strict=True))
+    points = [an.simplify(substitute(e, binding)) for e in store]
+    reduce_loops: set[Var] = set().union(
+        *(
+            free_vars(v)
+            for iv, v in zip(w.block.iter_vars, w.iter_values, strict=True)
+            if iv.kind == IterKind.REDUCE
+        )
+    )
+    stack = [w.predicate]
+    while stack:
+        c = stack.pop()
+        if c == TRUE:
+            continue
+        if free_vars(c) <= reduce_loops:
+            continue  # cuts a reduction tile; every point is still written
+        if isinstance(c, Logical) and c.op == "and":
+            stack.extend((c.a, c.b))
+            continue
+        if not (isinstance(c, Compare) and c.op in ("lt", "ge") and isinstance(c.b, IntImm)):
+            return False
+        ok = False
+        for d, p in enumerate(points):
+            delta = an.simplify(c.a - p)
+            if isinstance(delta, IntImm):
+                edge = buf.shape[d] if c.op == "lt" else 0
+                ok = ok or c.b.value - delta.value == edge
+        if not ok:
+            return False
+    return True
 
 
 def _writes_box(
