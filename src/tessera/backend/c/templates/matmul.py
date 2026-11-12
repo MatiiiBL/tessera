@@ -8,6 +8,7 @@ from math import prod
 from tessera.backend.c.templates.common import (
     PACK_LIMIT,
     CpuTarget,
+    balanced_tile,
     choose,
     choose_bool,
     choose_int,
@@ -106,23 +107,23 @@ class MicroKnobs:
 def _micro_knobs(cfg: Config, m: int, n: int, batches: int, target: CpuTarget) -> MicroKnobs:
     """The microkernel path's knobs. Tiles are the unit of parallel work and of
     epilogue fusion; inside a tile the microkernel blocks for the caches
-    itself. By default a tile has up to 256 rows and as many columns as
-    leave every thread about two tiles. SME runs on one unit shared by the
-    performance cores, so by default two threads drive it (one thread packs
-    while the other computes); NEON uses every thread."""
+    itself, but it packs its operands at every call, so tiles are wide. By
+    default a tile has up to 256 rows, and its width gives every thread a
+    whole number of tiles at most 256 columns wide (``balanced_tile``).
+    Every thread is used on SME too: the performance cores share one SME
+    unit, but packing, the init and the epilogue run on NEON, and other
+    threads overlap them with one thread's streaming computation."""
     enabled = choose(cfg, "kernel", ["micro", "loops"], "micro") == "micro"
     counts = sorted({c for c in (1, 2, target.threads) if c <= target.threads})
-    default_threads = 2 if target.isa == "sme" and 2 in counts else target.threads
-    threads = choose_int(cfg, "micro_threads", counts, default_threads)
+    threads = choose_int(cfg, "micro_threads", counts, target.threads)
     # Tiles need not divide the matrix: an edge tile computes its valid part.
     rows = tile_options(m, 512)
     default_m = min(m, 256)
     tile_m = choose_int(cfg, "micro_m", rows, default_m)
-    row_tiles = batches * -(-m // default_m)
     columns = tile_options(n, 1024)
-    want = max(16, n * row_tiles // (2 * default_threads))
+    row_tiles = batches * -(-m // default_m)
     tile_n = choose_int(
-        cfg, "micro_n", columns, max(c for c in columns if c <= want) if want < n else n
+        cfg, "micro_n", columns, balanced_tile(n, row_tiles, target.threads, columns)
     )
     return MicroKnobs(enabled, tile_m, tile_n, threads)
 

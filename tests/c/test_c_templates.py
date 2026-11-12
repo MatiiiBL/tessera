@@ -144,3 +144,16 @@ def test_microkernels_on_edge_tiles(name: str, isa: CpuIsa) -> None:
     sch = _scheduled(w, target, {**_space(w, target).default(), **knobs})
     assert any(line.startswith("tensorize(") for line in sch.trace)
     _check(w, sch, target, interpret=True)
+
+
+def test_balanced_tiles() -> None:
+    from tessera.backend.c.templates.common import balanced_tile, tile_options
+
+    # One tile per thread when that keeps tiles at most 256 wide...
+    assert balanced_tile(768, 1, 4, tile_options(768, 1024)) == 192
+    # ... else whole numbers of tiles per thread: 16 tiles of 192 over 4 threads.
+    assert balanced_tile(3072, 1, 4, tile_options(3072, 1024)) == 192
+    # Other tiles count: 12 heads already feed 4 threads, so the whole axis.
+    assert balanced_tile(128, 12, 4, tile_options(128, 1024)) == 128
+    # No option small enough: the smallest.
+    assert balanced_tile(50257, 1, 4, [29, 1733]) == 29

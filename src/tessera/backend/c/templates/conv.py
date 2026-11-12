@@ -10,6 +10,7 @@ from tessera.backend.c.templates.common import (
     PACK_LIMIT,
     VECTOR_SIZES,
     CpuTarget,
+    balanced_tile,
     choose,
     choose_bool,
     choose_int,
@@ -130,17 +131,14 @@ class MicroKnobs:
 def _micro_knobs(cfg: Config, channels: int, target: CpuTarget) -> MicroKnobs:
     """The microkernel path's knobs: one call computes the whole output plane of
     an image for a strip of ``micro_c`` output channels; strips run in
-    parallel on ``micro_threads`` threads (two by default on SME, whose unit
-    the performance cores share). The default strip gives each thread one."""
+    parallel on ``micro_threads`` threads (all of them by default, as for
+    matmul). The default strip gives every thread a whole number of strips
+    at most 256 channels wide."""
     enabled = choose(cfg, "kernel", ["micro", "loops"], "micro") == "micro"
     counts = sorted({c for c in (1, 2, target.threads) if c <= target.threads})
-    default_threads = 2 if target.isa == "sme" and 2 in counts else target.threads
-    threads = choose_int(cfg, "micro_threads", counts, default_threads)
+    threads = choose_int(cfg, "micro_threads", counts, target.threads)
     strips = tile_options(channels, 1024)
-    want = max(16, -(-channels // default_threads))
-    strip = choose_int(
-        cfg, "micro_c", strips, max(c for c in strips if c <= want) if want < channels else channels
-    )
+    strip = choose_int(cfg, "micro_c", strips, balanced_tile(channels, 1, target.threads, strips))
     return MicroKnobs(enabled, strip, threads)
 
 
