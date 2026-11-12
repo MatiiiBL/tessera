@@ -18,7 +18,9 @@ def test_launch_benchmark_writes_json_and_markdown(
 ) -> None:
     monkeypatch.setattr(bench, "LAUNCH_COUNTS", (1, 4, 16))
     render = bench.BENCHMARKS["launch"][1]
-    monkeypatch.setitem(bench.BENCHMARKS, "launch", (lambda: bench.bench_launch(repeat=3), render))
+    monkeypatch.setitem(
+        bench.BENCHMARKS, "launch", (lambda trials: bench.bench_launch(repeat=3), render)
+    )
     md = bench.run("launch", tmp_path)
     data = json.loads((tmp_path / "launch.json").read_text())
     assert {m["mode"] for m in data["modes"]} == set(bench.LAUNCH_MODES)
@@ -36,7 +38,7 @@ def test_warmup_benchmark_writes_both_trials(
     monkeypatch.setitem(
         bench.BENCHMARKS,
         "warmup",
-        (lambda: bench.bench_warmup(idle_seconds=0.0, batches=20), render),
+        (lambda trials: bench.bench_warmup(idle_seconds=0.0, batches=20), render),
     )
     md = bench.run("warmup", tmp_path)
     data = json.loads((tmp_path / "warmup.json").read_text())
