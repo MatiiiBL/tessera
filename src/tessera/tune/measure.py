@@ -97,9 +97,13 @@ class LocalRunner:
         self.measure_timeout = measure_timeout
         self._builders = [_Worker() for _ in range(build_workers)]
         self._measurer = _Worker()
+        self.build_seconds = 0.0  # wall-clock time spent in build phases
+        self.measure_seconds = 0.0  # wall-clock time spent in measurement phases
 
     def run(self, task: TuningTask, configs: Sequence[Point]) -> list[MeasureResult]:
+        started = time.monotonic()
         built = _map(self._builders, task, "build", list(configs), self.build_timeout)
+        self.build_seconds += time.monotonic() - started
         results: list[MeasureResult | None] = [None] * len(configs)
         ready: list[tuple[int, Any]] = []
         for i, (ok, value) in enumerate(built):
@@ -107,7 +111,9 @@ class LocalRunner:
                 ready.append((i, value))
             else:
                 results[i] = MeasureResult(configs[i], None, f"build: {value}")
+        started = time.monotonic()
         timed = _map([self._measurer], task, "measure", [v for _, v in ready], self.measure_timeout)
+        self.measure_seconds += time.monotonic() - started
         for (i, _), (ok, value) in zip(ready, timed, strict=True):
             if ok:
                 results[i] = MeasureResult(configs[i], float(value))

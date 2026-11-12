@@ -52,6 +52,8 @@ def test_local_runner_matches_inline_runner() -> None:
         again = runner.run(task, configs[:2])  # workers keep running between batches
     inline = InlineRunner().run(task, configs)
     assert local == inline
+    assert runner.build_seconds > 0
+    assert runner.measure_seconds > 0
     assert again == inline[:2]
 
 
