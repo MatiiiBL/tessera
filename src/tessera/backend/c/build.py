@@ -76,6 +76,21 @@ def isa_flags(target: Target) -> list[str]:
     return ["-mcpu=apple-m4"]
 
 
+def runtime_defines(target: Target) -> list[str]:
+    """The ``#define`` lines a source puts before ``tessera_runtime.h``.
+
+    They size the thread pool for the target. On SME targets they also make
+    idle workers sleep at once instead of polling for the next loop: macOS
+    moves threads that keep the shared SME unit busy onto the efficiency
+    cluster, and a worker that never blocks stays there, three times slower,
+    for the rest of the run (docs/cpu.md, "Threads on SME targets").
+    """
+    lines = [f"#define TSR_NUM_THREADS {target.threads}"]
+    if target.isa == "sme":
+        lines.append("#define TSR_SPIN_SECONDS 0")
+    return lines
+
+
 def compile_flags(target: Target, kind: OutputKind = "shared") -> list[str]:
     """Every flag of a build for ``target``, in order."""
     flags = [*COMMON_FLAGS, *isa_flags(target), *target.cflags]

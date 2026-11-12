@@ -234,37 +234,77 @@ static bool tsr_reduction_outer(const tsr_blocking* blk, int64_t m) { return m <
  * executor calls it whenever it loads a model (and run_kernel before every
  * call), so a packing is never reused for other data that came to live at
  * the same address. The packing costs as much memory as the weights.
+ *
+ * The packings are found through a hash table (open addressing, linear
+ * probing, at most half full): a tuned model makes thousands of them, one
+ * per column strip of every weight, and looks one up at every call.
  */
 typedef struct {
   const float* b;
   int64_t ldb, k, n;
   bool transposed, reduction_outer;
   const tsr_blocking* blk;
-  float* panels;
+  float* panels; /* NULL: an empty slot */
 } tsr_panel_entry;
 
-static tsr_panel_entry* tsr_panel_entries;
-static size_t tsr_panel_count, tsr_panel_capacity;
+static tsr_panel_entry* tsr_panel_table;
+static size_t tsr_panel_count, tsr_panel_capacity; /* capacity: 0 or a power of two */
 static pthread_mutex_t tsr_panel_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static size_t tsr_panel_slot(const float* b, int64_t n, int64_t k, size_t capacity) {
+  uint64_t h = (uint64_t)(uintptr_t)b * 0x9E3779B97F4A7C15ull;
+  h ^= ((uint64_t)n << 32 | (uint64_t)k) * 0xC2B2AE3D27D4EB4Full;
+  return (size_t)(h ^ h >> 31) & (capacity - 1);
+}
+
+static bool tsr_panel_matches(const tsr_panel_entry* e, const tsr_panel_entry* key) {
+  return e->b == key->b && e->ldb == key->ldb && e->k == key->k && e->n == key->n &&
+         e->transposed == key->transposed && e->reduction_outer == key->reduction_outer &&
+         e->blk == key->blk;
+}
+
+/* The slot of `key` in the table, or the empty slot where it belongs. */
+static tsr_panel_entry* tsr_panel_find(const tsr_panel_entry* key) {
+  size_t i = tsr_panel_slot(key->b, key->n, key->k, tsr_panel_capacity);
+  while (tsr_panel_table[i].panels && !tsr_panel_matches(&tsr_panel_table[i], key)) {
+    i = (i + 1) & (tsr_panel_capacity - 1);
+  }
+  return &tsr_panel_table[i];
+}
+
+/* Makes room for one more entry, keeping the table at most half full. */
+static void tsr_panel_reserve(void) {
+  if (2 * (tsr_panel_count + 1) <= tsr_panel_capacity) return;
+  tsr_panel_entry* old = tsr_panel_table;
+  size_t old_capacity = tsr_panel_capacity;
+  tsr_panel_capacity = old_capacity ? 2 * old_capacity : 256;
+  tsr_panel_table = (tsr_panel_entry*)calloc(tsr_panel_capacity, sizeof(tsr_panel_entry));
+  for (size_t i = 0; i < old_capacity; ++i) {
+    if (old[i].panels) *tsr_panel_find(&old[i]) = old[i];
+  }
+  free(old);
+}
 
 static void tsr_forget_panels(void) {
   pthread_mutex_lock(&tsr_panel_mutex);
-  for (size_t i = 0; i < tsr_panel_count; ++i) tsr_free(tsr_panel_entries[i].panels);
+  for (size_t i = 0; i < tsr_panel_capacity; ++i) {
+    tsr_free(tsr_panel_table[i].panels);
+    tsr_panel_table[i].panels = NULL;
+  }
   tsr_panel_count = 0;
   pthread_mutex_unlock(&tsr_panel_mutex);
 }
 
 static const float* tsr_constant_panels(const tsr_blocking* blk, int64_t m, int64_t n, int64_t k,
                                         const float* b, int64_t ldb, bool transposed) {
-  bool outer = tsr_reduction_outer(blk, m);
+  tsr_panel_entry key = {b, ldb, k, n, transposed, tsr_reduction_outer(blk, m), blk, NULL};
+  bool outer = key.reduction_outer;
   pthread_mutex_lock(&tsr_panel_mutex);
-  for (size_t i = 0; i < tsr_panel_count; ++i) {
-    tsr_panel_entry* e = &tsr_panel_entries[i];
-    if (e->b == b && e->ldb == ldb && e->k == k && e->n == n && e->transposed == transposed &&
-        e->reduction_outer == outer && e->blk == blk) {
-      pthread_mutex_unlock(&tsr_panel_mutex);
-      return e->panels;
-    }
+  tsr_panel_reserve();
+  tsr_panel_entry* slot = tsr_panel_find(&key);
+  if (slot->panels) {
+    pthread_mutex_unlock(&tsr_panel_mutex);
+    return slot->panels;
   }
   int64_t n_pad = 0;
   for (int64_t j0 = 0; j0 < n; j0 += blk->nc) {
@@ -284,13 +324,9 @@ static const float* tsr_constant_panels(const tsr_blocking* blk, int64_t m, int6
       out += (nc + blk->nr - 1) / blk->nr * blk->nr * kc;
     }
   }
-  if (tsr_panel_count == tsr_panel_capacity) {
-    tsr_panel_capacity = tsr_panel_capacity ? 2 * tsr_panel_capacity : 64;
-    tsr_panel_entries = (tsr_panel_entry*)realloc(
-        tsr_panel_entries, tsr_panel_capacity * sizeof(tsr_panel_entry));
-  }
-  tsr_panel_entries[tsr_panel_count++] =
-      (tsr_panel_entry){b, ldb, k, n, transposed, outer, blk, panels};
+  key.panels = panels;
+  *slot = key;
+  ++tsr_panel_count;
   pthread_mutex_unlock(&tsr_panel_mutex);
   return panels;
 }
