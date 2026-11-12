@@ -95,6 +95,18 @@ class Prebuilder(Protocol):
         ...
 
 
+@runtime_checkable
+class LoweringOptions(Protocol):
+    """An optional capability of a backend: keyword arguments for
+    ``compute.lower_group`` that its templates need (for example a separate
+    padding block for convolutions). The driver and the tuner lower every
+    group with them, so tuning tasks see the same functions as compilation."""
+
+    def lowering_options(self, target: Target) -> Mapping[str, object]:
+        """Keyword arguments for ``compute.lower_group`` when compiling for ``target``."""
+        ...
+
+
 class MeasureError(Exception):
     """A candidate failed to build, crashed or timed out while being measured."""
 
