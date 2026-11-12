@@ -22,6 +22,7 @@ import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 import onnx
 
@@ -283,7 +284,7 @@ def compile(
     ).build()
 
 
-def lowering_options(backend: Backend, target: Target) -> dict[str, object]:
+def lowering_options(backend: Backend, target: Target) -> dict[str, Any]:
     """The keyword arguments ``backend`` wants ``compute.lower_group`` called with
     (none unless it has the ``LoweringOptions`` capability). Tuning tasks come
     from the same lowering, so they see the functions compilation builds."""
