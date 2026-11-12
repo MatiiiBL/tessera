@@ -19,7 +19,7 @@ after a run every output is in its output buffer on every backend.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -27,6 +27,7 @@ import onnx
 
 from tessera import passes
 from tessera.backend.base import CompiledModel, Template, get_backend
+from tessera.compute import lower_group
 from tessera.frontend import onnx as onnx_frontend
 from tessera.ir.graph import Graph, Value
 from tessera.plan import (
@@ -155,7 +156,7 @@ def lower(
                 name = _unique(f"copy_{group.name}", taken)
                 kernels.append(_copy(name, group.output, args[0], args[-1], group))
             continue
-        lowered = _lower_group(group)
+        lowered = lower_group(group)
         template = templates.get(group.pattern)
         if template is None:
             func = _named(lowered.func, group)
@@ -313,11 +314,3 @@ def _unique(name: str, taken: set[str]) -> str:
 def _identifier(name: str) -> str:
     out = "".join(c if c.isalnum() or c == "_" else "_" for c in name) or "model"
     return f"m_{out}" if out[0].isdigit() else out
-
-
-def _lower_group(group: FusedGroup) -> LoweredGroup:
-    import tessera.compute
-
-    # Resolved at call time until tessera.compute provides lower_group.
-    fn: Callable[[FusedGroup], LoweredGroup] = tessera.compute.__dict__["lower_group"]
-    return fn(group)
