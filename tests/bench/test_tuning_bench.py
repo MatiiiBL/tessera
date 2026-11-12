@@ -1,0 +1,66 @@
+"""The search-strategy comparison."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+
+from tessera.bench.tuning import (
+    Comparison,
+    best_so_far,
+    checkpoints,
+    compare,
+    table,
+    trials_to_reach,
+)
+from tessera.tune.search import RandomSearch, TaskState
+from tessera.tune.synthetic import SyntheticMatmul
+
+
+def test_best_so_far_skips_failures() -> None:
+    state = TaskState(SyntheticMatmul(4, 4, 4))
+    space = state.task.space
+    for i, s in enumerate([None, 3.0, 4.0, 1.0]):
+        state.record(space.get(i), s)
+    assert best_so_far(state) == [np.inf, 3.0, 3.0, 1.0]
+
+
+def test_compare_runs_every_strategy_and_seed(tmp_path: Path) -> None:
+    task = SyntheticMatmul(16, 16, 16)
+    seen: list[tuple[str, str, int]] = []
+    [c] = compare(
+        [task],
+        trials=24,
+        seeds=[0, 1],
+        optimum=lambda t: task.optimum()[1],
+        log_dir=tmp_path,
+        on_run=lambda *a: seen.append(a),
+    )
+    assert c.reference_kind == "optimum"
+    assert seen == [(task.key, s, k) for s in ("random", "model") for k in (0, 1)]
+    for strategy in ("random", "model"):
+        rel = c.relative(strategy)
+        assert rel.shape == (2, 24)
+        assert np.all(np.diff(rel, axis=1) >= 0)
+        assert np.all(rel <= 1.0 + 1e-12)
+    assert len(list(tmp_path.glob("*.jsonl"))) == 4
+    text = table([c])
+    assert "| 24 |" in text
+    assert "reference: optimum" in text
+
+
+def test_reference_is_the_best_found_without_an_optimum() -> None:
+    task = SyntheticMatmul(8, 8, 8)
+    [c] = compare([task], trials=10, seeds=[0], strategies=["random"])
+    assert c.reference_kind == "best found"
+    assert c.relative("random")[0, -1] == 1.0
+    assert c.as_dict()["runs"]["random"][0][-1] == c.reference
+
+
+def test_checkpoints_and_trials_to_reach() -> None:
+    assert checkpoints(100) == [8, 16, 32, 64, 100]
+    c = Comparison("t", 1.0, "optimum", {"a": [[4.0, 2.0, 1.0], [2.0, 1.0, 1.0]]})
+    assert trials_to_reach(c, "a", 0.9) == 2.5
+    assert trials_to_reach(Comparison("t", 1.0, "optimum", {"a": [[2.0]]}), "a", 0.9) is None
+    assert RandomSearch().name == "random"
