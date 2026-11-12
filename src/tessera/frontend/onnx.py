@@ -163,24 +163,22 @@ class Importer:
             if proto.name not in initializers:
                 self.env[proto.name] = g.add_input(_clean(proto.name, "input"), self._type(proto))
         output_names = [_clean(o.name, "output") for o in graph.output]
+        taken = {v.name for v in g.inputs} | {v.name for v in self.env.values() if v is not None}
         for name in output_names:
-            if name not in {v.name for v in g.inputs}:
-                g.claim_name(name)
+            if name not in taken:
+                g.claim_name(name)  # so that no node takes an output's name
 
         for proto in graph.node:
             self._convert(proto)
 
         outputs: list[Value] = []
-        for proto, name in zip(graph.output, output_names, strict=True):
+        for proto in graph.output:
             value = self.env.get(proto.name)
             if value is None:
                 raise OnnxImportError(f"graph output {proto.name!r} is not computed")
-            if value.producer is not None and value.name != name and value not in outputs:
-                value.name = name
-                if len(value.producer.outputs) == 1:
-                    value.producer.name = name
             outputs.append(value)
         g.set_outputs(outputs)
+        g.name_outputs(output_names)
         g.verify()
         return g
 

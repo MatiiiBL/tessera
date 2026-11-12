@@ -312,3 +312,46 @@ def test_load_from_file(tmp_path: Any) -> None:
     onnx.save(model, str(path))
     graph = onnx_frontend.load(path)
     assert [n.op for n in graph.nodes] == ["Relu"]
+
+
+NAMING_CASES: dict[str, tuple[list[onnx.NodeProto], dict[str, Array], tuple[str, ...]]] = {
+    "identity_of_constant": ([node("Identity", ["c"], ["k"])], {"x": f32(3)}, ("k",)),
+    "constant_itself": ([], {"x": f32(3)}, ("c",)),
+    "identity_of_input": ([node("Identity", ["x"], ["y"])], {"x": f32(3)}, ("y",)),
+    "input_itself": ([], {"x": f32(3)}, ("x",)),
+    "dropped_chain": (
+        [
+            node("Dropout", ["x"], ["d"]),
+            node("Reshape", ["d", "same"], ["r"]),
+            node("Identity", ["r"], ["out"]),
+        ],
+        {"x": f32(3)},
+        ("out",),
+    ),
+    "same_value_twice": (
+        [node("Relu", ["x"], ["a"]), node("Identity", ["a"], ["b"])],
+        {"x": f32(3)},
+        ("a", "b"),
+    ),
+    "output_named_like_a_node": (
+        [node("Relu", ["x"], ["relu"]), node("Neg", ["relu"], ["Relu"])],
+        {"x": f32(3)},
+        ("Relu", "relu"),
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(NAMING_CASES))
+def test_inputs_and_outputs_keep_their_onnx_names(case: str) -> None:
+    nodes, inputs, outputs = NAMING_CASES[case]
+    constants = {"c": np.arange(3, dtype=np.float32), "same": np.array([3], I64)}
+    model = model_of(nodes, inputs, constants, 14, outputs)
+    expected = run_ort(model, inputs)
+    imported = onnx_frontend.load(model)
+    for g in (imported, optimize(imported), optimize(imported, fold=False)):
+        assert [v.name for v in g.inputs] == list(inputs)
+        assert [v.name for v in g.outputs] == list(outputs)
+        got = interpret(g, inputs)
+        assert list(got) == list(outputs)
+        for name in outputs:
+            np.testing.assert_array_equal(got[name], expected[name])

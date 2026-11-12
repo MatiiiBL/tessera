@@ -122,3 +122,29 @@ def test_topo_sort_moves_late_producers_before_their_first_reader() -> None:
     g.remove_nodes([late])
     with pytest.raises(ValueError, match="no node defines"):
         g.topo_sort()
+
+
+def test_name_outputs_renames_or_wraps_in_a_view() -> None:
+    g = Graph()
+    x = g.add_input("x", TensorType((3,), F32))
+    c = g.add_constant(np.ones(3, np.float32), "c")
+    r = g.op("Relu", x, name="r")
+    g.set_outputs([r, r, x, c, g.op("Neg", r, name="taken")])
+    g.name_outputs(["first", "second", "third", "fourth", "r"])
+    g.verify()
+    assert [v.name for v in g.outputs] == ["first", "second", "third", "fourth", "r"]
+    assert g.outputs[0] is r
+    assert [n.op for n in g.nodes] == ["Relu", "Neg", "Reshape", "Reshape", "Reshape"]
+    out = interpret(g, {"x": np.array([-1.0, 0.0, 2.0], np.float32)})
+    np.testing.assert_array_equal(out["second"], [0.0, 0.0, 2.0])
+    np.testing.assert_array_equal(out["r"], [0.0, 0.0, -2.0])
+    with pytest.raises(ValueError, match="names for"):
+        g.name_outputs(["only_one"])
+
+
+def test_name_outputs_never_takes_an_input_name() -> None:
+    g = Graph()
+    x = g.add_input("x", TensorType((3,), F32))
+    g.set_outputs([g.op("Relu", x)])
+    with pytest.raises(ValueError, match="name of a graph input"):
+        g.name_outputs(["x"])

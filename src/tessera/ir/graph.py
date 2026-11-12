@@ -244,6 +244,43 @@ class Graph:
     def set_outputs(self, values: Iterable[Value]) -> None:
         self.outputs = list(values)
 
+    def name_outputs(self, names: Sequence[str]) -> None:
+        """Name output ``i`` exactly ``names[i]``.
+
+        An output computed by a node is renamed. An output that is a graph
+        input, a constant or the same value as an earlier output cannot be,
+        so it is returned through a Reshape to its own shape (a view; the
+        memory plan turns it into a copy) that carries the name.
+        """
+        if len(names) != len(self.outputs):
+            raise ValueError(f"{len(names)} names for {len(self.outputs)} outputs")
+        live = {v.name: v for v in self.values()}
+        outputs: list[Value] = []
+        for value, name in zip(self.outputs, names, strict=True):
+            if value.name == name and value not in outputs:
+                outputs.append(value)
+                continue
+            owner = live.get(name)
+            if owner is not None and owner is not value:
+                if owner in self.inputs:
+                    raise ValueError(f"output name {name!r} is the name of a graph input")
+                # Another value holds the name: it takes a fresh one.
+                owner.name = self.fresh_name(name)
+                if owner.producer is not None and len(owner.producer.outputs) == 1:
+                    owner.producer.name = owner.name
+                live[owner.name] = owner
+            renamable = value.producer is not None and value not in outputs
+            if not renamable:
+                value = self.op("Reshape", value, shape=value.shape)
+            live.pop(value.name, None)
+            self._names.add(name)
+            value.name = name
+            if value.producer is not None and len(value.producer.outputs) == 1:
+                value.producer.name = name
+            live[name] = value
+            outputs.append(value)
+        self.outputs = outputs
+
     def claim_name(self, name: str) -> None:
         """Reserve a name created elsewhere (frontends that build Values directly)."""
         if name in self._names:

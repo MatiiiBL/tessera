@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tessera.ir.graph import Graph, Value
+from tessera.ir.graph import Graph
 from tessera.ir.opdefs import IMPORT_OPS
 from tessera.passes.canonicalize import CANONICALIZE, SIMPLIFY, TRANSPOSE_AS_RESHAPE
 from tessera.passes.conv import FOLD_BATCHNORM, SPLIT_GROUPS
@@ -46,7 +46,7 @@ def optimize(graph: Graph, *, layout: str = "NHWC", fold: bool = True) -> Graph:
     leftover = sorted({n.op for n in g.nodes if n.op in IMPORT_OPS})
     if leftover:
         raise ValueError(f"operators {leftover} could not be canonicalized")
-    _restore_output_names(g, output_names)
+    g.name_outputs(output_names)
     g.verify()
     return g
 
@@ -59,43 +59,3 @@ def _cleanup(rw: Rewriter, extra: list[Rule] | None = None) -> None:
         changed |= eliminate_common_subexpressions(rw.graph)
         if not changed:
             return
-
-
-def _restore_output_names(g: Graph, names: list[str]) -> None:
-    """Give every output back its name.
-
-    An output that became a graph input, a constant or the same value as an
-    earlier output cannot be renamed; it is returned through a Reshape to its
-    own shape (a view, which the memory plan turns into a copy).
-    """
-    live = {v.name: v for v in g.values()}
-    outputs: list[Value] = []
-    for value, name in zip(g.outputs, names, strict=True):
-        if value.name == name and value not in outputs:
-            outputs.append(value)
-            continue
-        owner = live.get(name)
-        renamable = (
-            value.producer is not None
-            and value not in outputs
-            and value.name not in names
-            and (owner is None or owner is value)
-        )
-        if renamable:
-            del live[value.name]
-            value.name = name
-            assert value.producer is not None
-            if len(value.producer.outputs) == 1:
-                value.producer.name = name
-        else:
-            if owner is not None and owner is not value:
-                owner.name = g.fresh_name(name)
-                if owner.producer is not None and len(owner.producer.outputs) == 1:
-                    owner.producer.name = owner.name
-            value = g.op("Reshape", value, shape=value.shape)
-            value.name = name
-            assert value.producer is not None
-            value.producer.name = name
-        live[name] = value
-        outputs.append(value)
-    g.set_outputs(outputs)
