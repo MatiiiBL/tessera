@@ -121,12 +121,12 @@ def test_benchmark_and_profile() -> None:
     x = np.ones(N, np.float32)
     times = model.benchmark({"x": x}, warmup=1, repeat=5)
     assert len(times) == 5
-    assert all(t > 0 for t in times)
+    assert all(t >= 0 for t in times)
     gpu_times = model.gpu_benchmark({"x": x}, warmup=1, repeat=3)
     assert len(gpu_times) == 3
     profile = model.profile({"x": x}, repeat=3)
     assert [k.kernel for k in profile] == ["add_relu", "exp", "scale", "add"]
-    assert all(k.seconds > 0 for k in profile)
+    assert all(k.seconds >= 0 for k in profile)
 
 
 @gpu

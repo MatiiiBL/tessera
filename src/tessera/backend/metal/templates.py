@@ -240,11 +240,12 @@ SIMD_PREFERENCE = (
 
 
 def simd_layout(m: int, n: int) -> tuple[tuple[int, int], tuple[int, int]] | None:
-    """The preferred SIMD-group layout whose threadgroup tile divides ``m x n``."""
-    for groups, tiles in SIMD_PREFERENCE:
-        if m % (8 * groups[0] * tiles[0]) == 0 and n % (8 * groups[1] * tiles[1]) == 0:
-            return groups, tiles
-    return None
+    """The preferred SIMD-group layout whose threadgroup tile divides the ``m`` rows
+    (and, if one does, the ``n`` columns). Columns may end in a partial tile."""
+    rows = [(g, t) for g, t in SIMD_PREFERENCE if m % (8 * g[0] * t[0]) == 0]
+    whole = [(g, t) for g, t in rows if n % (8 * g[1] * t[1]) == 0]
+    choices = whole or rows
+    return choices[0] if choices else None
 
 
 def gemm_knobs(
@@ -405,8 +406,12 @@ def _simdgroup(
         raise ScheduleError("SIMD-group matrices need one row, column and reduction loop")
     (m_loop,), (n_loop,), (k_loop,) = rows, cols, reduction
     m, n, k = sch.extent(m_loop), sch.extent(n_loop), sch.extent(k_loop)
-    if m % (8 * gm * fm) or n % (8 * gn * fn) or k % 8:
-        raise ScheduleError(f"{m} x {n} x {k} is not whole {8 * fm} x {8 * fn} x 8 tiles")
+    # Columns may end in a partial tile: the kernel computes the whole tile (its
+    # loads past the last column stay in the allocation's padding) and only the
+    # valid columns are stored. A partial tile of rows would read whole rows of A
+    # past the end, and the reduction is walked 8 at a time.
+    if m % (8 * gm * fm) or k % 8 or n < 8 * fn:
+        raise ScheduleError(f"{m} x {n} x {k} does not fit {8 * fm} x {8 * fn} x 8 tiles")
     mo, ms, mi = sch.split(m_loop, [None, gm, 8 * fm])
     no, ns, ni = sch.split(n_loop, [None, gn, 8 * fn])
     sch.reorder(mo, no, ms, ns, mi, ni, k_loop)

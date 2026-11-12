@@ -57,9 +57,15 @@ def test_fragments_are_only_used_through_simdgroup_calls() -> None:
 
 
 def test_fragment_buffers_must_be_whole_tiles() -> None:
-    out = Buffer("out", (8, 8))
-    frag = Buffer("frag", (8, 4), scope="local")
-    body = simdgroup_fill(frag.address(0, 0), FloatImm(0.0))
+    out = Buffer("out", (8, 12))
+    frag = Buffer("frag", (8, 12), scope="local")
+    # Tiles at columns 0 and 4 overlap: together they span 12 columns, not whole tiles.
+    body = seq(
+        [
+            simdgroup_fill(frag.address(0, 0), FloatImm(0.0)),
+            simdgroup_fill(frag.address(0, 4), FloatImm(0.0)),
+        ]
+    )
     with pytest.raises(CodegenError, match="multiples of 8"):
         generate(prim_func("narrow", [out], body, alloc=[frag]))
 
@@ -147,3 +153,34 @@ def test_shaped_threadgroups_compute_the_same() -> None:
     program.run()
     result = buffers[2].view(np.float32, (32, 64))
     assert_close(result, case.inputs[0].astype(np.float64) @ case.inputs[1], rtol=1e-4, atol=1e-4)
+
+
+@gpu
+def test_padding_after_buffers_never_reaches_results() -> None:
+    from metal_workloads import matmul, space
+
+    from tessera.backend.metal import runtime
+    from tessera.backend.metal.bench import schedule_with
+    from tessera.backend.metal.codegen import module_source
+    from tessera.backend.metal.templates import TEMPLATES
+
+    # 100 columns: the last SIMD-group tile is partial, and the kernel reads whole
+    # tiles of B, past the end of its last row, into the allocation's padding.
+    workload = matmul(32, 100, 16, epilogue=False)
+    values = space(TEMPLATES["matmul"], workload).default()
+    assert values["strategy"] == "simdgroup"
+    kernel = generate(schedule_with(workload.lowered, values))
+    device = runtime.device()
+    buffers = [device.buffer(p.nbytes) for p in kernel.buffers]
+    for buffer, x in zip(buffers, workload.inputs, strict=False):
+        buffer.view(np.float32, x.shape)[...] = x
+    for buffer in buffers:
+        assert buffer.allocated == buffer.nbytes + runtime.PADDING
+        buffer.view(np.float32, (runtime.PADDING // 4,), buffer.nbytes, padding=True)[:] = np.nan
+    pipeline = device.compile(module_source([kernel])).pipeline(kernel.name)
+    program = device.program()
+    program.add(pipeline, kernel.grid, kernel.threads, [(b, 0) for b in buffers])
+    program.run()
+    result = buffers[len(workload.inputs)].view(np.float32, workload.output.shape)
+    assert np.isfinite(result).all()
+    assert_close(result, workload.output, rtol=1e-4, atol=1e-4)

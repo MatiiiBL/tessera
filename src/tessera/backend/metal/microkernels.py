@@ -122,6 +122,8 @@ def _reference(
 ) -> None:
     """What the interpreter runs for a tensorized block, on views of the matched
     regions (which may have leading dimensions of one)."""
+    if c.size == 0:  # a tile wholly past the edge of the output
+        return
     product = a.reshape(-1, a.shape[-1]) @ b.reshape(-1, b.shape[-1])
     c[...] = c + product.reshape(c.shape)
 

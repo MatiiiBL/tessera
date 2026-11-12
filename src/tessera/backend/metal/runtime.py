@@ -40,6 +40,8 @@ _CFLAGS = (
     "Foundation",
 )
 _ERROR_CAPACITY = 16384
+# Bytes allocated after every buffer (see ``Buffer``).
+PADDING = 4096
 
 
 class MetalError(RuntimeError):
@@ -215,7 +217,8 @@ class Device(_Handle):
         return Library(self, handle)
 
     def buffer(self, nbytes: int) -> Buffer:
-        """A shared-storage buffer of ``nbytes`` (zero-filled)."""
+        """A shared-storage buffer of ``nbytes`` (zero-filled), followed by
+        ``PADDING`` bytes that kernels may read but never use (see ``Buffer``)."""
         return Buffer(self, nbytes)
 
     def program(self) -> Program:
@@ -256,23 +259,40 @@ class Pipeline(_Handle):
 
 
 class Buffer(_Handle):
-    """A buffer in unified memory: ``view`` gives NumPy arrays over its bytes."""
+    """A buffer in unified memory: ``view`` gives NumPy arrays over its bytes.
+
+    The allocation is ``PADDING`` bytes longer than ``nbytes``. A SIMD-group
+    matrix kernel computing a whole 8 x 8 tile at the edge of a matrix reads up to
+    a tile row past the matrix's last element; the padding keeps those reads
+    inside memory the buffer owns. Their values only reach parts of the tile that
+    are never stored.
+    """
 
     def __init__(self, device: Device, nbytes: int) -> None:
-        super().__init__(_lib().tm_buffer_create(device.handle, nbytes), f"a {nbytes}-byte buffer")
+        allocated = nbytes + PADDING
+        handle = _lib().tm_buffer_create(device.handle, allocated)
+        super().__init__(handle, f"a {nbytes}-byte buffer")
         self.nbytes = nbytes
+        self.allocated = allocated
         self._address = int(_lib().tm_buffer_contents(self.handle))
 
     def view(
-        self, dtype: DType | npt.DTypeLike, shape: Sequence[int], offset: int = 0
+        self,
+        dtype: DType | npt.DTypeLike,
+        shape: Sequence[int],
+        offset: int = 0,
+        *,
+        padding: bool = False,
     ) -> npt.NDArray[Any]:
         """A NumPy array over ``shape`` elements starting ``offset`` bytes in; it
-        keeps the buffer alive."""
+        keeps the buffer alive. ``padding`` allows the view to reach into the
+        padding after ``nbytes`` (for tests)."""
         np_dtype = dtype.numpy if isinstance(dtype, DType) else np.dtype(dtype)
         count = int(np.prod(shape, dtype=np.int64))
         nbytes = count * np_dtype.itemsize
-        if offset < 0 or offset + nbytes > self.nbytes:
-            raise ValueError(f"view of {nbytes} bytes at {offset} exceeds {self.nbytes} bytes")
+        limit = self.allocated if padding else self.nbytes
+        if offset < 0 or offset + nbytes > limit:
+            raise ValueError(f"view of {nbytes} bytes at {offset} exceeds {limit} bytes")
         raw = (ctypes.c_char * max(nbytes, 1)).from_address(self._address + offset)
         array = np.frombuffer(_Keep(raw, self), dtype=np_dtype, count=count)
         return array.reshape(tuple(shape))

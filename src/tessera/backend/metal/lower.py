@@ -277,9 +277,11 @@ class _Collector:
         region = regions.get(buf)
         starts: tuple[Expr, ...]
         extents: tuple[int | None, ...]
-        if region is not None and all(isinstance(r.extent, IntImm) for r in region):
+        bounds = None if region is None else [_upper_bound(r.extent) for r in region]
+        if region is not None and bounds is not None and all(b is not None for b in bounds):
+            # An edge tile's extent is min(rest, tile): the tile bounds it.
             starts = tuple(self.subst(r.min) for r in region)
-            extents = tuple(r.extent.value for r in region)  # type: ignore[attr-defined]
+            extents = tuple(bounds)
         else:
             starts = tuple(self.subst(i) for i in arg.indices)
             trailing = self.extents_of(call, position)
@@ -292,6 +294,16 @@ class _Collector:
 
     def subst(self, expr: Expr) -> Expr:
         return substitute(expr, self.bindings) if self.bindings else expr
+
+
+def _upper_bound(extent: Expr) -> int | None:
+    """A constant no smaller than ``extent``, when one is evident (``min(e, 64)``)."""
+    if isinstance(extent, IntImm):
+        return extent.value
+    if isinstance(extent, Binary) and extent.op == "min":
+        bounds = [b for b in (_upper_bound(extent.a), _upper_bound(extent.b)) if b is not None]
+        return min(bounds) if bounds else None
+    return None
 
 
 def _vars(expr: Expr) -> set[Var]:
@@ -342,7 +354,10 @@ def _compact(buf: Buffer, uses: list[_Use], axes: _Axes, symbols: _Symbols) -> C
         fixed = known[0][0]
         lo = min(r[1] for r in known)
         hi = max(r[2] for r in known)
-        if hi - lo + 1 >= size:
+        # Shrink to the accesses' span; grow to it when whole-tile accesses reach
+        # past the tensor's edge (a SIMD-group tile at the last columns), since
+        # this buffer is the kernel's own.
+        if hi - lo + 1 >= size and not fixed and lo >= 0 and hi < size:
             shape.append(size)
             offsets.append({None: 0})
             continue
