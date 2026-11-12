@@ -37,7 +37,18 @@ class AnchorResult:
     stages: list[te.Tensor] = field(default_factory=list)
 
 
-type AnchorDefinition = Callable[[Node, list[TensorLike]], AnchorResult]
+@dataclass(frozen=True)
+class LoweringChoices:
+    """How ``lower_group`` builds a group, as a backend asks for it
+    (``Backend.lowering_options``)."""
+
+    # A padded convolution reads its input through a separate block (role "pad")
+    # instead of a select inside the main block, so the main block's update is a
+    # plain multiply-accumulate that tensorize can match.
+    pad_block: bool = False
+
+
+type AnchorDefinition = Callable[[Node, list[TensorLike], LoweringChoices], AnchorResult]
 
 ANCHORS: dict[str, AnchorDefinition] = {}
 
@@ -86,7 +97,7 @@ def _ranges(pairs: Sequence[tuple[Var | IterVar, int]]) -> dict[Var, Interval]:
 
 
 @_register("Conv2d")
-def conv2d(node: Node, xs: list[TensorLike]) -> AnchorResult:
+def conv2d(node: Node, xs: list[TensorLike], choices: LoweringChoices) -> AnchorResult:
     x, w = xs[0], xs[1]
     bias = xs[2] if len(xs) == 3 else None
     nhwc = node.str_attr("layout") == "NHWC"
@@ -107,6 +118,13 @@ def conv2d(node: Node, xs: list[TensorLike]) -> AnchorResult:
     ic = te.reduce_axis(i_n, "ic") if i_n > 1 else None
     axes = [kh, kw] if ic is None else [kh, kw, ic]
     dtype = x.dtype
+    # The rows and columns of the padded input the windows cover.
+    rows = (oh_n - 1) * sh + (kh_n - 1) * dh + 1
+    cols = (ow_n - 1) * sw + (kw_n - 1) * dw + 1
+    padded = pt > 0 or pl > 0 or rows - pt > h or cols - pl > wd
+    pad: te.Tensor | None = None
+    if choices.pad_block and padded:
+        pad = _pad_stage(node, x, nhwc, (rows, cols), (pt, pl))
 
     def split(out: tuple[Var, ...]) -> tuple[Var, Var, Var, Var]:
         b, a1, a2, a3 = out
@@ -116,6 +134,11 @@ def conv2d(node: Node, xs: list[TensorLike]) -> AnchorResult:
         b, oh, ow, o = split(out)
         ic_e: Expr = IntImm(0) if ic is None else ic.var
         channel = ic_e if groups == 1 else (o // per_group) * i_n + ic_e
+        wv = w[(kh.var, kw.var, ic_e, o)] if nhwc else w[(o, ic_e, kh.var, kw.var)]
+        if pad is not None:
+            hp, wp = oh * sh + kh * dh, ow * sw + kw * dw
+            xp = pad[(b, hp, wp, channel)] if nhwc else pad[(b, channel, hp, wp)]
+            return te.sum(xp * wv, axis=axes)
         hh = oh * sh + kh * dh - pt
         ww = ow * sw + kw * dw - pl
         ranges = _ranges([(b, n), (oh, oh_n), (ow, ow_n), (o, o_n), (kh, kh_n), (kw, kw_n)])
@@ -123,10 +146,8 @@ def conv2d(node: Node, xs: list[TensorLike]) -> AnchorResult:
             ranges[ic.var] = Interval(0, i_n - 1)
         if nhwc:
             xv = guarded_load(x, (b, hh, ww, channel), ranges, c(0, dtype))
-            wv = w[(kh.var, kw.var, ic_e, o)]
         else:
             xv = guarded_load(x, (b, channel, hh, ww), ranges, c(0, dtype))
-            wv = w[(o, ic_e, kh.var, kw.var)]
         return te.sum(xv * wv, axis=axes)
 
     main = te.compute(
@@ -140,16 +161,43 @@ def conv2d(node: Node, xs: list[TensorLike]) -> AnchorResult:
     dims = {
         "N": n, "H": h, "W": wd, "C": ch, "KH": kh_n, "KW": kw_n, "O": o_n,
         "OH": oh_n, "OW": ow_n, "SH": sh, "SW": sw, "DH": dh, "DW": dw, "G": groups,
-        "PT": pt, "PL": pl, "PB": pb, "PR": pr,
+        "PT": pt, "PL": pl, "PB": pb, "PR": pr, "PAD_BLOCK": int(pad is not None),
     }  # fmt: skip
-    return AnchorResult(main, main, dims)
+    return AnchorResult(main, main, dims, [] if pad is None else [pad])
+
+
+def _pad_stage(
+    node: Node, x: TensorLike, nhwc: bool, size: tuple[int, int], before: tuple[int, int]
+) -> te.Tensor:
+    """The part of the zero-padded input a convolution reads, as its own stage:
+    ``pad[n, h, w, c] = x[n, h - PT, w - PL, c]`` inside the input and 0 outside."""
+    rows, cols = size
+    pt, pl = before
+    if nhwc:
+        n, _, _, ch = x.shape
+        shape = (n, rows, cols, ch)
+    else:
+        n, ch, _, _ = x.shape
+        shape = (n, ch, rows, cols)
+    fill = c(0, x.dtype)
+
+    def body(*i: Var) -> Expr:
+        ranges = _ranges(list(zip(i, shape, strict=True)))
+        if nhwc:
+            b, hp, wp, ci = i
+            return guarded_load(x, (b, hp - pt, wp - pl, ci), ranges, fill)
+        b, ci, hp, wp = i
+        return guarded_load(x, (b, ci, hp - pt, wp - pl), ranges, fill)
+
+    names = ["n", "h", "w", "c"] if nhwc else ["n", "c", "h", "w"]
+    return te.compute(shape, body, f"{node.name}_pad", axis_names=names, annotations={ROLE: "pad"})
 
 
 # -- MatMul -------------------------------------------------------------------------------
 
 
 @_register("MatMul")
-def matmul(node: Node, xs: list[TensorLike]) -> AnchorResult:
+def matmul(node: Node, xs: list[TensorLike], choices: LoweringChoices) -> AnchorResult:
     a, b = xs
     out_shape = node.output.shape
     batch = out_shape[:-2]
@@ -172,7 +220,7 @@ def matmul(node: Node, xs: list[TensorLike]) -> AnchorResult:
 
 
 @_register("MaxPool2d", "AvgPool2d")
-def pool2d(node: Node, xs: list[TensorLike]) -> AnchorResult:
+def pool2d(node: Node, xs: list[TensorLike], choices: LoweringChoices) -> AnchorResult:
     (x,) = xs
     nhwc = node.str_attr("layout") == "NHWC"
     kh_n, kw_n = node.ints_attr("kernel")
@@ -233,7 +281,7 @@ def _outer_inner(shape: Sequence[int], axes: Sequence[int]) -> tuple[int, int, i
 
 
 @_register("ReduceSum", "ReduceMean", "ReduceMax")
-def reduce(node: Node, xs: list[TensorLike]) -> AnchorResult:
+def reduce(node: Node, xs: list[TensorLike], choices: LoweringChoices) -> AnchorResult:
     (x,) = xs
     axes = node.ints_attr("axes")
     keep = bool(node.int_attr("keepdims"))
@@ -267,7 +315,7 @@ def reduce(node: Node, xs: list[TensorLike]) -> AnchorResult:
 
 
 @_register("Softmax")
-def softmax(node: Node, xs: list[TensorLike]) -> AnchorResult:
+def softmax(node: Node, xs: list[TensorLike], choices: LoweringChoices) -> AnchorResult:
     (x,) = xs
     axis = node.int_attr("axis")
     shape = x.shape
@@ -307,7 +355,7 @@ def softmax(node: Node, xs: list[TensorLike]) -> AnchorResult:
 
 
 @_register("LayerNorm")
-def layernorm(node: Node, xs: list[TensorLike]) -> AnchorResult:
+def layernorm(node: Node, xs: list[TensorLike], choices: LoweringChoices) -> AnchorResult:
     x, scale, bias = xs
     axis = node.int_attr("axis")
     eps = node.float_attr("epsilon")

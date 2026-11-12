@@ -205,7 +205,7 @@ Every block carries a `role` annotation:
 
 | group | blocks (role) | `dims` |
 |---|---|---|
-| Conv2d (NHWC, NCHW; strides, pads, dilations, groups, depthwise) | main, epilogue | N H W C KH KW O OH OW SH SW DH DW G PT PL PB PR |
+| Conv2d (NHWC, NCHW; strides, pads, dilations, groups, depthwise) | pad (with `pad_block`), main, epilogue | N H W C KH KW O OH OW SH SW DH DW G PT PL PB PR PAD_BLOCK |
 | MatMul (rank >= 2, broadcast batch) | main, epilogue | B M N K |
 | MaxPool2d, AvgPool2d | main, epilogue (AvgPool divides there) | N H W C KH KW OH OW SH SW |
 | ReduceSum, ReduceMax, ReduceMean | main, epilogue (ReduceMean divides there) | OUTER R INNER |
@@ -222,6 +222,21 @@ at run time, wrapped if negative and clamped into range. A dimension that is
 1 in both an operand and the output keeps the output's iteration variable,
 so batch-1 epilogues and prologues read by iteration variable and the
 inlining primitives accept them.
+
+`lower_group(group, pad_block=True)` (what the Metal backend asks for through
+`Backend.lowering_options`) moves a padded convolution's select out of the
+main block: the padded input becomes a block of its own, `<main>_pad` with
+role `pad`, covering only the rows and columns the windows read
+(`(OH - 1) * SH + (KH - 1) * DH + 1` rows, likewise for columns), and the main
+block's update is `out += pad[n, oh * SH + kh * DH, ow * SW + kw * DW, ic] *
+w[...]`, a plain multiply-accumulate that a GEMM-like microkernel description
+matches. `dims["PAD_BLOCK"]` says whether the block exists: unpadded
+convolutions get none in either mode, and inlining the pad block
+(`compute_inline`) gives back the default function exactly
+(`test_conv2d` checks both modes and the round trip over its Hypothesis
+examples; `test_padded_conv_staged_through_shared_memory` computes the pad
+block per tile of output rows, stages it in threadgroup memory and binds the
+threads).
 
 Each operator is tested by interpreting its lowered group against the
 operator references in float64 (`tests/compute/test_lower.py`), the
@@ -480,7 +495,7 @@ becomes a `float32[4, 4]` allocated under the tile loop
   fuse and imperfect splits over random shapes and factors.
 - The model sweep (section 5) schedules every group of the real models.
 
-The package has 188 tests (`uv run pytest tests/tir tests/te tests/compute`,
+The package has 189 tests (`uv run pytest tests/tir tests/te tests/compute`,
 a few seconds) plus the model sweep (`uv run pytest -m models tests/compute`).
 Floating-point results are compared with a tolerance relative to the largest
 magnitude, because reordered reductions round differently.

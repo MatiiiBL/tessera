@@ -15,6 +15,7 @@ from tessera.dtype import DType
 from tessera.ir import Graph, TensorType
 from tessera.plan import LoweredGroup
 from tessera.tir.schedule import Schedule
+from tessera.tir.stmt import Block, PrimFunc
 
 from .harness import check_graph, check_group, single_group, values_of
 
@@ -197,8 +198,25 @@ def test_conv2d(
     assert lowered.epilogue_block is not None
     assert lowered.dims["G"] == groups
     assert lowered.dims["SH"] == s
+    assert lowered.dims["PAD_BLOCK"] == 0
     if c > 1:
         assert lowered.pattern == ("depthwise_conv2d" if depthwise else "conv2d")
+    # The same group with the padded input in a block of its own.
+    (padded,) = check_graph(g, pad_block=True)
+    roles = _roles(padded.func)
+    has_pad = "pad" in roles.values()
+    assert padded.dims["PAD_BLOCK"] == int(has_pad)
+    if not has_pad:
+        assert tir.structural_equal(padded.func, lowered.func)
+        return
+    assert any(p > 0 for p in pads)
+    pad_name = next(name for name, role in roles.items() if role == "pad")
+    assert padded.main_block is not None
+    main_reads = tir.script(_block(padded.func, padded.main_block).body)
+    assert "select" not in main_reads
+    sch = Schedule(padded.func)
+    sch.compute_inline(pad_name)
+    assert tir.structural_equal(sch.func, lowered.func)
 
 
 @pytest.mark.parametrize(
@@ -276,7 +294,13 @@ def test_layernorm(axis: int) -> None:
 # -- groups ---------------------------------------------------------------------------------------
 
 
-def _roles(func: tir.stmt.PrimFunc) -> dict[str, object]:  # type: ignore[name-defined]
+def _block(func: PrimFunc, name: str) -> Block:
+    from tessera.tir.primitives.common import find_block, realize_of
+
+    return realize_of(find_block(func, name)).block
+
+
+def _roles(func: PrimFunc) -> dict[str, object]:
     from tessera.tir.primitives.common import block_paths, realize_of
 
     out: dict[str, object] = {}
@@ -458,3 +482,45 @@ def test_dense_layer_prologue_and_epilogue_read_by_iteration_variable() -> None:
     res = np.zeros(out.shape, np.float32)
     tir.interpret(s.func, [*(values[v.name] for v in group.inputs), res], check_bounds=True)
     np.testing.assert_allclose(res, values[out.name], rtol=1e-4, atol=1e-4)
+
+
+def test_padded_conv_staged_through_shared_memory() -> None:
+    """The GPU pattern: the pad block computed per tile of output rows, copied into
+    threadgroup memory cooperatively, read by threads that each own an output."""
+    from tessera import passes
+
+    g = Graph("conv")
+    rng = np.random.default_rng(14)
+    x = g.add_input("x", TensorType((1, 8, 7, 4), F32))
+    w = g.add_constant(rng.standard_normal((3, 3, 4, 8)).astype(np.float32), "w")
+    conv = g.op("Conv2d", x, w, pads=(1, 1, 1, 0), layout="NHWC")
+    g.set_outputs([g.op("Relu", conv)])
+    values = values_of(g, ir.random_inputs(g, seed=15))
+    (group,) = passes.fuse(g)
+    lowered = lower_group(group, pad_block=True)
+    assert lowered.dims["PAD_BLOCK"] == 1
+    main = lowered.main_block
+    assert main is not None
+    pad = next(name for name, role in _roles(lowered.func).items() if role == "pad")
+    s = Schedule(lowered.func)
+    _, oh, ow, _, _, _, _ = s.get_loops(main)
+    oh_tile, oh_in = s.split(oh, [None, 3])  # 8 rows in tiles of 3: the last is partial
+    reads = [r.buffer.name for r in _block(s.func, main).reads]
+    shared = s.cache_read(main, reads.index(pad), "shared")
+    s.compute_at(shared, oh_tile)
+    s.compute_at(pad, oh_tile)
+    s.bind(oh_tile, "threadgroup.x")
+    s.bind(oh_in, "thread.y")
+    s.bind(ow, "thread.x")
+    copy_loops = s.get_loops(shared)
+    s.bind(s.fuse(*copy_loops[copy_loops.index(oh_tile) + 1 :]), "thread.x")
+    tir.verify(s.func)
+    expected = values[group.output.name]
+    for func in (s.func, tir.compact_buffers(s.func)):
+        out = np.full(group.output.shape, np.nan, np.float32)
+        args = [np.array(values[v.name], order="C") for v in group.inputs]
+        tir.interpret(func, [*args, out], check_bounds=True)
+        np.testing.assert_allclose(out, expected, rtol=1e-4, atol=1e-4)
+    compact = tir.compact_buffers(s.func)
+    text = tir.script(compact)
+    assert "alloc_buffer(float32[1, 5, 8, 4], 'shared')" in text

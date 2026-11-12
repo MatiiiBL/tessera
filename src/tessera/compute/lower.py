@@ -5,7 +5,7 @@ from __future__ import annotations
 from math import prod
 
 from tessera import te
-from tessera.compute.anchor import ANCHORS, ROLE, AnchorResult
+from tessera.compute.anchor import ANCHORS, ROLE, AnchorResult, LoweringChoices
 from tessera.compute.elementwise import DEFINITIONS
 from tessera.compute.tensor import TensorLike
 from tessera.plan import FusedGroup, LoweredGroup
@@ -15,14 +15,21 @@ from tessera.tir.primitives.common import iter_paths, simplify_stmt, with_body
 from tessera.tir.stmt import Block, Buffer, PrimFunc
 
 
-def lower_group(group: FusedGroup) -> LoweredGroup:
+def lower_group(group: FusedGroup, *, pad_block: bool = False) -> LoweredGroup:
     """The group as a PrimFunc: one parameter per group input (in order), then the
     output. Prologue operators are inlined into the loads of the main block (the
     anchor's), the epilogue operators form one block that reads the main block's
     result, and a group with no anchor is one block. Softmax and LayerNorm add
     their statistics blocks before the main block. Every block carries a
     ``role`` annotation: ``main``, ``epilogue``, ``injective`` or a statistic
-    (``max``, ``sum``, ``mean``, ``var``)."""
+    (``max``, ``sum``, ``mean``, ``var``).
+
+    With ``pad_block``, a convolution whose windows reach past its input reads
+    it through a block of its own (role ``pad``, ``dims["PAD_BLOCK"] == 1``)
+    covering the rows and columns the windows read, and the main block's
+    update is a plain multiply-accumulate. Inlining that block
+    (``Schedule.compute_inline``) gives the default form back."""
+    choices = LoweringChoices(pad_block=pad_block)
     env: dict[int, TensorLike] = {}
     params: list[te.Tensor] = []
     for v in group.inputs:
@@ -40,7 +47,7 @@ def lower_group(group: FusedGroup) -> LoweredGroup:
         if node is group.anchor:
             if node.op not in ANCHORS:
                 raise ValueError(f"group {group.name}: {node.op} cannot anchor a kernel")
-            anchor = ANCHORS[node.op](node, ins)
+            anchor = ANCHORS[node.op](node, ins, choices)
             env[id(node.output)] = anchor.value
         else:
             if node.op not in DEFINITIONS:

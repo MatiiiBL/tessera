@@ -38,8 +38,10 @@ def values_of(graph: Graph, inputs: dict[str, NDArray]) -> dict[str, NDArray]:
     return values
 
 
-def check_group(group: FusedGroup, values: dict[str, NDArray], rtol: float = 2e-4) -> LoweredGroup:
-    lowered = lower_group(group)
+def check_group(
+    group: FusedGroup, values: dict[str, NDArray], rtol: float = 2e-4, *, pad_block: bool = False
+) -> LoweredGroup:
+    lowered = lower_group(group, pad_block=pad_block)
     tir.verify(lowered.func)
     args = [np.array(values[v.name], order="C") for v in group.inputs]
     dtype = group.output.dtype.numpy
@@ -60,6 +62,7 @@ def check_graph(
     *,
     fuse: bool = True,
     rtol: float = 2e-4,
+    pad_block: bool = False,
 ) -> list[LoweredGroup]:
     """Fuse ``graph``, lower every group that is not a view and compare each one."""
     graph.verify()
@@ -67,7 +70,7 @@ def check_graph(
     values = values_of(graph, inputs)
     groups = passes.fuse(graph, enabled=fuse)
     passes.verify_groups(graph, groups)
-    return [check_group(g, values, rtol) for g in groups if not g.is_view]
+    return [check_group(g, values, rtol, pad_block=pad_block) for g in groups if not g.is_view]
 
 
 def single_group(node: Node) -> FusedGroup:

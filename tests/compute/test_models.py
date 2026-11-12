@@ -79,8 +79,11 @@ def test_every_group_lowers_and_schedules(name: str) -> None:
             lowered = lower_group(group)
             tir.verify(lowered.func)
             funcs = []
-            for make in (schedules.cpu, schedules.gpu):
-                s = make(lowered)
+            # As the backends lower: the GPU templates ask for a separate pad block.
+            for make, pad_block in ((schedules.cpu, False), (schedules.gpu, True)):
+                target_lowered = lower_group(group, pad_block=True) if pad_block else lowered
+                tir.verify(target_lowered.func)
+                s = make(target_lowered)
                 tir.verify(s.func)
                 funcs.append(s.func)
         except Exception as e:  # collect every failing group, then report them together
