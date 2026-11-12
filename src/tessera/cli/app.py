@@ -374,6 +374,13 @@ def bench_command(
     ] = None,
     trials: Annotated[int, typer.Option(help="Trials per search (tuning suite).")] = 256,
     seeds: Annotated[int, typer.Option(help="Seeds per strategy (tuning suite).")] = 5,
+    real_tasks: Annotated[
+        int,
+        typer.Option(
+            help="Tuning suite: also compare on this many of the heaviest tasks of ResNet-50 "
+            "and BERT, measured on the first target (0: synthetic tasks only)."
+        ),
+    ] = 0,
     provisional: Annotated[
         bool | None,
         typer.Option(
@@ -394,7 +401,29 @@ def bench_command(
     if suite in (Suite.ops, Suite.all):
         written.append(pages.ops_page(targets, provisional=provisional))
     if suite in (Suite.tuning, Suite.all):
-        written.append(pages.tuning_page(trials=trials, seeds=seeds, provisional=provisional))
+        real = []
+        command = f"tessera bench tuning --trials {trials} --seeds {seeds}"
+        if real_tasks:
+            from tessera.bench.tuning import compare_real
+            from tessera.bench.zoo import load_manifest
+            from tessera.driver import default_logs
+
+            specs = load_manifest()
+            real = compare_real(
+                [specs[name].onnx_path() for name in ("resnet50", "bert")],
+                target=targets[0],
+                tasks_per_model=real_tasks,
+                trials=trials,
+                seeds=range(seeds),
+                log_dir=default_logs() / "search",
+                on_run=lambda task, s, seed: console.print(f"{task}: {s}, seed {seed}"),
+            )
+            command += f" --real-tasks {real_tasks} --target {targets[0]}"
+        written.append(
+            pages.tuning_page(
+                real=real, trials=trials, seeds=seeds, provisional=provisional, command=command
+            )
+        )
     for path in written:
         console.print(f"wrote {path} and {path.with_suffix('.json')}")
 

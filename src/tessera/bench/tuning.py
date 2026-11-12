@@ -22,7 +22,7 @@ from tessera.tune.log import TuningLog
 from tessera.tune.measure import InlineRunner, Runner
 from tessera.tune.search import EvolutionarySearch, RandomSearch, SearchStrategy, TaskState
 from tessera.tune.synthetic import SyntheticMatmul
-from tessera.tune.task import TuningTask
+from tessera.tune.task import Task, TuningTask
 from tessera.tune.tuner import tune
 
 STRATEGIES: dict[str, Callable[[], SearchStrategy]] = {
@@ -154,3 +154,41 @@ def trials_to_reach(c: Comparison, strategy: str, fraction: float) -> float | No
 def _log_path(directory: Path, task: TuningTask, strategy: str, seed: int) -> Path:
     safe = task.key.replace(":", "-")
     return directory / f"{safe}-{strategy}-seed{seed}.jsonl"
+
+
+def heaviest_tasks(model: Path, target: str, count: int, *, repeat: int = 5) -> list[Task]:
+    """The ``count`` tasks of ``model`` that take the most time untuned (summed over
+    the groups that share each task), from a profile of the whole model."""
+    from tessera.driver import lower
+    from tessera.ir import random_inputs
+
+    comp = lower(model, target=target, tuned=False)
+    times = comp.build().profile(random_inputs(comp.graph), repeat=repeat)
+    per_task: dict[str, float] = {}
+    by_kernel = {k.name: k.task_key for k in comp.kernels}
+    for t in times:
+        key = by_kernel.get(t.kernel)
+        if key is not None:
+            per_task[key] = per_task.get(key, 0.0) + t.seconds
+    ranked = sorted(per_task, key=lambda key: -per_task[key])
+    return [comp.tasks[key] for key in ranked[:count]]
+
+
+def compare_real(
+    models: Sequence[Path],
+    *,
+    target: str,
+    tasks_per_model: int,
+    trials: int,
+    seeds: Sequence[int],
+    log_dir: Path | None = None,
+    on_run: Callable[[str, str, int], None] | None = None,
+) -> list[Comparison]:
+    """The comparison on the heaviest tasks of real models, measured on ``target``."""
+    from tessera.tune.measure import LocalRunner
+
+    tasks = [t for m in models for t in heaviest_tasks(m, target, tasks_per_model)]
+    with LocalRunner() as runner:
+        return compare(
+            tasks, trials=trials, seeds=seeds, runner=runner, log_dir=log_dir, on_run=on_run
+        )

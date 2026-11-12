@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import pytest
 
 from tessera.bench.tuning import (
     Comparison,
@@ -64,3 +66,27 @@ def test_checkpoints_and_trials_to_reach() -> None:
     assert trials_to_reach(c, "a", 0.9) == 2.5
     assert trials_to_reach(Comparison("t", 1.0, "optimum", {"a": [[2.0]]}), "a", 0.9) is None
     assert RandomSearch().name == "random"
+
+
+def test_heaviest_tasks_rank_by_profiled_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import onnx
+
+    from e2e.onnx_models import mlp
+    from tessera.backend.c import CBackend
+    from tessera.bench.tuning import heaviest_tasks
+    from tessera.tune.space import Config
+
+    def template(sch: Any, lowered: Any, cfg: Config) -> None:
+        loop = sch.get_loops(lowered.main_block)[0]
+        sch.split(loop, list(cfg.split("tile", sch.extent(loop), parts=2)))
+
+    monkeypatch.setattr(CBackend, "templates", lambda self, target=None: {"matmul": template})
+    path = tmp_path / "mlp.onnx"
+    onnx.save(mlp(sizes=(64, 512, 64, 10)), path)
+    tasks = heaviest_tasks(path, "c:generic", 2)
+    assert len(tasks) == 2
+    assert all(t.key.startswith("matmul:") for t in tasks)
+    dims = [t.lowered.dims["N"] * t.lowered.dims["K"] for t in tasks]
+    assert dims == sorted(dims, reverse=True)  # the 64x512 layers outweigh 64x10
