@@ -10,6 +10,7 @@ of each sweep the graph is re-sorted and dead nodes are removed.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -70,17 +71,27 @@ class Rewriter:
             self.uses = self.graph.use_map()
             for node in list(self.graph.nodes):
                 node.inputs = [self.resolve(v) for v in node.inputs]
+                # A replacement may take the node's exact name (the node dies with the sweep).
+                names = {node.name, *(v.name for v in node.outputs)}
+                for name in names:
+                    self.graph.release_name(name)
                 for rule in rules:
                     new = rule(self, node)
                     if new is not None:
                         self.replace(node.output, new)
                         fired = True
                         break
+                for name in names:
+                    self._reclaim(name)
             self.finish_sweep()
             changed |= fired
             if not fired:
                 return changed
         raise RuntimeError(f"rewriting did not converge after {max_sweeps} sweeps")
+
+    def _reclaim(self, name: str) -> None:
+        with contextlib.suppress(ValueError):  # a replacement took the name
+            self.graph.claim_name(name)
 
     def finish_sweep(self) -> None:
         g = self.graph

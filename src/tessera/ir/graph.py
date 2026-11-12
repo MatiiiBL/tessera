@@ -281,6 +281,10 @@ class Graph:
             outputs.append(value)
         self.outputs = outputs
 
+    def release_name(self, name: str) -> None:
+        """Make ``name`` available again, for a value that is about to be replaced."""
+        self._names.discard(name)
+
     def claim_name(self, name: str) -> None:
         """Reserve a name created elsewhere (frontends that build Values directly)."""
         if name in self._names:
