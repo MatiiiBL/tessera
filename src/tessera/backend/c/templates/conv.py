@@ -6,6 +6,7 @@ from __future__ import annotations
 from math import prod
 
 from tessera.backend.c.templates.common import (
+    PACK_LIMIT,
     VECTOR_SIZES,
     CpuTarget,
     choose,
@@ -31,8 +32,8 @@ def schedule_conv2d(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: 
     channels, then the epilogue runs on the tile. With ``order`` "co" the
     loop over channel strips is outermost and each strip's weights
     (KH x KW x C x ``tile_c``) are copied into a contiguous local buffer
-    (``pack_w``) that every pixel tile reuses; "pixels" puts the pixel
-    tiles outside."""
+    (``pack_w``, when the strip fits the stack) that every pixel tile
+    reuses; "pixels" puts the pixel tiles outside."""
     _schedule_windowed(sch, group, cfg, target, rows_default=4, lanes_default=16, weights=True)
 
 
@@ -95,6 +96,7 @@ def _schedule_windowed(
     # and each row packs the weights it uses.
     strips_only = channels // tile_c >= 2 * target.threads
     w_index = read_index(sch, main, uses=[co, *reduce], avoids=owo)
-    if pack_w and w_index is not None:
+    strip = prod(sch.extent(v) for v in reduce) * tile_c * 4
+    if pack_w and w_index is not None and strip <= PACK_LIMIT:
         sch.compute_at(sch.cache_read(main, w_index, "local"), co if strips_only else oh)
     parallelize(sch, [co] if strips_only else [co, n, oh], enabled)

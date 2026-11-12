@@ -6,9 +6,9 @@ pointer per parameter. The loop nest is printed as it is scheduled:
 - a block opens a scope that binds its iteration variables to their values,
   tests its predicate and runs its reduction ``init`` when every reduce
   variable is at its first value;
-- ``local`` buffers become stack arrays (heap blocks above ``STACK_LIMIT``)
-  placed and sized by ``alloc.plan_allocations``; ``global`` intermediates
-  live in storage that each calling thread allocates once and keeps;
+- ``local`` buffers become stack arrays placed and sized by
+  ``alloc.plan_allocations``; above ``STACK_LIMIT``, and for ``global``
+  intermediates, storage that each running thread allocates once and keeps;
 - a ``PARALLEL`` loop is outlined into a function that runs a contiguous range
   of iterations, and the kernel hands it to the thread pool with the values
   it captures; a parallel loop inside another runs serially;
@@ -346,15 +346,7 @@ class _Emitter:
     def run(self) -> KernelCode:
         params = [f"{c_type(b.dtype)}* restrict {self.names(b)}" for b in self.func.params]
         for buf in self.plan.hoisted:
-            # Intermediate tensors live in storage each calling thread keeps
-            # across calls: allocating megabytes per call costs page faults.
-            name = self.names(buf)
-            storage = self.names.fresh(f"{name}_storage")
-            ctype = c_type(buf.dtype)
-            nbytes = buf.numel * buf.dtype.itemsize
-            self.line(f"static _Thread_local {ctype}* {storage};")
-            self.line(f"if (!{storage}) {storage} = ({ctype}*)tsr_alloc({nbytes});")
-            self.line(f"{ctype}* restrict {name} = {storage};")
+            self.persistent(self.names(buf), c_type(buf.dtype), buf.numel * buf.dtype.itemsize)
         self.stmt(self.func.body, ())
         signature = f"static void {self.kernel}({', '.join(params) or 'void'})"
         kernel = "\n".join([signature + " {", *self.lines, "}"])
@@ -362,6 +354,15 @@ class _Emitter:
         return KernelCode(
             self.kernel, self.func.params, text, tuple(self.headers), self.n_parallel > 0
         )
+
+    def persistent(self, name: str, ctype: str, nbytes: int) -> None:
+        """Declare ``name`` as storage the running thread allocates once and keeps
+        across iterations and calls: allocating megabytes each time costs page
+        faults, and freeing them, unmapping."""
+        storage = self.names.fresh(f"{name}_storage")
+        self.line(f"static _Thread_local {ctype}* {storage};")
+        self.line(f"if (!{storage}) {storage} = ({ctype}*)tsr_alloc({nbytes});")
+        self.line(f"{ctype}* restrict {name} = {storage};")
 
     def line(self, text: str) -> None:
         self.lines.append("  " * self.depth + text)
@@ -392,7 +393,6 @@ class _Emitter:
             return
         self.line("{")
         self.depth += 1
-        heap = []
         for c in allocs:
             name = self.define(c.buffer)
             ctype = c_type(c.buffer.dtype)
@@ -400,11 +400,10 @@ class _Emitter:
             if nbytes <= STACK_LIMIT:
                 self.line(f"{ctype} {name}[{c.numel}] __attribute__((aligned(64)));")
             else:
-                self.line(f"{ctype}* restrict {name} = ({ctype}*)tsr_alloc({nbytes});")
-                heap.append(name)
+                # Too big for the stack: storage the thread keeps and reuses at
+                # every iteration (a thread runs its iterations one at a time).
+                self.persistent(name, ctype, nbytes)
         self.node(s, path)
-        for name in reversed(heap):
-            self.line(f"tsr_free({name});")
         self.depth -= 1
         self.line("}")
 

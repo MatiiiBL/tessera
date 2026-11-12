@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from math import prod
 
 from tessera.backend.c.alloc import children, sub_exprs
+from tessera.backend.c.codegen import STACK_LIMIT
 from tessera.target import Target
 from tessera.tir.expr import Var
 from tessera.tir.schedule import Schedule, ScheduleError
@@ -22,6 +23,12 @@ from tessera.tune.space import Config, KnobValue
 # Parallel loops below this much work (multiply-adds or elements touched) run
 # serially by default: starting the pool costs a few microseconds.
 PARALLEL_WORK = 1 << 15
+
+# Local copies (packed strips) are only made when they fit the stack: above
+# STACK_LIMIT the generated code reaches them through a pointer, and clang
+# then cannot prove they do not alias the accumulator, so it stops
+# vectorizing the loops that use them.
+PACK_LIMIT = STACK_LIMIT
 
 # Innermost vector loops: clang turns 4-float NEON operations into longer runs
 # by interleaving, so extents up to 64 are useful.

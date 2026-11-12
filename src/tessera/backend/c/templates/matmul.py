@@ -5,6 +5,7 @@ from __future__ import annotations
 from math import prod
 
 from tessera.backend.c.templates.common import (
+    PACK_LIMIT,
     CpuTarget,
     choose,
     choose_bool,
@@ -34,8 +35,9 @@ def schedule_matmul(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: 
     (K x ``tile_n``) is then read once per strip and, with ``pack_b``, copied
     into a contiguous local buffer that stays in L1 while every row tile
     uses it; batches and column strips run in parallel. This is what weight
-    matrices larger than the caches need. "mn" walks row tiles outside and
-    runs every tile in parallel."""
+    matrices larger than the caches need (a strip is packed only if it fits
+    the stack, see ``PACK_LIMIT``). "mn" walks row tiles outside and runs
+    every tile in parallel."""
     main = group.main_block
     assert main is not None
     loops = sch.get_loops(main)
@@ -63,7 +65,8 @@ def schedule_matmul(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: 
         sch.reorder(jo, io, *reduce, ii, ji)
         tile_loops(sch, main, group.epilogue_block, io, reduce[0], ii, ji)
         b_index = read_index(sch, main, uses=[jo, *reduce], avoids=io)
-        if pack_b and b_index is not None:
+        strip = prod(sch.extent(v) for v in reduce) * tile_n * 4
+        if pack_b and b_index is not None and strip <= PACK_LIMIT:
             sch.compute_at(sch.cache_read(main, b_index, "local"), jo)
         parallelize(sch, [*batch, jo], enabled)
     else:
