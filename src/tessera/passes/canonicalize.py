@@ -128,19 +128,24 @@ def _reshape_chain(rw: Rewriter, node: Node) -> Value | None:
     return rw.op("Reshape", src.inputs[0], name=node.name, shape=node.ints_attr("shape"))
 
 
-def _transpose_chain(rw: Rewriter, node: Node) -> Value | None:
-    """Transpose(Transpose(x)) is one Transpose of x."""
+def compose_transposes(rw: Rewriter, node: Node) -> Value | None:
+    """Transpose(Transpose(x)) is one Transpose; the identity permutation vanishes."""
     if node.op != "Transpose":
         return None
+    perm = node.ints_attr("perm")
     src = node.inputs[0].producer
-    if src is None or src.op != "Transpose":
-        return None
-    inner, outer = src.ints_attr("perm"), node.ints_attr("perm")
-    perm = tuple(inner[p] for p in outer)
-    return rw.op("Transpose", src.inputs[0], name=node.name, perm=perm)
+    if src is not None and src.op == "Transpose":
+        inner = src.ints_attr("perm")
+        perm = tuple(inner[p] for p in perm)
+        if perm == tuple(range(len(perm))):
+            return src.inputs[0]
+        return rw.op("Transpose", src.inputs[0], name=node.name, perm=perm)
+    if perm == tuple(range(len(perm))):
+        return node.inputs[0]
+    return None
 
 
-def _transpose_as_reshape(rw: Rewriter, node: Node) -> Value | None:
+def transpose_as_reshape(rw: Rewriter, node: Node) -> Value | None:
     """A Transpose that only moves size-1 axes keeps the element order: it is a Reshape."""
     if node.op != "Transpose":
         return None
@@ -151,5 +156,5 @@ def _transpose_as_reshape(rw: Rewriter, node: Node) -> Value | None:
     return rw.op("Reshape", node.inputs[0], name=node.name, shape=node.output.shape)
 
 
-SIMPLIFY: list[Rule] = [_noop, _neutral_operand, _reshape_chain, _transpose_chain]
-TRANSPOSE_AS_RESHAPE: list[Rule] = [_transpose_as_reshape]
+SIMPLIFY: list[Rule] = [_noop, _neutral_operand, _reshape_chain, compose_transposes]
+TRANSPOSE_AS_RESHAPE: list[Rule] = [transpose_as_reshape]

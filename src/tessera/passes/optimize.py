@@ -5,8 +5,11 @@ from __future__ import annotations
 from tessera.ir.graph import Graph, Value
 from tessera.ir.opdefs import IMPORT_OPS
 from tessera.passes.canonicalize import CANONICALIZE, SIMPLIFY, TRANSPOSE_AS_RESHAPE
+from tessera.passes.conv import FOLD_BATCHNORM, SPLIT_GROUPS
 from tessera.passes.fold import FOLD, eliminate_common_subexpressions
-from tessera.passes.rewrite import Rewriter, eliminate_dead_code
+from tessera.passes.layout import LAYOUT
+from tessera.passes.patterns import PATTERNS
+from tessera.passes.rewrite import Rewriter, Rule, eliminate_dead_code
 
 LAYOUTS = ("NHWC", "NCHW")
 
@@ -14,11 +17,14 @@ LAYOUTS = ("NHWC", "NCHW")
 def optimize(graph: Graph, *, layout: str = "NHWC", fold: bool = True) -> Graph:
     """A new graph computing the same outputs with canonical operators only.
 
-    ONNX-only operators are rewritten and dead nodes removed. With ``fold``
-    (the default), no-op nodes are also removed, nodes on constants are
-    evaluated at compile time and equal subexpressions merged. ``fold=False``
-    is the minimal legal pipeline used for ablations: only the rewrites that
-    canonical form requires, with constant weights relaid out at compile time.
+    Always: ONNX-only operators are rewritten, grouped convolutions split,
+    BatchNorm decomposed, dead nodes removed and, for ``layout="NHWC"``,
+    convolutions and pooling switched to NHWC with their weights relaid out
+    at compile time and the inverse transposes cancelled. With ``fold`` (the
+    default), also: BatchNorm folded into the preceding convolution,
+    decomposed LayerNorm, GELU and SiLU recognized, no-op nodes removed,
+    nodes on constants evaluated at compile time and equal subexpressions
+    merged. ``fold=False`` is the minimal legal pipeline used for ablations.
     Input and output names are kept.
     """
     if layout not in LAYOUTS:
@@ -28,7 +34,12 @@ def optimize(graph: Graph, *, layout: str = "NHWC", fold: bool = True) -> Graph:
     eliminate_dead_code(g)
 
     rw = Rewriter(g, fold=fold)
-    rw.run(CANONICALIZE + (SIMPLIFY + TRANSPOSE_AS_RESHAPE if fold else []))
+    # BatchNorm folding comes first so that it sees the BatchNorm before it is decomposed.
+    rw.run(FOLD_BATCHNORM + CANONICALIZE + SPLIT_GROUPS)
+    if fold:
+        _cleanup(rw, PATTERNS)
+    if layout == "NHWC":
+        rw.run(LAYOUT)
     if fold:
         _cleanup(rw)
 
@@ -40,9 +51,9 @@ def optimize(graph: Graph, *, layout: str = "NHWC", fold: bool = True) -> Graph:
     return g
 
 
-def _cleanup(rw: Rewriter) -> None:
-    """Simplify, fold and merge until nothing changes."""
-    rules = SIMPLIFY + TRANSPOSE_AS_RESHAPE + FOLD
+def _cleanup(rw: Rewriter, extra: list[Rule] | None = None) -> None:
+    """Simplify, fold and merge (and apply ``extra`` rules) until nothing changes."""
+    rules = (extra or []) + SIMPLIFY + TRANSPOSE_AS_RESHAPE + FOLD
     while True:
         changed = rw.run(rules)
         changed |= eliminate_common_subexpressions(rw.graph)

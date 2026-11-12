@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
@@ -85,3 +86,21 @@ def test_optimize_removes_import_operators() -> None:
         "Softmax",
     ]
     assert imported.nodes[0].op == "Flatten", "optimize must not modify its argument"
+
+
+def test_transformer_block_is_recognized() -> None:
+    model, _ = transformer_block()
+    ops = Counter(n.op for n in optimize(onnx_frontend.load(model)).nodes)
+    assert ops["LayerNorm"] == 2
+    assert ops["Gelu"] == 1
+    assert ops["Erf"] == ops["Pow"] == ops["ReduceMean"] == ops["Sqrt"] == 0
+
+
+def test_cnn_runs_in_nhwc() -> None:
+    model, _ = cnn()
+    graph = optimize(onnx_frontend.load(model))
+    ops = Counter(n.op for n in graph.nodes)
+    assert ops["BatchNorm"] == 0
+    assert ops["Transpose"] == 1
+    assert graph.nodes[0].op == "Transpose"
+    assert all(n.attrs["layout"] == "NHWC" for n in graph.nodes if "layout" in n.attrs)
