@@ -283,8 +283,8 @@ class _Verifier:
             self.expr(r.min, visible, buffers, an)
             self.expr(r.extent, visible, buffers, an)
             lo = an.bound(r.min)
-            hi = an.bound(r.min + r.extent - 1)
-            if lo.lo is None or hi.hi is None or lo.lo < 0 or hi.hi >= buf.shape[d]:
+            hi = _last(an, r.min, an.simplify(r.extent))
+            if lo.lo is None or hi is None or lo.lo < 0 or hi >= buf.shape[d]:
                 self.fail(
                     f"block {block.name}: region {script(r.min)}+{script(r.extent)} "
                     f"of {buf.name} dimension {d} can leave [0, {buf.shape[d]})"
@@ -380,6 +380,16 @@ class _ExprChecker(ExprVisitor):
 
     def visit_address_of(self, e: AddressOf) -> None:
         self.v.access(e.buffer, e.indices, self.visible, self.buffers, self.an, "address of")
+
+
+def _last(an: Analyzer, lo: Expr, extent: Expr) -> int | None:
+    """An upper bound of ``lo + extent - 1``. An extent ``min(a, b)`` (an edge tile,
+    ``min(64, 50257 - n_0 * 64)``) is bounded through each side, which keeps the
+    correlation between the tile's start and its length."""
+    if isinstance(extent, Binary) and extent.op == "min":
+        bounds = [b for b in (_last(an, lo, extent.a), _last(an, lo, extent.b)) if b is not None]
+        return min(bounds) if bounds else None
+    return an.bound(lo + extent - 1).hi
 
 
 def _assume(an: Analyzer, cond: Expr) -> Analyzer:

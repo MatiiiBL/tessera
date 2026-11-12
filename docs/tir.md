@@ -424,6 +424,29 @@ The description must match literally: `A[i, k] * B[k, j]` does not match
 `B[k, j] * A[i, k]`, and a block with an init matches only a description
 with one (decompose the reduction first).
 
+**Edge tiles.** When a spatial loop's extent is not a multiple of the tile,
+the last tile carries the split's predicate, for example
+`where(j_0 * 64 + j_1 < 50257)` for GPT-2's output projection tiled by 64.
+Tensorize accepts a predicate whose conjuncts each bound one matched spatial
+loop from above (`A + k * x < c` with `A` free of the matched loops) and
+passes `IntrinMatch.valid`: the number of valid iterations of each matched
+loop, an expression of the outer loops (`min(50257 - j_0 * 64, 64)`, or the
+extent itself where nothing is cut). Conjuncts over the outer loops alone
+stay on the tensorized block. A predicate that limits a reduction loop,
+bounds a loop from below, relates two matched loops or bounds a loop that
+indexes a buffer other than directly is refused. On an edge tile the block's
+regions, and `IntrinMatch.regions`, are cut to the valid part (the pointers
+still address the tile's first element), and the interpreter applies the
+reference to views of that shape; `extents` stays the full tile.
+
+An implementation is expected to compute the whole tile and store only the
+valid part. Tensorize leaves the reads to it: a full-tile kernel may read up
+to one tile past the end of an input, and keeping those reads inside
+allocated memory (the executors pad their allocations) is the backend's
+concern, not the IR's (`test_tensorize_edge_tiles_of_imperfect_splits`,
+`test_tensorize_the_edge_of_a_wide_output`,
+`test_tensorize_refuses_other_predicates`).
+
 ## 8. Lowering passes
 
 `tir.lower_blocks(func)` makes every block opaque: bindings are substituted,
@@ -453,7 +476,7 @@ becomes a `float32[4, 4]` allocated under the tile loop
   fuse and imperfect splits over random shapes and factors.
 - The model sweep (section 5) schedules every group of the real models.
 
-The package has 182 tests (`uv run pytest tests/tir tests/te tests/compute`,
+The package has 187 tests (`uv run pytest tests/tir tests/te tests/compute`,
 a few seconds) plus the model sweep (`uv run pytest -m models tests/compute`).
 Floating-point results are compared with a tolerance relative to the largest
 magnitude, because reordered reductions round differently.
@@ -492,7 +515,8 @@ magnitude, because reordered reductions round differently.
   the moved buffer; `cache_read` refuses a buffer written inside the same
   loop nest as its reader.
 - Tensorize matches the description's expression literally (no
-  commutativity or reassociation).
+  commutativity or reassociation), and on edge tiles accepts only upper
+  bounds of matched spatial loops.
 - There is no `rfactor`; cross-thread reductions on Metal go through binding
   a reduction loop to a `thread.*` axis.
 - The interpreter's speed (section 2) limits interpreted tests to kernels of a

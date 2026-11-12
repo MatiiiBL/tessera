@@ -151,3 +151,82 @@ def test_matmul_desc_matches_a_lowered_matmul_group() -> None:
     out = np.zeros((8, 12), np.float32)
     tir.interpret(s.func, [a, b, out])
     np.testing.assert_allclose(out, a @ b, rtol=1e-5, atol=1e-5)
+
+
+# -- edge tiles of imperfect splits --------------------------------------------------------
+
+
+@pytest.mark.parametrize(("m", "n"), [(8, 10), (7, 10), (6, 37)])
+def test_tensorize_edge_tiles_of_imperfect_splits(m: int, n: int) -> None:
+    w = matmul_bias_relu(m, n, 5)
+    s, ii = tiled(m, n, 5)
+    MATCHES.clear()
+    s.tensorize(ii, "test.gemm_4x4")
+    tir.verify(s.func)
+    (match,) = MATCHES
+    assert match.extents == (4, 4, 5)
+    valid = [tir.script(v) for v in match.valid]
+    assert valid[0] == ("4" if m % 4 == 0 else f"min({m} - i_0 * 4, 4)")
+    assert valid[1] == f"min({n} - j_0 * 4, 4)"
+    assert valid[2] == "5"
+    # The regions are cut to the valid part; the pointers stay at the tile's start.
+    c_region = tir.script(match.regions[2].region[1].extent)
+    assert c_region == valid[1]
+    assert tir.script(match.pointers[2]) == "&matmul[i_0 * 4, j_0 * 4]"
+    np.testing.assert_allclose(run(s.func, w), w.expected(), rtol=1e-5, atol=1e-5)
+    lowered = tir.lower_blocks(s.func)
+    np.testing.assert_allclose(run(lowered, w), w.expected(), rtol=1e-5, atol=1e-5)
+
+
+def test_tensorize_the_edge_of_a_wide_output() -> None:
+    # The LM-head shape in small: N = 50257 split by 64 leaves an edge tile of 17.
+    a = te.placeholder((4, 3), DType.float32, "A")
+    b = te.placeholder((3, 50257), DType.float32, "B")
+    r = te.reduce_axis(3, "k")
+    c = te.compute((4, 50257), lambda i, j: te.sum(a[i, r] * b[r, j], axis=r), "C", ["i", "j"])
+    intrin.register("test.gemm_4x64", intrin.matmul_desc(4, 64), gemm_impl, gemm_reference,
+                    override=True)  # fmt: skip
+    s = Schedule(te.create_prim_func([a, b, c]))
+    i, j, k = s.get_loops("C")
+    jo, ji = s.split(j, [None, 64])
+    s.reorder(jo, i, ji, k)
+    s.decompose_reduction("C", i)
+    MATCHES.clear()
+    s.tensorize(i, "test.gemm_4x64")
+    tir.verify(s.func)
+    assert tir.script(MATCHES[0].valid[1]) == "min(50257 - j_0 * 64, 64)"
+    rng = np.random.default_rng(2)
+    x = rng.standard_normal((4, 3)).astype(np.float32)
+    y = rng.standard_normal((3, 50257)).astype(np.float32)
+    out = np.full((4, 50257), np.nan, np.float32)
+    tir.interpret(s.func, [x, y, out])
+    np.testing.assert_allclose(out, x @ y, rtol=1e-5, atol=1e-5)
+
+
+def test_tensorize_refuses_other_predicates() -> None:
+    # An imperfect split of the reduction loop cuts the nest along k.
+    w = matmul_bias_relu(8, 8, 6)
+    s = Schedule(w.func)
+    i, j, k = s.get_loops("matmul")
+    io, ii = s.split(i, [None, 4])
+    jo, ji = s.split(j, [None, 4])
+    ko, ki = s.split(k, [None, 4])
+    s.reorder(io, jo, ko, ii, ji, ki)
+    s.decompose_reduction("matmul", ko)
+    before = s.func
+    with pytest.raises(ScheduleError, match="reduction loop"):
+        s.tensorize(ii, "test.gemm_4x4")
+    assert s.func is before
+    # A condition relating two matched loops is not an edge-tile bound.
+    from tessera.tir.expr import lt
+    from tessera.tir.primitives.common import find_block, realize_of, rebuild, with_body
+    from tessera.tir.stmt import BlockRealize
+
+    s2, ii2 = tiled(8, 8, 6)
+    path = find_block(s2.func, "matmul")
+    r = realize_of(path)
+    loops = s2.get_loops("matmul")
+    triangle = BlockRealize(r.iter_values, lt(loops[3], loops[2] + 1), r.block)
+    s3 = Schedule(with_body(s2.func, rebuild(path, triangle)))
+    with pytest.raises(ScheduleError, match="not an edge-tile bound"):
+        s3.tensorize(ii2, "test.gemm_4x4")

@@ -24,11 +24,14 @@ from tessera.tir.functor import free_vars, substitute, substitute_stmt
 from tessera.tir.primitives.common import (
     ScheduleError,
     analyzer_for,
+    conjoin,
     find_loop,
     loop_of,
+    loop_roles,
     rebuild,
     with_body,
 )
+from tessera.tir.printer import script
 from tessera.tir.stmt import (
     TRUE,
     Block,
@@ -187,8 +190,7 @@ def tensorize(func: PrimFunc, loop: Var, name: str) -> PrimFunc:
         extents.append(n)
         an.bind(a.loop_var, Interval(0, n - 1))
     inner = {f.loop_var for f in loops}
-    if free_vars(realize.predicate) & inner:
-        raise ScheduleError("the block has a predicate inside the nest (an imperfect tile)")
+    valid, outer_predicate = _edge_bounds(an, realize, loops, extents)
     if drealize.predicate != TRUE:
         raise ScheduleError(f"the description of {name} has a predicate")
     block, dblock = realize.block, drealize.block
@@ -215,6 +217,10 @@ def tensorize(func: PrimFunc, loop: Var, name: str) -> PrimFunc:
         abuf = m.buffers[p]
         ranges: list[Range] = []
         for dim, off in enumerate(m.offsets[p]):
+            clipped = _clipped_extent(p, dim, m.accesses[p], loops, valid)
+            if clipped is not None:
+                ranges.append(Range(an.simplify(off), clipped))
+                continue
             los, his = [], []
             for idx in m.accesses[p]:
                 lo, hi = an.relax(idx[dim], relaxed)
@@ -230,6 +236,7 @@ def tensorize(func: PrimFunc, loop: Var, name: str) -> PrimFunc:
         strides=tuple(r.buffer.strides for r in regions),
         regions=tuple(regions),
         extents=tuple(extents),
+        valid=tuple(valid),
         sizes=sizes,
     )
     body = impl(match)
@@ -244,4 +251,91 @@ def tensorize(func: PrimFunc, loop: Var, name: str) -> PrimFunc:
         (),
         (*block.annotations, (TENSORIZE, name), (EXTENTS, ",".join(map(str, extents)))),
     )
-    return with_body(func, rebuild(lpath, BlockRealize((), realize.predicate, new_block)))
+    return with_body(func, rebuild(lpath, BlockRealize((), outer_predicate, new_block)))
+
+
+def _edge_bounds(
+    an: Analyzer, realize: BlockRealize, loops: list[For], extents: list[int]
+) -> tuple[list[Expr], Expr]:
+    """The number of valid iterations of each matched loop, and the part of the
+    block's predicate that does not involve them.
+
+    A conjunct of the predicate over the matched loops must bound one spatial
+    loop from above, ``A + k * x < c`` with ``A`` free of matched loops: the
+    edge tile of an imperfect split. Then ``x`` runs ``(c - A + k - 1) // k``
+    times, clipped to ``[0, extent]``. Any other condition (on a reduction loop,
+    a lower bound, a relation between matched loops) is refused.
+    """
+    inner = {f.loop_var for f in loops}
+    roles = dict(zip((f.loop_var for f in loops), loop_roles(realize, loops), strict=True))
+    bounds: dict[Var, Expr] = {}
+    outer: Expr = TRUE
+    stack = [realize.predicate]
+    while stack:
+        c = stack.pop()
+        if isinstance(c, Logical) and c.op == "and":
+            stack.extend((c.a, c.b))
+            continue
+        used = free_vars(c) & inner
+        if not used:
+            outer = conjoin(outer, c)
+            continue
+        c = an.simplify(c)
+        if c == TRUE:
+            continue
+        if any(roles[v] in ("R", "X") for v in used):
+            raise ScheduleError("the block's predicate limits a reduction loop of the nest")
+        if not (isinstance(c, Compare) and c.op == "lt" and isinstance(c.b, IntImm)):
+            raise ScheduleError(f"the block's predicate {script(c)} is not an edge-tile bound")
+        terms, const = an.linear(c.a)
+        loop_terms = [(t, k) for t, k in terms.items() if free_vars(t) & inner]
+        if len(loop_terms) != 1 or not isinstance(loop_terms[0][0], Var) or loop_terms[0][1] < 1:
+            raise ScheduleError(f"the block's predicate {script(c)} is not an edge-tile bound")
+        x, k = loop_terms[0]
+        assert isinstance(x, Var)
+        if roles[x] != "S":
+            raise ScheduleError(f"the block's predicate {script(c)} bounds a loop it does not use")
+        rest: Expr = IntImm(const)
+        for t, coef in terms.items():
+            if t is not x:
+                rest = rest + t * coef
+        count = an.simplify(Binary("floordiv", c.b - rest + (k - 1), IntImm(k)))
+        bounds[x] = count if x not in bounds else an.simplify(Binary("min", bounds[x], count))
+    valid: list[Expr] = []
+    for f, n in zip(loops, extents, strict=True):
+        if f.loop_var in bounds:
+            clipped = Binary("min", Binary("max", bounds[f.loop_var], IntImm(0)), IntImm(n))
+            valid.append(an.simplify(clipped))
+        else:
+            valid.append(IntImm(n))
+    return valid, an.simplify(outer)
+
+
+def _clipped_extent(
+    param: Buffer,
+    dim: int,
+    accesses: list[tuple[Expr, ...]],
+    loops: list[For],
+    valid: list[Expr],
+) -> Expr | None:
+    """The extent of an edge tile along ``dim`` of ``param``: the valid count of the
+    loop that indexes it, if that loop is cut by the predicate. A cut loop must
+    index the dimension by itself (``c[i, j]``), so that the valid elements are a
+    prefix of the tile."""
+    cut = {
+        f.loop_var: v
+        for f, v in zip(loops, valid, strict=True)
+        if not (isinstance(v, IntImm) and v == f.extent)
+    }
+    found: Expr | None = None
+    for idx in accesses:
+        e = idx[dim]
+        hit = free_vars(e) & set(cut)
+        if not hit:
+            continue
+        if not (isinstance(e, Var) and e in cut):
+            raise ScheduleError(
+                f"a loop cut by the predicate indexes {param.name} other than directly"
+            )
+        found = cut[e]
+    return found

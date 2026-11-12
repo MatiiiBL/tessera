@@ -14,10 +14,21 @@ buffer's strides, plus the matched loop extents. ``impl`` returns the
 statement that replaces the nest, normally ``Evaluate(Call("c.sgemm_8x8",
 ...))``.
 
-A tensorized block keeps the matched regions (``reads``: every desc
-parameter in order; ``writes``: the ones the desc stores to), and the
-interpreter runs it as ``reference(*views, *extents)`` with NumPy views of
-those regions (writes go to the views)::
+The nest may be the edge tile of an imperfect split: its block predicate may
+bound matched spatial loops from above (``n_0 * 64 + n_1 < 50257``).
+``IntrinMatch.valid`` then gives the number of valid iterations of each
+matched loop, as expressions of the outer loops; ``impl`` computes the whole
+tile and stores only the valid part. Tensorize does not make the tile's
+reads safe: a full-tile kernel may read past the end of an input, and
+keeping such reads in memory (by padding allocations) is up to the backend
+that emits the call. Predicates on reduction loops, lower bounds and other
+conditions are refused.
+
+A tensorized block keeps the matched regions, cut to the valid part on edge
+tiles (``reads``: every desc parameter in order; ``writes``: the ones the
+desc stores to), and the interpreter runs it as ``reference(*views,
+*extents)`` with NumPy views of those regions (writes go to the views; on an
+edge tile the views have the valid shape while ``extents`` stay the tile's)::
 
     def sgemm_ref(a, b, c, m, n, k):
         c += a @ b
@@ -37,7 +48,7 @@ import numpy as np
 import numpy.typing as npt
 
 from tessera.dtype import DType
-from tessera.tir.expr import AddressOf, IntImm, Var
+from tessera.tir.expr import AddressOf, Expr, IntImm, Var
 from tessera.tir.stmt import (
     TRUE,
     Block,
@@ -69,6 +80,10 @@ class IntrinMatch:
     strides: tuple[tuple[int, ...], ...]  # each matched buffer's strides, in elements
     regions: tuple[BufferRegion, ...]  # the matched region of each parameter
     extents: tuple[int, ...]  # the matched loops' trip counts, outermost first
+    # The iterations of each matched loop that are inside the iteration domain:
+    # ``extents`` for a full tile, ``min(64, 50257 - n_0 * 64)`` (an expression of
+    # the outer loops) on the edge tile of an imperfect split.
+    valid: tuple[Expr, ...]
     sizes: dict[str, int]  # the values of the desc's variable extents, by name
 
 

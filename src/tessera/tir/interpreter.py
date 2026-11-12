@@ -575,9 +575,10 @@ class _Gen:
         for region in b.reads:
             buf = region.buffer
             mins = tuple(r.min for r in region.region)
-            shape = tuple(_const(r.extent) for r in region.region)
+            # Edge tiles have extents that depend on the outer loops.
+            shape = "".join(f"{self.expr(r.extent)}, " for r in region.region)
             args.append(
-                f"_Ptr({self.view(buf)}, {self.flat(buf, mins)}).view({shape}, {buf.strides})"
+                f"_Ptr({self.view(buf)}, {self.flat(buf, mins)}).view(({shape}), {buf.strides})"
             )
         extents = str(dict(b.annotations).get(EXTENTS, ""))
         args += [e for e in extents.split(",") if e]
@@ -622,12 +623,6 @@ def _thread_extents(s: Stmt) -> dict[str, int]:
 
 def _narrower(dst: DType, src: DType) -> bool:
     return dst.itemsize < src.itemsize or (dst == DType.uint8 and src != DType.uint8)
-
-
-def _const(e: Expr) -> int:
-    if not isinstance(e, IntImm):
-        raise ValueError("a tensorized region has a non-constant extent")
-    return e.value
 
 
 class _Addressed(StmtVisitor):
