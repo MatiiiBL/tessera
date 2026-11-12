@@ -2,7 +2,7 @@
 
     uv run python -m tessera.backend.c.bench [--quick] [--out results/cpu]
 
-Three studies, each saved as Markdown and JSON:
+Four studies, each saved as Markdown and JSON:
 
 - ``gemm``: C = A B in fp32 for square sizes and the matrix products of a
   transformer layer, compiled through the matmul template for each ISA
@@ -10,6 +10,7 @@ Three studies, each saved as Markdown and JSON:
   against NumPy's matmul (Accelerate on macOS) with the same thread counts.
 - ``conv``: every distinct convolution of ResNet-50 at 224 x 224, batch 1,
   NHWC, with its bias and ReLU, through the conv2d template.
+- ``schedules``: the generated-loop matmul's loop order and packing choices.
 - ``sme_threads``: the SME microkernel driven from 1 to 4 threads, and one
   SME thread working beside NEON threads, to show how the performance cores
   share one SME unit.
@@ -36,7 +37,7 @@ import numpy as np
 
 from tessera import compute, passes
 from tessera.backend.c import build as cbuild
-from tessera.backend.c.measure import measure
+from tessera.backend.c.measure import build_harness, measure, run_harness
 from tessera.backend.c.microkernels import header_files, host_supports
 from tessera.backend.c.templates import make_templates
 from tessera.dtype import DType
@@ -45,7 +46,7 @@ from tessera.ir.graph import Value
 from tessera.target import CpuIsa, Target, _cpu_name, performance_cores
 from tessera.tir.schedule import Schedule
 from tessera.tir.stmt import PrimFunc
-from tessera.tune.space import ApplyConfig, DefineConfig
+from tessera.tune.space import ApplyConfig, DefineConfig, KnobValue
 
 SQUARE = (256, 512, 1024, 2048, 4096)
 TRANSFORMER = ((128, 768, 768), (128, 768, 3072), (128, 3072, 768))
@@ -99,16 +100,7 @@ def isas() -> list[CpuIsa]:
 
 def scheduled(build: Callable[[Graph], Value], target: Target) -> PrimFunc:
     """The single kernel of a graph, scheduled by its template's defaults."""
-    g = Graph("bench")
-    g.set_outputs([build(g)])
-    (group,) = [grp for grp in passes.fuse(g) if not grp.is_view]
-    lowered = compute.lower_group(group)
-    template = make_templates(target)[group.pattern]
-    cfg = DefineConfig()
-    template(Schedule(lowered.func), lowered, cfg)
-    sch = Schedule(lowered.func)
-    template(sch, lowered, ApplyConfig(cfg.defaults))
-    return sch.func
+    return configured(build, target, {})
 
 
 def gemm_graph(m: int, n: int, k: int) -> Callable[[Graph], Value]:
@@ -143,6 +135,57 @@ def conv_flops(size: int, c: int, o: int, k: int, stride: int) -> float:
 
 def _time(func: PrimFunc, target: Target, min_seconds: float) -> float:
     return measure(func, target, repeat=5, min_seconds=min_seconds, timeout=600)
+
+
+def interleaved(funcs: Sequence[PrimFunc], target: Target, rounds: int) -> list[float]:
+    """The fastest time of each function over ``rounds`` rounds that run every
+    function in turn (ABAB..., not AAA then BBB), so that interference from
+    other work on the machine hits every candidate alike."""
+    paths = [build_harness(f, target) for f in funcs]
+    best = [float("inf")] * len(paths)
+    for _ in range(rounds):
+        for i, path in enumerate(paths):
+            best[i] = min(best[i], min(run_harness(path, repeat=3, min_seconds=0.02)))
+    return best
+
+
+def configured(
+    build: Callable[[Graph], Value], target: Target, override: dict[str, KnobValue]
+) -> PrimFunc:
+    """The single kernel of a graph, scheduled by its template with the
+    defaults except for the knobs in ``override``."""
+    g = Graph("bench")
+    g.set_outputs([build(g)])
+    (group,) = [grp for grp in passes.fuse(g) if not grp.is_view]
+    lowered = compute.lower_group(group)
+    template = make_templates(target)[group.pattern]
+    cfg = DefineConfig()
+    template(Schedule(lowered.func), lowered, cfg)
+    sch = Schedule(lowered.func)
+    template(sch, lowered, ApplyConfig({**cfg.defaults, **override}))
+    return sch.func
+
+
+SCHEDULE_VARIANTS: dict[str, dict[str, KnobValue]] = {
+    "column strips outside, B packed": {"order": "nm", "pack_b": True},
+    "column strips outside": {"order": "nm", "pack_b": False},
+    "row tiles outside": {"order": "mn", "pack_b": False},
+}
+
+
+def schedules_study(quick: bool) -> list[Row]:
+    """The generated-loop matmul with its loop order and packing choices, on
+    the matrix products of a transformer layer, one thread."""
+    target = Target(isa="generic", num_threads=1)
+    rows = []
+    for m, n, k in TRANSFORMER[:1] if quick else TRANSFORMER:
+        funcs = [configured(gemm_graph(m, n, k), target, v) for v in SCHEDULE_VARIANTS.values()]
+        times = interleaved(funcs, target, 3 if quick else 15)
+        for label, seconds in zip(SCHEDULE_VARIANTS, times, strict=True):
+            rows.append(
+                Row("schedules", f"{m}x{n}x{k}", label, seconds, 2.0 * m * n * k / seconds * 1e-9)
+            )
+    return rows
 
 
 def numpy_gemm(m: int, n: int, k: int, threads: int, min_seconds: float) -> float:
@@ -341,6 +384,13 @@ NOTES = {
         "HWIO weights, each with its bias and ReLU, as the conv2d template schedules "
         "them for each target."
     ),
+    "schedules": (
+        "The matmul template's generated loops (c:generic, one thread) with the "
+        "column strips of B outside the row tiles of A (the default, B packed into "
+        "a contiguous local copy per strip when it fits the 64 KiB stack limit), "
+        "without the packing, and with the row tiles outside. Each variant's best "
+        "time over interleaved rounds."
+    ),
     "sme_threads": (
         "The SME GEMM microkernel called from one to four threads, each on its own band "
         "of rows of C, against the NEON microkernel on the same bands; then one thread "
@@ -351,6 +401,7 @@ NOTES = {
 TITLES = {
     "gemm": "GEMM throughput",
     "conv": "ResNet-50 convolutions",
+    "schedules": "Matmul loop order and packing",
     "sme_threads": "SME and threads",
 }
 
@@ -363,7 +414,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--only", choices=sorted(TITLES), action="append")
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
-    studies = {"gemm": gemm_study, "conv": conv_study, "sme_threads": sme_threads_study}
+    studies = {
+        "gemm": gemm_study,
+        "conv": conv_study,
+        "schedules": schedules_study,
+        "sme_threads": sme_threads_study,
+    }
     for name in args.only or list(studies):
         info = machine()
         rows = studies[name](args.quick)

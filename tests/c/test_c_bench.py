@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from tessera.backend.c import bench, run_kernel
+from tessera.backend.c.codegen import generate_kernel
 from tessera.target import Target
 
 
@@ -38,3 +39,15 @@ def test_markdown_table() -> None:
     text = bench.markdown("GEMM", rows, info, "note")
     assert "| case | neon t1 | numpy t1 |" in text
     assert "| 64x64x64 | 5 | 52 |" in text
+
+
+def test_configured_overrides_knobs_and_interleaved_times_every_function() -> None:
+    target = Target(isa="generic", num_threads=1)
+    build = bench.gemm_graph(8, 32, 16)
+    packed = bench.configured(build, target, {"order": "nm", "pack_b": True})
+    rows_outside = bench.configured(build, target, {"order": "mn", "pack_b": False})
+    assert "B_local[" in generate_kernel(packed).text
+    assert "B_local[" not in generate_kernel(rows_outside).text
+    times = bench.interleaved([packed, rows_outside], target, rounds=2)
+    assert len(times) == 2
+    assert all(0 < t < 1 for t in times)
