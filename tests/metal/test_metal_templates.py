@@ -40,6 +40,8 @@ WORKLOADS = [
     pytest.param("matmul", lambda: matmul(64, 64, 32, epilogue=False), id="matmul-bare"),
     pytest.param("matmul", lambda: matmul(17, 40, 24, batch=3), id="matmul-batched"),
     pytest.param("matmul", lambda: matmul(1, 1000, 96), id="gemv"),
+    pytest.param("matmul", lambda: matmul(32, 128, 48), id="matmul-simdgroup"),
+    pytest.param("matmul", lambda: matmul(64, 64, 16, batch=3, epilogue=False), id="bmm-simdgroup"),
     pytest.param("conv", lambda: conv2d((1, 8, 8, 16), 32, 3, pad=1), id="conv3x3"),
     pytest.param("conv", lambda: conv2d((1, 7, 7, 24), 40, 3, pad=1), id="conv3x3-7x7"),
     pytest.param("conv", lambda: conv2d((2, 15, 15, 8), 24, 3, stride=2, pad=1), id="conv3x3-s2"),
@@ -60,6 +62,20 @@ WORKLOADS = [
     pytest.param("layernorm", lambda: layernorm(8, 256), id="layernorm"),
     pytest.param("layernorm", lambda: layernorm(5, 768), id="layernorm-bert"),
 ]
+
+
+def test_simdgroup_matrices_are_the_default_for_whole_tiles() -> None:
+    from metal_workloads import space as space_of_workload
+
+    for workload in (matmul(32, 128, 48), matmul(64, 64, 16, batch=3, epilogue=False)):
+        default = space_of_workload(TEMPLATES["matmul"], workload).default()
+        assert default["strategy"] == "simdgroup"
+        source = generate(scheduled(workload, default).func).source
+        assert "simdgroup_multiply_accumulate" in source
+    # 33 rows do not divide into 8-row tiles: scalar tiles instead.
+    assert (
+        space_of_workload(TEMPLATES["matmul"], matmul(33, 70, 19)).default()["strategy"] == "tiles"
+    )
 
 
 def test_every_pattern_has_a_template() -> None:

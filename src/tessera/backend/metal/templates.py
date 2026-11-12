@@ -119,6 +119,15 @@ def attempt(sch: Schedule, step: Callable[[Schedule], object]) -> bool:
     return True
 
 
+def succeeds(sch: Schedule, step: Callable[[Schedule], object]) -> bool:
+    """Whether ``step`` applies to a copy of the schedule (the schedule is unchanged)."""
+    try:
+        step(sch.copy())
+    except ScheduleError:
+        return False
+    return True
+
+
 def fuse_all(sch: Schedule, loops: Sequence[Var]) -> Var | None:
     if not loops:
         return None
@@ -204,17 +213,52 @@ def _stage(sch: Schedule, block: str, index: int, at: Var, threads: tuple[int, i
 
 @dataclass(frozen=True)
 class GemmKnobs:
-    strategy: str  # "tiles" or "elements"
+    strategy: str  # "tiles", "elements" or "simdgroup"
     threads: tuple[int, int]
     registers: tuple[int, int]
     tile_k: int
     shared: bool
     element_threads: int
+    simd_groups: tuple[int, int] = (1, 1)  # SIMD groups per threadgroup (rows, columns)
+    simd_tiles: tuple[int, int] = (1, 1)  # 8 x 8 accumulator tiles per SIMD group
 
 
-def gemm_knobs(cfg: Config, m: int, n: int, k: int, outputs: int, can_stage: bool) -> GemmKnobs:
-    """Every knob of the GEMM templates, asked whatever the strategy."""
-    strategy = knob_str(cfg, "strategy", ["tiles", "elements"], "elements" if m <= 4 else "tiles")
+SIMD_GROUPS = ((1, 1), (1, 2), (2, 1), (2, 2), (1, 4), (4, 1), (2, 4), (4, 2))
+# Tile layouts in order of preference (from measurements on transformer and square
+# shapes); the first that divides the problem is the default.
+SIMD_PREFERENCE = (
+    ((1, 2), (2, 4)),
+    ((2, 1), (2, 4)),
+    ((1, 1), (2, 4)),
+    ((1, 2), (2, 2)),
+    ((1, 1), (2, 2)),
+    ((1, 1), (1, 4)),
+    ((1, 1), (1, 2)),
+    ((1, 1), (1, 1)),
+)
+
+
+def simd_layout(m: int, n: int) -> tuple[tuple[int, int], tuple[int, int]] | None:
+    """The preferred SIMD-group layout whose threadgroup tile divides ``m x n``."""
+    for groups, tiles in SIMD_PREFERENCE:
+        if m % (8 * groups[0] * tiles[0]) == 0 and n % (8 * groups[1] * tiles[1]) == 0:
+            return groups, tiles
+    return None
+
+
+def gemm_knobs(
+    cfg: Config,
+    m: int,
+    n: int,
+    k: int,
+    outputs: int,
+    can_stage: bool,
+    simd: tuple[tuple[int, int], tuple[int, int]] | None = None,
+) -> GemmKnobs:
+    """Every knob of the GEMM templates, asked whatever the strategy. ``simd`` is
+    the SIMD-group layout to default to, when that strategy applies."""
+    default = "simdgroup" if simd else "elements" if m <= 4 else "tiles"
+    strategy = knob_str(cfg, "strategy", ["tiles", "elements", "simdgroup"], default)
     shapes = [s for s in THREAD_SHAPES if s[0] <= max(m, 1) * 2 and s[1] <= max(n, 32)]
     default_threads = (8, 8) if (8, 8) in shapes else shapes[0]
     threads = knob_pair(cfg, "threads", shapes, default_threads)
@@ -225,7 +269,14 @@ def gemm_knobs(cfg: Config, m: int, n: int, k: int, outputs: int, can_stage: boo
     stage = knob_bool(cfg, "shared", can_stage) and can_stage
     options = threads_for(outputs)
     element_threads = knob_int(cfg, "element_threads", options, min(128, options[-1]))
-    return GemmKnobs(strategy, threads, regs, tile_k, stage, element_threads)
+    groups, tiles = simd or SIMD_PREFERENCE[0]
+    from tessera.backend.metal.microkernels import FRAGMENT_TILES
+
+    simd_groups = knob_pair(cfg, "simd_groups", SIMD_GROUPS, groups)
+    simd_tiles = knob_pair(cfg, "simd_tiles", FRAGMENT_TILES, tiles)
+    return GemmKnobs(
+        strategy, threads, regs, tile_k, stage, element_threads, simd_groups, simd_tiles
+    )
 
 
 def _extent(sch: Schedule, loops: Sequence[Var]) -> int:
@@ -253,6 +304,9 @@ def _gemm(
     assert main is not None
     if knobs.strategy == "elements":
         _per_element(sch, lowered, knobs.element_threads, unroll=False)
+        return
+    if knobs.strategy == "simdgroup":
+        _simdgroup(sch, lowered, knobs, batch=batch, rows=rows, cols=cols, reduction=reduction)
         return
     m_loop, n_loop, k_loop = fuse_all(sch, rows), fuse_all(sch, cols), fuse_all(sch, reduction)
     assert m_loop is not None
@@ -295,16 +349,96 @@ def _gemm(
     sch.unroll(nr)
 
 
+def _simdgroup(
+    sch: Schedule,
+    lowered: LoweredGroup,
+    knobs: GemmKnobs,
+    *,
+    batch: Sequence[Var],
+    rows: Sequence[Var],
+    cols: Sequence[Var],
+    reduction: Sequence[Var],
+) -> None:
+    """SIMD-group matrices: each SIMD group computes an ``8 fm x 8 fn`` tile with
+    the ``metal.simdgroup_gemm`` microkernel over the whole reduction, loading A
+    and B from device memory. The accumulators start and end in threadgroup
+    memory, where the lanes of the group set the init and apply the epilogue."""
+    from tessera.backend.metal import microkernels
+
+    main = lowered.main_block
+    assert main is not None
+    (gm, gn), (fm, fn) = knobs.simd_groups, knobs.simd_tiles
+    if len(rows) != 1 or len(cols) != 1 or len(reduction) != 1:
+        raise ScheduleError("SIMD-group matrices need one row, column and reduction loop")
+    (m_loop,), (n_loop,), (k_loop,) = rows, cols, reduction
+    m, n, k = sch.extent(m_loop), sch.extent(n_loop), sch.extent(k_loop)
+    if m % (8 * gm * fm) or n % (8 * gn * fn) or k % 8:
+        raise ScheduleError(f"{m} x {n} x {k} is not whole {8 * fm} x {8 * fn} x 8 tiles")
+    mo, ms, mi = sch.split(m_loop, [None, gm, 8 * fm])
+    no, ns, ni = sch.split(n_loop, [None, gn, 8 * fn])
+    sch.reorder(mo, no, ms, ns, mi, ni, k_loop)
+    batch_loop = fuse_all(sch, batch)
+    if batch_loop is not None:
+        sch.bind(batch_loop, "threadgroup.z")
+    sch.bind(mo, "threadgroup.y")
+    sch.bind(no, "threadgroup.x")
+    sch.bind(ms, "thread.z")
+    sch.bind(ns, "thread.y")
+    store = sch.cache_write(main, 0, "shared")
+    sch.reverse_compute_at(store, ns)
+    if lowered.epilogue_block is not None:
+        sch.reverse_compute_inline(lowered.epilogue_block)
+    _lanes(sch, store)
+    init = sch.decompose_reduction(main, mi)
+    _lanes(sch, init)
+    sch.tensorize(mi, microkernels.name(fm, fn, _gemm_ranks(sch, main)))
+
+
+def _gemm_ranks(sch: Schedule, block: str) -> tuple[int, int, int]:
+    """The ranks of A, B and C in a block ``C[...] = C[...] + A[...] * B[...]``."""
+    from tessera.tir.expr import Binary, BufferLoad
+    from tessera.tir.stmt import BufferStore
+
+    body = find_block(sch.func, block).block.body
+    if (
+        isinstance(body, BufferStore)
+        and isinstance(body.value, Binary)
+        and body.value.op == "add"
+        and isinstance(body.value.b, Binary)
+        and body.value.b.op == "mul"
+        and isinstance(body.value.b.a, BufferLoad)
+        and isinstance(body.value.b.b, BufferLoad)
+    ):
+        a, b = body.value.b.a, body.value.b.b
+        return a.buffer.ndim, b.buffer.ndim, body.buffer.ndim
+    raise ScheduleError(f"block {block} is not C = C + A * B")
+
+
+def _lanes(sch: Schedule, block: str) -> None:
+    """Spread a SIMD group's tile (the block's last two loops) over its 32 lanes."""
+    fused = sch.fuse(*sch.get_loops(block)[-2:])
+    _, lane = sch.split(fused, [None, 32])
+    sch.bind(lane, "thread.x")
+
+
 def schedule_matmul(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
-    """MatMul (batched or not) with its prologue and epilogue: tiles, or for a
-    matrix-vector product (few rows) one thread per output element."""
+    """MatMul (batched or not) with its prologue and epilogue: SIMD-group matrices
+    when the operands are plain matrices and the shape divides into their tiles,
+    otherwise tiles of scalar code, or for a matrix-vector product (few rows) one
+    thread per output element."""
     main = lowered.main_block
     assert main is not None
     spatial, reduction = split_loops(sch, main)
     *batch, rows, cols = spatial
     staged = _affine_reads(find_block(sch.func, main).block)
     m, n, k = sch.extent(rows), sch.extent(cols), _extent(sch, reduction)
-    knobs = gemm_knobs(cfg, m, n, k, _extent(sch, spatial), bool(staged))
+    simd = simd_layout(m, n) if k % 8 == 0 else None
+    if simd is not None:
+        # The default must apply: try the SIMD-group schedule on a copy.
+        trial = GemmKnobs("simdgroup", (8, 8), (4, 4), 8, False, 32, *simd)
+        if not succeeds(sch, partial(_simdgroup_check, lowered=lowered, knobs=trial)):
+            simd = None
+    knobs = gemm_knobs(cfg, m, n, k, _extent(sch, spatial), bool(staged), simd)
     _gemm(
         sch,
         lowered,
@@ -315,6 +449,15 @@ def schedule_matmul(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
         reduction=reduction,
         staged=staged,
     )
+
+
+def _simdgroup_check(sch: Schedule, *, lowered: LoweredGroup, knobs: GemmKnobs) -> None:
+    """Apply the SIMD-group schedule to ``sch`` from scratch (for ``attempt``)."""
+    main = lowered.main_block
+    assert main is not None
+    spatial, reduction = split_loops(sch, main)
+    *batch, rows, cols = spatial
+    _simdgroup(sch, lowered, knobs, batch=batch, rows=[rows], cols=[cols], reduction=reduction)
 
 
 def _affine_reads(block: Block) -> list[int]:

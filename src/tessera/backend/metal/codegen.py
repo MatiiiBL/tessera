@@ -173,6 +173,8 @@ def generate(func: PrimFunc, *, max_threadgroup_memory: int = 32768, flat: bool 
     """Generate the MSL kernel of ``func`` and its launch configuration. ``flat``
     launches one-dimensional threadgroups (see the module docstring); without it
     the threadgroup has the thread loops' shape, for comparison."""
+    # The microkernels register their intrinsics with this module on import.
+    from tessera.backend.metal import microkernels  # noqa: F401
     from tessera.backend.metal.lower import (
         ReductionError,
         compact_buffers,
@@ -586,6 +588,16 @@ def _fragment_buffers(body: Stmt) -> set[Buffer]:
                     )
                 out.add(buffer)
     return out
+
+
+def _calls_simd_groups(body: Stmt) -> bool:
+    """Whether a statement calls a SIMD-group function (which all 32 lanes run)."""
+    return any(
+        isinstance(s, Evaluate)
+        and isinstance(s.value, Call)
+        and s.value.name.startswith("metal.simdgroup")
+        for s in _walk_stmt(body)
+    )
 
 
 def _fragment_count(buffer: Buffer) -> int:
@@ -1090,7 +1102,7 @@ class _KernelWriter:
         threads = _xyz(analysis.bindings, "thread")
         grid = _xyz(analysis.bindings, "threadgroup")
         self.fragments = _fragment_buffers(func.body)
-        if self.fragments:
+        if self.fragments or _calls_simd_groups(func.body):
             # SIMD-group matrices are held by the 32 lanes of a SIMD group together:
             # the lanes run on thread.x, and thread.y and thread.z index SIMD groups.
             if threads[0] not in (1, SIMD_LANES):
