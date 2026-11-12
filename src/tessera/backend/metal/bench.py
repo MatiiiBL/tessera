@@ -370,7 +370,7 @@ def gemm_markdown(data: dict[str, Any], env: dict[str, Any]) -> str:
         table.append(cells)
     return "\n".join(
         [
-            report.header("Metal: GEMM throughput (GFLOPS)", env, COMMANDS["gemm"]),
+            report.header("Metal: GEMM throughput (GFLOPS)", env, _command("gemm", data)),
             "float32 C = A @ B, B a constant. GPU time per call: Metal timestamps around "
             "batches of launches",
             f"for Tessera, MPS events around 50 calls for PyTorch {data['torch']}. GFLOPS "
@@ -637,7 +637,7 @@ def conv_markdown(data: dict[str, Any], env: dict[str, Any]) -> str:
     )
     return "\n".join(
         [
-            report.header("Metal: ResNet-50 convolutions", env, COMMANDS["conv"]),
+            report.header("Metal: ResNet-50 convolutions", env, _command("conv", data)),
             "Each distinct convolution group of ResNet-50 at 224 x 224, batch 1, float32, "
             "with its fused bias,",
             "residual addition and ReLU. Cells are GPU microseconds per call "
@@ -651,12 +651,113 @@ def conv_markdown(data: dict[str, Any], env: dict[str, Any]) -> str:
     )
 
 
+# -- whole models -----------------------------------------------------------------------
+
+MODEL_NAMES = ("resnet50", "mobilenet_v2", "bert", "gpt2")
+
+
+def bench_models(runs: int = 100) -> dict[str, Any]:
+    """Each exported model compiled for the GPU through the driver with the
+    templates' default configurations: agreement with the ONNX Runtime outputs
+    stored with the model, then the wall-clock time of ``runs`` runs."""
+    import json
+    import time
+
+    from tessera import driver
+    from tessera.bench.stats import Latency
+
+    root = report.repo_root() / MODELS
+    manifest = json.loads((root / "manifest.json").read_text())
+    rows: list[dict[str, Any]] = []
+    for name in MODEL_NAMES:
+        entry = manifest[name]
+        sample = np.load(root / entry["npz"])
+        inputs = {i["name"]: sample[i["name"]] for i in entry["inputs"]}
+        started = time.perf_counter()
+        model = driver.compile(root / entry["onnx"], target="metal", tuned=False)
+        compile_seconds = time.perf_counter() - started
+        outputs = model.run(inputs)
+        errors = []
+        for output in entry["outputs"]:
+            reference = sample[output["name"]].astype(np.float64)
+            got = outputs[output["name"]].astype(np.float64)
+            difference = float(np.abs(got - reference).max())
+            errors.append(
+                {
+                    "output": output["name"],
+                    "max_abs": difference,
+                    "max_rel": difference / float(np.abs(reference).max()),
+                    "same_top1": bool(got.argmax() == reference.argmax())
+                    if name in ("resnet50", "mobilenet_v2")
+                    else None,
+                }
+            )
+        latency = Latency.of(model.benchmark(inputs, warmup=10, repeat=runs))
+        kernels = len(model.profile(inputs, repeat=1))
+        rows.append(
+            {
+                "model": name,
+                "kernels": kernels,
+                "compile_seconds": compile_seconds,
+                "latency": latency.as_dict(),
+                "errors": errors,
+            }
+        )
+    return {"runs": runs, "models": rows}
+
+
+def models_markdown(data: dict[str, Any], env: dict[str, Any]) -> str:
+    table = []
+    for row in data["models"]:
+        lat = row["latency"]
+        err = row["errors"][0]
+        top1 = "" if err["same_top1"] is None else ("same" if err["same_top1"] else "different")
+        table.append(
+            [
+                row["model"],
+                f"{lat['median'] * 1e3:.2f} ({lat['p10'] * 1e3:.2f} to {lat['p90'] * 1e3:.2f})",
+                row["kernels"],
+                f"{err['max_abs']:.2e}",
+                f"{err['max_rel']:.2e}",
+                top1,
+                f"{row['compile_seconds']:.1f}",
+            ]
+        )
+    return "\n".join(
+        [
+            report.header("Metal: whole models", env, COMMANDS["models"]),
+            'Each model compiled with `tessera.compile(model, target="metal", tuned=False)` '
+            "(the templates'",
+            "default configurations), run once to compare with the ONNX Runtime outputs "
+            "stored with the",
+            f"model, then {data['runs']} timed runs after 10 warmup runs (wall-clock, "
+            "inputs in place). Errors are",
+            "of the first output, relative to its largest magnitude; top-1 compares "
+            "the classifiers' argmax.",
+            "",
+            report.markdown_table(
+                [
+                    "Model",
+                    "ms, median (p10 to p90)",
+                    "Kernels",
+                    "Max abs error",
+                    "Max rel error",
+                    "Top-1",
+                    "Compile (s)",
+                ],
+                table,
+            ),
+        ]
+    )
+
+
 COMMANDS = {
     "launch": "uv run python -m tessera.backend.metal.bench launch",
     "warmup": "uv run python -m tessera.backend.metal.bench warmup",
     "shape": "uv run python -m tessera.backend.metal.bench shape",
     "gemm": "uv run --group bench python -m tessera.backend.metal.bench gemm",
     "conv": "uv run --group bench python -m tessera.backend.metal.bench conv",
+    "models": "uv run python -m tessera.backend.metal.bench models",
 }
 # name -> (measure(trials), render(data, environment)); ``trials`` is the number of
 # random configurations the template benchmarks try besides the default.
@@ -668,7 +769,22 @@ BENCHMARKS: dict[
     "shape": (lambda trials: bench_shape(), shape_markdown),
     "gemm": (bench_gemm, gemm_markdown),
     "conv": (bench_conv, conv_markdown),
+    "models": (lambda trials: bench_models(), models_markdown),
 }
+
+
+def _command(name: str, data: dict[str, Any]) -> str:
+    trials = int(data.get("trials", 0))
+    return COMMANDS[name] + (f" --trials {trials}" if trials else "")
+
+
+def render(name: str, directory: Path | None = None) -> Path:
+    """Rewrite ``name``'s Markdown from its JSON (after a change to the page's text)."""
+    import json
+
+    out = directory or results_dir()
+    data = json.loads((out / f"{name}.json").read_text())
+    return report.write(name, data, BENCHMARKS[name][1](data, data["environment"]), out)
 
 
 def run(name: str, directory: Path | None = None, *, trials: int = 0) -> Path:
