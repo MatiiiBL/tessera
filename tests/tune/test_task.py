@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-import tessera.tir
 from tessera.backend.base import Prebuilder
 from tessera.dtype import DType
 from tessera.ir.graph import Node, TensorType, Value
@@ -52,9 +51,13 @@ def test_identical_structures_share_a_task() -> None:
     assert tasks[0].names == ["a", "c"]
 
 
-def test_task_key_uses_the_structural_hash(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(tessera.tir.__dict__, "structural_hash", lambda f: "0123456789abcdef99")
-    assert task_key(lowered("x", 4)) == "matmul:0123456789abcdef"
+def test_task_key_ignores_names() -> None:
+    a, b, c = lowered("x", 4), lowered("y", 4), lowered("z", 8)
+    assert task_key(a) == task_key(b)
+    assert task_key(a) != task_key(c)
+    pattern, digest = task_key(a).split(":")
+    assert pattern == "matmul"
+    assert len(digest) == 16
 
 
 class FakeBackend:

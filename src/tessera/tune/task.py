@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from tessera.plan import LoweredGroup
 from tessera.target import Target
+from tessera.tir import structural_hash
 from tessera.tir.schedule import Schedule
 from tessera.tir.stmt import PrimFunc
 from tessera.tune.space import ApplyConfig, Config, ConfigSpace, KnobValue, space_of
@@ -60,16 +61,6 @@ class TuningTask(Protocol):
     def measure(self, built: Any) -> float:
         """Seconds per call of what ``build`` returned; raises if it fails."""
         ...
-
-
-def structural_hash(func: PrimFunc) -> str:
-    """The loop IR's structural hash of ``func`` (``tessera.tir.structural_hash``)."""
-    import tessera.tir
-
-    # Resolved at call time: the hash belongs to the tir package, which this
-    # module must not import eagerly (the tuner works without it).
-    fn: Callable[[PrimFunc], str] = tessera.tir.__dict__["structural_hash"]
-    return fn(func)
 
 
 def task_key(lowered: LoweredGroup) -> str:
