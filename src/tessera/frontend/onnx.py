@@ -163,10 +163,6 @@ class Importer:
             if proto.name not in initializers:
                 self.env[proto.name] = g.add_input(_clean(proto.name, "input"), self._type(proto))
         output_names = [_clean(o.name, "output") for o in graph.output]
-        taken = {v.name for v in g.inputs} | {v.name for v in self.env.values() if v is not None}
-        for name in output_names:
-            if name not in taken:
-                g.claim_name(name)  # so that no node takes an output's name
 
         for proto in graph.node:
             self._convert(proto)
@@ -215,7 +211,10 @@ class Importer:
         return TensorType(tuple(dims), dtype)
 
     def _convert(self, proto: onnx.NodeProto) -> None:
-        name = _clean(proto.name, proto.op_type.lower())
+        # Unnamed nodes are named after their first output.
+        name = _clean(
+            proto.name or (proto.output[0] if proto.output else ""), proto.op_type.lower()
+        )
         if proto.domain not in ("", "ai.onnx"):
             raise OnnxImportError(
                 f"{proto.op_type} node {name!r}: domain {proto.domain!r} is not supported"

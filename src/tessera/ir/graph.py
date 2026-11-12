@@ -273,9 +273,11 @@ class Graph:
             renamable = value.producer is not None and value not in outputs
             if not renamable:
                 value = self.op("Reshape", value, shape=value.shape)
+                assert value.producer is not None
+                value.producer.name = name  # a node made for this output is named after it
             live.pop(value.name, None)
             self._names.add(name)
-            value.name = name  # the node keeps its own name, which kernels are named after
+            value.name = name  # an existing node keeps its name, which its kernel is named after
             live[name] = value
             outputs.append(value)
         self.outputs = outputs
