@@ -172,10 +172,12 @@ plain minimum over all records for a task that was never validated).
    packs the weight) and 640 µs with the tuned one (which does not), while
    in the model the default took 0.72 ms and the tuned configuration
    1.12 ms. Before this pass existed, the tuned GPT-2 took 56.6 ms on
-   `c:sme` against 47.4 ms untuned. The in-model pass keeps the default for
-   every such task, whatever the harness gets wrong; the C backend's
-   `measure` is also being changed to prepare constant inputs the way a
-   loaded model does.
+   `c:sme` against 47.4 ms untuned (`results/models.md` at commit
+   `c577cc2`, measured with the first tuning logs and runtime). The
+   in-model pass keeps the default for every such task, whatever the
+   harness gets wrong. The C backend's `measure` has since been changed to
+   prepare constant inputs once, untimed, and to read them cold, the way a
+   model run does, and the final logs were tuned with it.
 
 ## The cost model
 
@@ -249,7 +251,8 @@ a task had two rounds), so a task whose second round found nothing fell
 to the 0.005 floor at once, while the slow 128×50257×768 matmul of GPT-2's
 vocabulary projection, the largest single kernel, kept improving a little
 each round and took the budget. Of that run's 4,476 measurements on
-`c:sme`, this one task got 1,404 (31%); the median task got 41 (12 of them
+`c:sme` (a log since discarded, when the timing harness changed), this
+one task got 1,404 (31%); the median task got 41 (12 of them
 from validation) and none fewer than 21, so most tasks shared by twelve
 kernels had two rounds. Two rounds without progress say little about a
 space of thousands of configurations. With `0.5 / rounds`, a task stays in
