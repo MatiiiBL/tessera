@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import prod
 
+import numpy as np
+
 from tessera.tir.analysis import block_accesses, is_leaf_block
 from tessera.tir.arith import Analyzer, Interval
 from tessera.tir.expr import Binary, BufferLoad, Expr, IntImm, Var, ge, lt
-from tessera.tir.functor import StmtMutator, substitute, walk_stmts
+from tessera.tir.functor import StmtMutator, free_vars, substitute, walk_stmts
 from tessera.tir.primitives.common import (
     Path,
     ScheduleError,
@@ -50,6 +52,7 @@ from tessera.tir.stmt import (
     For,
     ForKind,
     IterKind,
+    IterVar,
     PrimFunc,
     Stmt,
 )
@@ -70,36 +73,65 @@ def _single_store(block: Block, what: str) -> BufferStore:
     return block.body
 
 
-def _store_dims(block: Block, buf: Buffer, what: str) -> list[Var]:
-    """The iteration variable behind each index of ``block``'s stores to ``buf``; every
-    store must use the same distinct spatial variables, one per dimension."""
+def _index_vars(
+    block: Block, indices: tuple[Expr, ...], buf: Buffer, what: str, access: str
+) -> list[Var | None]:
+    """The spatial iteration variable behind each index of an access to ``buf``.
+
+    Indices must be distinct spatial variables, except that a constant 0 on a
+    dimension of extent 1 stands for an extent-1 variable the access does not
+    otherwise use (or for none, if there is no such variable): simplified IR
+    writes ``x[0, i, j]`` for a batch of one.
+    """
+    spatial = {iv.var for iv in block.iter_vars if iv.kind == IterKind.SPATIAL}
+    used = {i for i in indices if isinstance(i, Var)}
+    spare = [
+        iv.var
+        for iv in block.iter_vars
+        if iv.kind == IterKind.SPATIAL and iv.dom.extent == IntImm(1) and iv.var not in used
+    ]
+    dims: list[Var | None] = []
+    for d, idx in enumerate(indices):
+        if isinstance(idx, Var) and idx in spatial and idx not in dims:
+            dims.append(idx)
+        elif idx == IntImm(0) and buf.shape[d] == 1:
+            dims.append(spare.pop(0) if spare else None)
+        else:
+            raise ScheduleError(
+                f"cannot {what} block {block.name}: index {d} of its {access} {buf.name} "
+                "is not a distinct spatial iteration variable"
+            )
+    return dims
+
+
+def _store_dims(block: Block, buf: Buffer, what: str) -> list[Var | None]:
+    """``_index_vars`` of ``block``'s stores to ``buf``, which must all store to the
+    same element."""
     stores = block_accesses(block).stores.get(buf, [])
     if not stores:
         raise ScheduleError(f"block {block.name} does not store to {buf.name}")
     first = stores[0]
     if any(s != first for s in stores):
         raise ScheduleError(f"cannot {what} block {block.name}: it stores to different elements")
-    spatial = {iv.var: iv for iv in block.iter_vars if iv.kind == IterKind.SPATIAL}
-    dims: list[Var] = []
-    for d, idx in enumerate(first):
-        if not (isinstance(idx, Var) and idx in spatial) or idx in dims:
-            raise ScheduleError(
-                f"cannot {what} block {block.name}: index {d} of its store to {buf.name} "
-                "is not a distinct spatial iteration variable"
-            )
-        dims.append(idx)
-    return dims
+    return _index_vars(block, first, buf, what, "store to")
 
 
-def _covers_buffer(block: Block, buf: Buffer, dims: list[Var], what: str) -> None:
+def _unindexed(block: Block, dims: list[Var | None]) -> list[IterVar]:
+    """Spatial iteration variables that no index uses (they must have extent 1)."""
+    return [iv for iv in block.iter_vars if iv.kind == IterKind.SPATIAL and iv.var not in dims]
+
+
+def _covers_buffer(block: Block, buf: Buffer, dims: list[Var | None], what: str) -> None:
     doms = {iv.var: iv.dom for iv in block.iter_vars}
     for d, v in enumerate(dims):
+        if v is None:
+            continue
         dom = doms[v]
         if dom.min != IntImm(0) or dom.extent != IntImm(buf.shape[d]):
             raise ScheduleError(
                 f"cannot {what} block {block.name}: it does not compute all of {buf.name}"
             )
-    if len(dims) != sum(1 for iv in block.iter_vars if iv.kind == IterKind.SPATIAL):
+    if any(iv.dom.extent != IntImm(1) for iv in _unindexed(block, dims)):
         raise ScheduleError(
             f"cannot {what} block {block.name}: a spatial variable does not index {buf.name}"
         )
@@ -171,7 +203,8 @@ def compute_inline(func: PrimFunc, name: str) -> PrimFunc:
         def visit_buffer_load(self, e: BufferLoad) -> Expr:
             idx = self.visit_exprs(e.indices)
             if e.buffer is buf:
-                return substitute(value, dict(zip(dims, idx, strict=True)))
+                mapping = {v: i for v, i in zip(dims, idx, strict=True) if v is not None}
+                return substitute(value, mapping)
             return e if idx is e.indices else BufferLoad(e.buffer, idx)
 
     out = _remove_block(func, path)
@@ -219,19 +252,14 @@ def reverse_compute_inline(func: PrimFunc, name: str) -> PrimFunc:
     first = loads[0]
     if any(x != first for x in loads):
         raise ScheduleError(f"cannot reverse-inline block {name}: it reads {buf.name} unevenly")
-    cdims: list[Var] = []
-    cspatial = {iv.var: iv for iv in cb.iter_vars}
-    for d, idx in enumerate(first):
-        if not (isinstance(idx, Var) and idx in cspatial) or idx in cdims:
-            raise ScheduleError(
-                f"cannot reverse-inline block {name}: index {d} of its read of {buf.name} "
-                "is not a distinct iteration variable"
-            )
-        dom = cspatial[idx].dom
-        if dom.min != IntImm(0) or dom.extent != IntImm(buf.shape[d]):
+    cdims = _index_vars(cb, first, buf, "reverse-inline", "read of")
+    cdoms = {iv.var: iv.dom for iv in cb.iter_vars}
+    for d, cv in enumerate(cdims):
+        if cv is not None and (
+            cdoms[cv].min != IntImm(0) or cdoms[cv].extent != IntImm(buf.shape[d])
+        ):
             raise ScheduleError(f"cannot reverse-inline block {name}: domains do not match")
-        cdims.append(idx)
-    if len(cdims) != len(cb.iter_vars):
+    if any(iv.dom.extent != IntImm(1) for iv in _unindexed(cb, cdims)):
         raise ScheduleError(
             f"cannot reverse-inline block {name}: it has iteration variables that do not "
             f"index {buf.name}"
@@ -248,7 +276,10 @@ def reverse_compute_inline(func: PrimFunc, name: str) -> PrimFunc:
             raise ScheduleError(
                 f"cannot reverse-inline block {name}: block {between.block.name} runs in between"
             )
-    mapping: dict[Var, Expr] = dict(zip(cdims, pdims, strict=True))
+    mapping: dict[Var, Expr] = {iv.var: IntImm(0) for iv in _unindexed(cb, cdims)}
+    for cv, pv in zip(cdims, pdims, strict=True):
+        if cv is not None:
+            mapping[cv] = IntImm(0) if pv is None else pv
     pvalue = pstore.value
 
     class _Replace(StmtMutator):
@@ -439,7 +470,7 @@ def compute_at(func: PrimFunc, name: str, loop: Var) -> PrimFunc:
     if buf in func.params:
         raise ScheduleError(f"cannot move block {name}: it writes the output {buf.name}")
     dims = _store_dims(pb, buf, "move")
-    if len(dims) != sum(1 for iv in pb.iter_vars if iv.kind == IterKind.SPATIAL):
+    if any(iv.dom.extent != IntImm(1) for iv in _unindexed(pb, dims)):
         raise ScheduleError(
             f"cannot move block {name}: a spatial variable does not index {buf.name}"
         )
@@ -477,7 +508,7 @@ def compute_at(func: PrimFunc, name: str, loop: Var) -> PrimFunc:
     assert an is not None
     outer = analyzer_for(lpath)
     outer.bind(target.loop_var, an.ranges.get(target.loop_var, Interval.everything()))
-    nest = _nest_for(func, pb, {v: d for d, v in enumerate(dims)}, region, outer)
+    nest = _nest_for(func, pb, {v: d for d, v in enumerate(dims) if v is not None}, region, outer)
     out = _remove_block(func, ppath)
     lpath = find_loop(out, loop)
     target = loop_of(lpath)
@@ -554,14 +585,15 @@ def reverse_compute_at(func: PrimFunc, name: str, loop: Var) -> PrimFunc:
                 f"iterations of loop {loop.name}"
             )
         wdims = _store_dims(w.block, buf, "move after")
-        stores: list[tuple[Expr, ...]] = [tuple(wdims)]
+        stores: list[tuple[Expr, ...]] = [tuple(IntImm(0) if v is None else v for v in wdims)]
         reg, an_w = _access_region(wpath, target, stores, buf.shape)
         iterations = prod(
             _extent(f)
             for f, role in zip(loops[ti + 1 :], roles[ti + 1 :], strict=True)
             if role == "S"
         )
-        if prod(reg.extents) != iterations:
+        exact = w.predicate == TRUE and prod(reg.extents) == iterations
+        if not exact and not _writes_box(w, loops, ti, stores[0], reg, buf):
             raise ScheduleError(
                 f"cannot move block {name}: what block {w.block.name} writes in one "
                 f"iteration of loop {loop.name} is not a box"
@@ -574,15 +606,9 @@ def reverse_compute_at(func: PrimFunc, name: str, loop: Var) -> PrimFunc:
     first = loads[0]
     if any(x != first for x in loads):
         raise ScheduleError(f"cannot move block {name}: it reads {buf.name} unevenly")
-    dim_of: dict[Var, int] = {}
-    ivs = {iv.var: iv for iv in cb.iter_vars}
-    for d, idx in enumerate(first):
-        if not (isinstance(idx, Var) and idx in ivs) or idx in dim_of:
-            raise ScheduleError(
-                f"cannot move block {name}: index {d} of its read of {buf.name} is not a "
-                "distinct iteration variable"
-            )
-        dim_of[idx] = d
+    dim_of = {
+        v: d for d, v in enumerate(_index_vars(cb, first, buf, "move", "read of")) if v is not None
+    }
     outer = analyzer_for(lpath)
     outer.bind(target.loop_var, an.ranges.get(target.loop_var, Interval.everything()))
     nest = _nest_for(func, cb, dim_of, region, outer)
@@ -592,6 +618,63 @@ def reverse_compute_at(func: PrimFunc, name: str, loop: Var) -> PrimFunc:
     new_target = replace_for(target, body=flat_seq([*seq_items(target.body), nest]))
     out = with_body(out, rebuild(lpath, new_target))
     return _finalize(out)
+
+
+def _writes_box(
+    w: BlockRealize,
+    loops: list[For],
+    ti: int,
+    store: tuple[Expr, ...],
+    reg: _Region,
+    buf: Buffer,
+) -> bool:
+    """In every iteration of ``loops[ti]``, block ``w`` writes exactly the points of
+    ``reg`` that lie in ``buf`` (its predicate cuts partial tiles), checked by
+    evaluating every iteration when there are few enough."""
+    from tessera.tir.primitives.loops import _ENUMERATION_LIMIT, _evaluate, _NotEnumerable
+
+    binding = dict(zip((iv.var for iv in w.block.iter_vars), w.iter_values, strict=True))
+    points = [substitute(e, binding) for e in store]
+    used: set[Var] = set().union(
+        free_vars(w.predicate), *(free_vars(p) for p in points), *(free_vars(m) for m in reg.mins)
+    )
+    group = [f for f in loops[: ti + 1] if f.loop_var in used or f is loops[ti]]
+    inner = [f for f in loops[ti + 1 :] if f.loop_var in used]
+    run = group + inner
+    if used - {f.loop_var for f in run}:
+        return False
+    if not all(isinstance(f.min, IntImm) and f.min.value == 0 for f in run):
+        return False
+    extents = [_extent(f) for f in run]
+    if prod(extents) > _ENUMERATION_LIMIT:
+        return False
+    grid = np.indices(extents).reshape(len(extents), -1)
+    env = {f.loop_var: grid[k] for k, f in enumerate(run)}
+    n = grid.shape[1]
+    try:
+        mask = np.broadcast_to(_evaluate(w.predicate, env), (n,)).astype(bool)
+        pts = np.stack([np.broadcast_to(_evaluate(p, env), (n,)) for p in points])
+        mins = [np.broadcast_to(_evaluate(m, env), (n,)) for m in reg.mins]
+    except _NotEnumerable:
+        return False
+    volume = np.ones(n, dtype=np.int64)
+    for lo, ext, size in zip(mins, reg.extents, buf.shape, strict=True):
+        volume *= np.maximum(0, np.minimum(lo + ext, size) - np.maximum(lo, 0))
+    gid = np.asarray(np.ravel_multi_index(tuple(grid[: len(group)]), extents[: len(group)]))
+    groups = int(np.prod(extents[: len(group)]))
+    expected = np.zeros(groups, dtype=np.int64)
+    expected[gid] = volume
+    try:
+        flat = (
+            np.ravel_multi_index(pts[:, mask], buf.shape)
+            if buf.shape
+            else np.zeros(int(mask.sum()), dtype=np.int64)
+        )
+    except ValueError:
+        return False
+    keys = np.unique(gid[mask] * max(1, buf.numel) + flat)
+    produced = np.bincount(keys // max(1, buf.numel), minlength=groups)
+    return bool(np.array_equal(produced, expected))
 
 
 def _extent(f: For) -> int:

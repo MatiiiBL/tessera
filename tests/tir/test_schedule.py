@@ -478,3 +478,44 @@ def test_failed_primitive_leaves_schedule_unchanged() -> None:
     assert s.func is before
     assert s.trace == trace
 
+
+def test_constant_indices_on_extent_one_dimensions() -> None:
+    a = te.placeholder((1, 4), DType.float32, "A")
+    b = te.compute((1, 4), lambda i, j: a[0, j] * 2.0, "B", ["i", "j"])
+    c = te.compute((1, 4), lambda i, j: b[0, j] + 1.0, "C", ["i", "j"])
+    data = np.arange(4, dtype=np.float32).reshape(1, 4)
+    w = Workload(te.create_prim_func([a, c]), [data], lambda v: v * 2 + 1)
+    for steps in (
+        lambda s: s.compute_inline("B"),
+        lambda s: s.reverse_compute_inline("C"),
+        lambda s: s.compute_at("B", s.get_loops("C")[1]),
+        lambda s: s.reverse_compute_at("C", s.get_loops("B")[1]),
+    ):
+        s = Schedule(w.func)
+        steps(s)
+        check(s, w)
+
+
+def test_reverse_compute_at_after_an_imperfect_split() -> None:
+    # A GEMV (one row) tiled by two rows: the second row of every tile is cut off.
+    a = te.placeholder((1, 16), DType.float32, "A")
+    b = te.placeholder((16, 10), DType.float32, "B")
+    r = te.reduce_axis(16, "k")
+    c = te.compute((1, 10), lambda i, j: te.sum(a[i, r] * b[r, j], axis=r), "logits", ["m", "n"])
+    rng = np.random.default_rng(6)
+    w = Workload(
+        te.create_prim_func([a, b, c]),
+        [
+            rng.standard_normal((1, 16)).astype(np.float32),
+            rng.standard_normal((16, 10)).astype(np.float32),
+        ],
+        lambda x, y: x @ y,
+    )
+    s = Schedule(w.func)
+    out = s.cache_write("logits", 0, "local")
+    m, n, k = s.get_loops("logits")
+    mo, mi = s.split(m, [None, 2])
+    no, ni = s.split(n, [None, 4])
+    s.reorder(mo, no, mi, ni, k)
+    s.reverse_compute_at(out, no)
+    check(s, w)

@@ -13,6 +13,7 @@ from tessera import ir, tir
 from tessera.compute import ROLE, lower_group
 from tessera.dtype import DType
 from tessera.ir import Graph, TensorType
+from tessera.plan import LoweredGroup
 from tessera.tir.schedule import Schedule
 
 from .harness import check_graph, check_group, single_group, values_of
@@ -387,3 +388,73 @@ def test_groups_of_an_optimized_model() -> None:
     assert [lg.pattern for lg in lowered] == [
         "conv2d", "depthwise_conv2d", "pool", "reduce", "matmul", "softmax",
     ]  # fmt: skip
+
+
+def _main_buffer_reads(lowered: LoweredGroup, block: str) -> list[tuple[str, ...]]:
+    from tessera.tir.analysis import block_accesses
+    from tessera.tir.primitives.common import find_block, realize_of
+
+    b = realize_of(find_block(lowered.func, block)).block
+    return [
+        tuple(tir.script(i) for i in idx)
+        for buf, accesses in block_accesses(b).loads.items()
+        for idx in accesses
+    ]
+
+
+def test_batch_one_epilogue_reads_by_iteration_variable() -> None:
+    from tessera import passes
+
+    g = Graph("batch1")
+    rng = np.random.default_rng(10)
+    x = g.add_input("x", TensorType((1, 8, 8, 16), F32))
+    w = g.add_constant(rng.standard_normal((1, 1, 16, 16)).astype(np.float32), "w")
+    b = g.add_constant(rng.standard_normal(16).astype(np.float32), "b")
+    conv = g.op("Conv2d", x, w, b, layout="NHWC")
+    pool = g.op("MaxPool2d", x, kernel=(1, 1), layout="NHWC")
+    out = g.op("Relu", g.op("Add", conv, pool))
+    g.set_outputs([out])
+    values = values_of(g, ir.random_inputs(g, seed=11))
+    group = next(gr for gr in passes.fuse(g) if gr.pattern == "conv2d")
+    lowered = check_group(group, values)
+    assert lowered.epilogue_block is not None
+    for idx in _main_buffer_reads(lowered, lowered.epilogue_block):
+        assert idx[0] == "v_i0"
+    s = Schedule(lowered.func)
+    assert lowered.main_block is not None
+    copy = s.cache_write(lowered.main_block, 0, "local")
+    s.reverse_compute_inline(lowered.epilogue_block)
+    assert s.blocks() == [lowered.main_block, copy]
+    args = [values[v.name] for v in group.inputs]
+    res = np.zeros(out.shape, np.float32)
+    tir.interpret(s.func, [*args, res], check_bounds=True)
+    np.testing.assert_allclose(res, values[out.name], rtol=1e-4, atol=1e-4)
+
+
+def test_dense_layer_prologue_and_epilogue_read_by_iteration_variable() -> None:
+    from tessera import passes
+
+    g = Graph("dense")
+    rng = np.random.default_rng(12)
+    x = g.add_input("x", TensorType((1, 4, 8), F32))
+    scale = g.add_constant(rng.standard_normal(8).astype(np.float32), "ln_scale")
+    shift = g.add_constant(rng.standard_normal(8).astype(np.float32), "ln_bias")
+    ln = g.op("LayerNorm", x, scale, shift, axis=2)
+    w = g.add_constant(rng.standard_normal((8, 6)).astype(np.float32), "w")
+    bias = g.add_constant(rng.standard_normal(6).astype(np.float32), "b")
+    out = g.op("Gelu", g.op("Add", g.op("MatMul", ln, w), bias))
+    g.set_outputs([out])
+    values = values_of(g, ir.random_inputs(g, seed=13))
+    group = next(gr for gr in passes.fuse(g) if gr.pattern == "matmul")
+    lowered = check_group(group, values)
+    assert lowered.main_block is not None
+    assert lowered.epilogue_block is not None
+    for block in (lowered.main_block, lowered.epilogue_block):
+        for idx in _main_buffer_reads(lowered, block):
+            assert "0" not in idx[:1]
+    s = Schedule(lowered.func)
+    s.cache_write(lowered.main_block, 0, "local")
+    s.reverse_compute_inline(lowered.epilogue_block)
+    res = np.zeros(out.shape, np.float32)
+    tir.interpret(s.func, [*(values[v.name] for v in group.inputs), res], check_bounds=True)
+    np.testing.assert_allclose(res, values[out.name], rtol=1e-4, atol=1e-4)

@@ -60,9 +60,14 @@ def broadcast_index(
     out_shape: Sequence[int], shape: Sequence[int], indices: Sequence[Expr]
 ) -> tuple[Expr, ...]:
     """The index into a tensor of ``shape`` broadcast to ``out_shape`` (NumPy rules:
-    shapes align on the right, dimensions of size 1 repeat)."""
+    shapes align on the right, dimensions of size 1 repeat). A dimension that is 1
+    in both keeps the output's index variable, so schedule primitives see the
+    access as elementwise."""
     offset = len(out_shape) - len(shape)
-    return tuple(IntImm(0) if d == 1 else indices[offset + i] for i, d in enumerate(shape))
+    return tuple(
+        IntImm(0) if d == 1 and out_shape[offset + i] != 1 else indices[offset + i]
+        for i, d in enumerate(shape)
+    )
 
 
 def broadcast(t: TensorLike, out_shape: Sequence[int], indices: Sequence[Expr]) -> Expr:
