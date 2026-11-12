@@ -146,6 +146,7 @@ class EvolutionarySearch:
         explore: float = 0.2,
         elite: float = 0.2,
         seeds_from_measured: int = 16,
+        refit_growth: float = 0.1,
     ) -> None:
         self.model: CostModel = model if model is not None else TreeCostModel()
         self.population = population
@@ -154,9 +155,20 @@ class EvolutionarySearch:
         self.explore = explore
         self.elite = elite
         self.seeds_from_measured = seeds_from_measured
+        self.refit_growth = refit_growth
+        self._fitted_on = 0
 
     def update(self, states: Sequence[TaskState]) -> None:
+        """Refit once the measurements have grown by ``refit_growth`` (at least 16)
+        since the last fit: with thousands of samples, one round adds little,
+        and a fit costs about a second."""
+        count = sum(len(state.measured) for state in states)
+        if self.model.trained and count - self._fitted_on < max(
+            16, self.refit_growth * self._fitted_on
+        ):
+            return
         self.model.fit([s for state in states for s in state.samples()])
+        self._fitted_on = count
 
     def propose(self, state: TaskState, n: int, rng: random.Random) -> list[Point]:
         if not self.model.trained:
