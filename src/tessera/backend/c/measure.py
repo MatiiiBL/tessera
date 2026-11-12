@@ -18,7 +18,7 @@ from pathlib import Path
 from tessera.backend.base import MeasureError
 from tessera.backend.c import build as cbuild
 from tessera.backend.c.codegen import CodegenError, c_type, generate_kernel
-from tessera.backend.c.microkernels import header_text
+from tessera.backend.c.microkernels import header_files
 from tessera.target import Target
 from tessera.tir.stmt import PrimFunc
 
@@ -81,10 +81,7 @@ def harness_sources(func: PrimFunc, target: Target) -> dict[str, str]:
         "}",
         "",
     ]
-    files = {"harness.c": "\n".join(lines), "tessera_runtime.h": header_text("tessera_runtime.h")}
-    for h in code.headers:
-        files[h] = header_text(h)
-    return files
+    return {"harness.c": "\n".join(lines), **header_files(["tessera_runtime.h", *code.headers])}
 
 
 def build_harness(func: PrimFunc, target: Target) -> Path:

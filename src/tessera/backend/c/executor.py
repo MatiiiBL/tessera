@@ -24,7 +24,7 @@ import numpy as np
 from tessera.backend.base import KernelTime
 from tessera.backend.c import build as cbuild
 from tessera.backend.c.codegen import KernelCode, c_type, generate_kernel
-from tessera.backend.c.microkernels import header_text
+from tessera.backend.c.microkernels import header_files
 from tessera.ir.graph import NDArray, TensorType
 from tessera.plan import BufferRef, ExecutionPlan, StorageKind
 from tessera.target import Target
@@ -116,9 +116,7 @@ def model_sources(plan: ExecutionPlan, target: Target) -> ModelSource:
         "}",
         "",
     ]
-    files = {"model.c": "\n".join(out), "tessera_runtime.h": header_text("tessera_runtime.h")}
-    for h in headers:
-        files[h] = header_text(h)
+    files = {"model.c": "\n".join(out), **header_files(["tessera_runtime.h", *headers])}
     return ModelSource(files, kernels)
 
 
@@ -292,10 +290,7 @@ def kernel_sources(func: PrimFunc, target: Target) -> dict[str, str]:
             "",
         ]
     )
-    files = {"kernel.c": text, "tessera_runtime.h": header_text("tessera_runtime.h")}
-    for h in code.headers:
-        files[h] = header_text(h)
-    return files
+    return {"kernel.c": text, **header_files(["tessera_runtime.h", *code.headers])}
 
 
 def run_kernel(func: PrimFunc, args: Sequence[NDArray], target: Target | None = None) -> None:

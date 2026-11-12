@@ -14,8 +14,9 @@ from hypothesis import strategies as st
 
 from tessera.backend.c import build as cbuild
 from tessera.backend.c import run_kernel
-from tessera.backend.c.microkernels import SGEMM_KERNELS, header_text, host_supports
+from tessera.backend.c.microkernels import SGEMM_KERNELS, header_files, host_supports
 from tessera.dtype import DType
+from tessera.ir.graph import NDArray
 from tessera.target import CpuIsa, Target
 from tessera.tir.expr import Call, IntImm
 from tessera.tir.stmt import Buffer, Evaluate, PrimFunc
@@ -43,17 +44,23 @@ TSR_EXPORT void gemm(int64_t m, int64_t n, int64_t k, const float* a, int64_t ld
   if (transposed) tsr_{isa}_sgemm_bt(m, n, k, a, lda, b, ldb, c, ldc, accumulate);
   else tsr_{isa}_sgemm(m, n, k, a, lda, b, ldb, c, ldc, accumulate);
 }}
+TSR_EXPORT void conv(int64_t m, int64_t n, int64_t p0, const float* x, const float* w,
+                     int64_t ldw, float* y, int64_t ldy, const int64_t* g, int64_t accumulate) {{
+  tsr_{isa}_conv2d(m, n, p0, x, w, ldw, y, ldy, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
+                   g[8], g[9], g[10], g[11], accumulate);
+}}
 """
 
 
 @functools.cache
+def _library(isa: CpuIsa) -> ctypes.CDLL:
+    files = {"wrapper.c": WRAPPER.format(isa=isa), **header_files([f"tessera_{isa}.h"])}
+    return ctypes.CDLL(str(cbuild.build(files, "wrapper.c", Target(isa=isa))))
+
+
+@functools.cache
 def _gemm(isa: CpuIsa) -> Callable[..., None]:
-    files = {
-        "gemm.c": WRAPPER.format(isa=isa),
-        "tessera_runtime.h": header_text("tessera_runtime.h"),
-        f"tessera_{isa}.h": header_text(f"tessera_{isa}.h"),
-    }
-    lib = ctypes.CDLL(str(cbuild.build(files, "gemm.c", Target(isa=isa))))
+    lib = _library(isa)
     fn = lib.gemm
     fn.argtypes = (
         [ctypes.c_int64] * 3 + [ctypes.c_void_p, ctypes.c_int64] * 3 + [ctypes.c_int64] * 2
@@ -132,3 +139,74 @@ def test_generated_code_calls_the_microkernel(isa: CpuIsa) -> None:
     run_kernel(func, [av, bv, cv], Target(isa=isa))
     np.testing.assert_allclose(cv[:, :24], av[10:] @ bv, rtol=1e-4, atol=1e-4)
     assert not cv[:, 24:].any()
+
+
+def _conv_reference(
+    x: NDArray, w: NDArray, stride: tuple[int, int], pad: tuple[int, int], dilation: tuple[int, int]
+) -> NDArray:
+    """NHWC (one image) by HWIO, padding ``pad`` on every side, in float64."""
+    (h, wd, _), (kh, kw, _, o) = x.shape, w.shape
+    (sh, sw), (ph, pw), (dh, dw) = stride, pad, dilation
+    oh = (h + 2 * ph - dh * (kh - 1) - 1) // sh + 1
+    ow = (wd + 2 * pw - dw * (kw - 1) - 1) // sw + 1
+    padded = np.pad(x.astype(np.float64), ((ph, ph), (pw, pw), (0, 0)))
+    out = np.zeros((oh, ow, o))
+    for i in range(kh):
+        for j in range(kw):
+            rows = slice(i * dh, i * dh + sh * (oh - 1) + 1, sh)
+            cols = slice(j * dw, j * dw + sw * (ow - 1) + 1, sw)
+            out += padded[rows, cols, :] @ w[i, j].astype(np.float64)
+    return out
+
+
+CONV_CASES = [
+    # h, w, c, kh, kw, stride, pad, dilation, o
+    (8, 8, 16, 3, 3, (1, 1), (1, 1), (1, 1), 24),
+    (9, 7, 3, 7, 7, (2, 2), (3, 3), (1, 1), 16),  # ResNet's first layer, scaled down
+    (6, 6, 8, 1, 1, (1, 1), (0, 0), (1, 1), 40),
+    (10, 10, 12, 3, 3, (2, 2), (1, 1), (1, 1), 20),
+    (11, 9, 5, 3, 3, (1, 2), (2, 1), (2, 2), 13),
+]
+
+
+@pytest.mark.parametrize("isa", ISA_PARAMS)
+@pytest.mark.parametrize("case", CONV_CASES)
+def test_conv2d_tiles(isa: CpuIsa, case: tuple) -> None:  # type: ignore[type-arg]
+    h, wd, c, kh, kw, stride, pad, dilation, o = case
+    rng = np.random.default_rng(h * 31 + c)
+    x = rng.standard_normal((h, wd, c)).astype(np.float32)
+    w = rng.standard_normal((kh, kw, c, o)).astype(np.float32)
+    ref = _conv_reference(x, w, stride, pad, dilation)
+    oh, ow = ref.shape[:2]
+    pixels = oh * ow
+    # A tile in the middle: some pixels and a range of output channels.
+    p0, m = pixels // 5, pixels - pixels // 5 - pixels // 7
+    o0, n = o // 4, o - o // 4 - 1
+    y = rng.standard_normal((pixels, o)).astype(np.float32)
+    before = y.copy()
+    geometry = np.array([h, wd, c, kh, kw, *stride, *pad, *dilation, ow], np.int64)
+    fn = _library(isa).conv
+    fn.argtypes = (
+        [ctypes.c_int64] * 3
+        + [ctypes.c_void_p] * 2
+        + [ctypes.c_int64]
+        + [
+            ctypes.c_void_p,
+            ctypes.c_int64,
+            ctypes.c_void_p,
+            ctypes.c_int64,
+        ]
+    )
+    for accumulate in (0, 1):
+        y[...] = before
+        fn(
+            m, n, p0, x.ctypes.data, w.ctypes.data + o0 * 4, o,
+            y.ctypes.data + (p0 * o + o0) * 4, o, geometry.ctypes.data, accumulate,
+        )  # fmt: skip
+        want = ref.reshape(pixels, o)[p0 : p0 + m, o0 : o0 + n]
+        if accumulate:
+            want = want + before[p0 : p0 + m, o0 : o0 + n]
+        np.testing.assert_allclose(y[p0 : p0 + m, o0 : o0 + n], want, rtol=1e-4, atol=1e-4)
+        outside = np.ones_like(y, bool)
+        outside[p0 : p0 + m, o0 : o0 + n] = False
+        np.testing.assert_array_equal(y[outside], before[outside])
