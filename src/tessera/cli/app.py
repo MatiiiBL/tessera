@@ -170,7 +170,10 @@ def run_command(
     compiled = comp.build()
     inputs = random_inputs(comp.graph, seed=seed)
     outputs = compiled.run(inputs)
-    reference = interpret(comp.graph, inputs, float64=True) if check else {}
+    reference = {}
+    if check:
+        computed = interpret(comp.graph, inputs, float64=True)
+        reference = {comp.graph.io_names.get(n, n): v for n, v in computed.items()}
     table = Table(
         "output",
         "shape",

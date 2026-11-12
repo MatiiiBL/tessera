@@ -200,6 +200,13 @@ def views_model() -> onnx.ModelProto:
     )
 
 
+def dotted_model() -> onnx.ModelProto:
+    """Names that are not identifiers, as PyTorch exports them: ``input.1`` to ``out.0``."""
+    b = _Builder("dotted", 0)
+    h = b.op("Relu", [b.op("Add", ["input.1", b.weight(8, scale=1.0, hint="bias")])])
+    return b.model([("input.1", (2, 8))], [(h, "out.0")])
+
+
 def random_inputs(model: onnx.ModelProto, seed: int = 0) -> dict[str, np.ndarray]:
     """Standard-normal float32 inputs of every graph input's static shape."""
     rng = np.random.default_rng(seed)

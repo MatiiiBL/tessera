@@ -180,3 +180,22 @@ def test_apply_template_returns_the_trace() -> None:
     func, trace = apply_template(template, matmul_group(), {"tile_i": (4, 4), "parallel": True})
     assert trace == ["split(i0, [4, 4]) -> [i0_0, i0_1]", "parallel(i0_0)"]
     assert func.name == "mm"
+
+
+def test_compiled_models_use_the_onnx_names() -> None:
+    from e2e.onnx_models import dotted_model, onnxruntime_outputs
+
+    model = dotted_model()
+    compiled = lower(model, target="c:generic").build()
+    assert [n for n, _ in compiled.inputs] == ["input.1"]
+    assert [n for n, _ in compiled.outputs] == ["out.0"]
+    x = np.random.default_rng(0).standard_normal((2, 8)).astype(np.float32)
+    expected = onnxruntime_outputs(model, {"input.1": x})["out.0"]
+    for spelling in ("input.1", "input_1"):
+        out = compiled.run({spelling: x})
+        assert list(out) == ["out.0"]
+        np.testing.assert_allclose(out["out.0"], expected, rtol=1e-6)
+    assert len(compiled.benchmark({"input.1": x}, warmup=1, repeat=3)) == 3
+    assert len(compiled.profile({"input_1": x}, repeat=2)) >= 1
+    assert "model.c" in compiled.sources()
+    assert compiled.target == GENERIC

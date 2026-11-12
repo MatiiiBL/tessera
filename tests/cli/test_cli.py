@@ -118,3 +118,13 @@ def test_bench_models_on_a_stand_in_zoo(tmp_path: Path, monkeypatch: pytest.Monk
     systems = {s["system"]: s for s in data["models"][0]["systems"]}
     assert systems["tessera-c:generic"]["agreement"]["top1"] == 1.0
     assert systems["onnxruntime-cpu"]["latency"]["runs"] >= 50
+
+
+def test_run_check_with_onnx_names(tmp_path: Path) -> None:
+    from e2e.onnx_models import dotted_model
+
+    path = tmp_path / "dotted.onnx"
+    onnx.save(dotted_model(), path)
+    out = invoke("run", str(path), "-t", "c:generic", "--check")
+    assert "out.0" in out
+    assert "match" in out

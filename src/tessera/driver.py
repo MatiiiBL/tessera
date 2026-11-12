@@ -26,10 +26,10 @@ from pathlib import Path
 import onnx
 
 from tessera import passes
-from tessera.backend.base import CompiledModel, Template, get_backend
+from tessera.backend.base import CompiledModel, KernelTime, Template, get_backend
 from tessera.compute import lower_group
 from tessera.frontend import onnx as onnx_frontend
-from tessera.ir.graph import Graph, Value
+from tessera.ir.graph import Graph, NDArray, TensorType, Value
 from tessera.plan import (
     BufferRef,
     ExecutionPlan,
@@ -104,12 +104,59 @@ class Compilation:
     tasks: dict[str, Task]  # by task key, with weights = groups sharing it
 
     def build(self) -> CompiledModel:
-        """Compile the plan with the target's backend."""
-        return get_backend(self.target.kind).build(self.plan, self.target)
+        """Compile the plan with the target's backend; the result uses the ONNX
+        model's own input and output names."""
+        inner = get_backend(self.target.kind).build(self.plan, self.target)
+        return NamedModel(inner, self.graph.io_names)
 
     @property
     def tuned_kernels(self) -> int:
         return sum(1 for k in self.kernels if k.tuned)
+
+
+class NamedModel:
+    """A compiled model that speaks the ONNX model's input and output names.
+
+    The importer turns names into identifiers (``input.1`` becomes ``input_1``)
+    and the plan uses those; this wrapper reports and returns the original
+    names, and accepts either spelling of each input.
+    """
+
+    def __init__(self, inner: CompiledModel, io_names: Mapping[str, str]) -> None:
+        self.inner = inner
+        self._original = dict(io_names)
+        self._internal = {original: name for name, original in io_names.items()}
+
+    @property
+    def target(self) -> Target:
+        return self.inner.target
+
+    @property
+    def inputs(self) -> list[tuple[str, TensorType]]:
+        return [(self._original.get(n, n), t) for n, t in self.inner.inputs]
+
+    @property
+    def outputs(self) -> list[tuple[str, TensorType]]:
+        return [(self._original.get(n, n), t) for n, t in self.inner.outputs]
+
+    def run(self, inputs: Mapping[str, NDArray]) -> dict[str, NDArray]:
+        """Run once; outputs are keyed by the model's own output names."""
+        out = self.inner.run(self._feeds(inputs))
+        return {self._original.get(n, n): v for n, v in out.items()}
+
+    def benchmark(
+        self, inputs: Mapping[str, NDArray], *, warmup: int = 3, repeat: int = 20
+    ) -> list[float]:
+        return self.inner.benchmark(self._feeds(inputs), warmup=warmup, repeat=repeat)
+
+    def profile(self, inputs: Mapping[str, NDArray], *, repeat: int = 10) -> list[KernelTime]:
+        return self.inner.profile(self._feeds(inputs), repeat=repeat)
+
+    def sources(self) -> dict[str, str]:
+        return self.inner.sources()
+
+    def _feeds(self, inputs: Mapping[str, NDArray]) -> dict[str, NDArray]:
+        return {self._internal.get(n, n): v for n, v in inputs.items()}
 
 
 def resolve_target(target: str | Target) -> Target:
