@@ -40,6 +40,15 @@ from tessera.plan import StorageKind
 CLASSIFIER_SAMPLES = 16
 WARMUP = 10
 RUNS = 50
+ROW_SECONDS = 60.0  # timing budget of one row: slower rows get fewer runs (at least 3)
+
+# Ablation variants of the untuned pipeline: (fuse, optimize, schedule) for lower().
+VARIANTS: dict[str, tuple[bool, bool, bool]] = {
+    "full": (True, True, True),
+    "fusion off": (False, True, True),
+    "graph rewrites off": (True, False, True),
+    "no schedule": (True, True, False),
+}
 
 
 @dataclass
@@ -69,6 +78,25 @@ class ModelResult:
     model: str
     systems: list[SystemResult]
     ablations: dict[str, Any]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ModelResult:
+        """Read back what ``as_dict`` wrote (for pages that merge earlier runs)."""
+        systems = []
+        for s in data["systems"]:
+            lat, agr = s.get("latency"), s.get("agreement")
+            known = {"system", "latency", "agreement", "threads", "error"}
+            systems.append(
+                SystemResult(
+                    s["system"],
+                    Latency(**lat) if lat else None,
+                    Agreement(**agr) if agr else None,
+                    s.get("threads"),
+                    s.get("error"),
+                    {k: v for k, v in s.items() if k not in known},
+                )
+            )
+        return cls(data["model"], systems, data.get("ablations", {}))
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -110,10 +138,19 @@ def measure_compilation(
     inputs: Sequence[Mapping[str, NDArray]],
     reference: list[dict[str, NDArray]],
 ) -> SystemResult:
-    """Build ``comp``, then time it and compare its outputs like a baseline."""
+    """Build ``comp``, then time it and compare its outputs like a baseline.
+
+    A model that runs too slowly for ``RUNS`` runs within ``ROW_SECONDS`` (the
+    unscheduled pipeline) gets as many runs as fit, at least 3; the latency
+    records how many.
+    """
     compiled = comp.build()
     outputs = [compiled.run(x) for x in inputs]
-    seconds = compiled.benchmark(inputs[0], warmup=WARMUP, repeat=RUNS)
+    first = compiled.benchmark(inputs[0], warmup=0, repeat=1)[0]
+    if first * (RUNS + WARMUP) <= ROW_SECONDS:
+        seconds = compiled.benchmark(inputs[0], warmup=WARMUP, repeat=RUNS)
+    else:
+        seconds = compiled.benchmark(inputs[0], warmup=0, repeat=max(3, int(ROW_SECONDS / first)))
     return SystemResult(
         name,
         Latency.of(seconds),
@@ -126,8 +163,10 @@ def measure_compilation(
 def plan_stats(comp: Compilation) -> dict[str, Any]:
     """Kernel count, bytes moved and memory of a compilation (see the module docstring)."""
     moved = sum(ref.nbytes for launch in comp.plan.launches for ref in launch.args)
-    held = {
-        name: ref.nbytes for name, ref in comp.memory.refs.items() if ref.kind is StorageKind.ARENA
+    held = {  # the tensors kernels write into the arena (views share their input's bytes)
+        g.output.name: g.output.type.nbytes
+        for g in comp.groups
+        if not g.is_view and comp.memory.refs[g.output.name].kind is StorageKind.ARENA
     }
     return {
         "kernels": len(comp.plan.launches),
@@ -144,10 +183,12 @@ def bench_model(
     *,
     targets: Sequence[str],
     baselines: Sequence[str] = ("onnxruntime-cpu", "pytorch-cpu", "pytorch-mps"),
-    ablations: bool = True,
+    ablation_targets: Sequence[str] | None = None,
+    variants: Sequence[str] = tuple(VARIANTS),
     progress: Callable[[str], None] = lambda message: None,
 ) -> ModelResult:
-    """Every system on one model, then the ablations on each target."""
+    """The baselines, Tessera tuned and untuned on each of ``targets``, and the
+    ablation ``variants`` on each of ``ablation_targets`` (default: ``targets``)."""
     inputs = samples(spec)
     reference_runner = onnxruntime_cpu(spec.onnx_path())
     reference = [reference_runner.outputs(x) for x in inputs]
@@ -175,42 +216,39 @@ def bench_model(
     for name in baselines:
         if not name.startswith("pytorch-") or torch_available(name.removeprefix("pytorch-")):
             attempt(name, partial(baseline, name))
-
-    found: dict[str, Any] = {}
     for target in targets:
         for tuned in (True, False):
             label = f"tessera-{target}{'' if tuned else '-untuned'}"
             attempt(label, partial(tessera, label, target, tuned))
-        if ablations:
-            found[target] = ablate(spec, target, inputs[:1], reference[:1], progress)
+    found: dict[str, Any] = {}
+    for target in targets if ablation_targets is None else ablation_targets:
+        if variants:
+            found[target] = ablate(spec, target, variants, inputs[:1], reference[:1], progress)
     return ModelResult(spec.name, results, found)
 
 
 def ablate(
     spec: ModelSpec,
     target: str,
+    variants: Sequence[str],
     inputs: Sequence[Mapping[str, NDArray]],
     reference: list[dict[str, NDArray]],
     progress: Callable[[str], None],
 ) -> dict[str, Any]:
-    """Fusion off and graph rewrites off, against the full untuned pipeline."""
-    shapes = spec.input_shapes
-    variants = {  # name: (fuse, optimize)
-        "full": (True, True),
-        "fusion off": (False, True),
-        "graph rewrites off": (True, False),
-    }
+    """Each variant of ``VARIANTS``, untuned, on the fixed input."""
     out: dict[str, Any] = {}
-    for name, (fuse, optimize) in variants.items():
+    for name in variants:
         progress(f"{spec.name}: {target} ablation, {name}")
+        fuse, optimize, schedule = VARIANTS[name]
         try:
             comp = lower(
                 spec.onnx_path(),
                 target=target,
-                input_shapes=shapes,
+                input_shapes=spec.input_shapes,
                 tuned=False,
                 fuse=fuse,
                 optimize=optimize,
+                schedule=schedule,
             )
             out[name] = measure_compilation(name, comp, spec, inputs, reference).as_dict()
         except Exception as e:  # report the variant as failed, keep the others
@@ -266,6 +304,8 @@ def markdown(results: Sequence[ModelResult]) -> str:
 
 def _notes(s: SystemResult) -> str:
     notes = []
+    if s.latency is not None and s.latency.runs < RUNS:
+        notes.append(f"{s.latency.runs} runs")
     if s.threads:
         notes.append(f"{s.threads} threads")
     if "kernels" in s.details:

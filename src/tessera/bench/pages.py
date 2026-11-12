@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ from typing import Any
 from tessera.bench import models as models_bench
 from tessera.bench import ops as ops_bench
 from tessera.bench import tuning as tuning_bench
-from tessera.bench.report import environment, header, write
+from tessera.bench.report import environment, header, results_dir, write
 from tessera.bench.zoo import MODELS, load_manifest
 from tessera.target import Target
 
@@ -28,20 +29,48 @@ def models_page(
     targets: Sequence[str],
     *,
     names: Sequence[str] = MODELS,
+    ablation_targets: Sequence[str] | None = None,
+    variants: Sequence[str] = tuple(models_bench.VARIANTS),
     provisional: bool | None = None,
     directory: Path | None = None,
     progress: Progress = print,
 ) -> Path:
-    """``results/models``: every model on every system, with the ablations."""
-    env = environment(provisional=provisional)
+    """``results/models``: every model on every system, with the ablations.
+
+    Models measured earlier and not named here are kept, each with the
+    environment it was measured in, so each model can be measured by its own
+    run of the command.
+    """
+    out = directory if directory is not None else results_dir()
+    previous = out / "models.json"
+    kept: dict[str, Any] = {}
+    if previous.exists():
+        kept = {m["model"]: m for m in json.loads(previous.read_text()).get("models", [])}
     specs = load_manifest()
-    results = [
-        models_bench.bench_model(specs[name], targets=targets, progress=progress) for name in names
-    ]
-    command = "tessera bench models " + " ".join(f"--target {t}" for t in targets)
-    text = header("Models", env, command.strip()) + "\n" + models_bench.markdown(results)
-    data: dict[str, Any] = {"environment": env, "models": [r.as_dict() for r in results]}
-    return write("models", data, text, directory)
+    for name in names:
+        env = environment(provisional=provisional)
+        result = models_bench.bench_model(
+            specs[name],
+            targets=targets,
+            ablation_targets=ablation_targets,
+            variants=variants,
+            progress=progress,
+        )
+        kept[name] = {**result.as_dict(), "environment": env}
+    entries = [kept[n] for n in [*MODELS, *sorted(set(kept) - set(MODELS))] if n in kept]
+    env = environment(provisional=any(e["environment"]["provisional"] for e in entries))
+    sections = []
+    for entry in entries:
+        e = entry["environment"]
+        when = (
+            f"Measured {e['date']} at commit `{e['commit']}`, load average {e['load_average'][0]}"
+        )
+        sections.append(
+            models_bench.markdown([models_bench.ModelResult.from_dict(entry)])
+            + f"\n\n{when}{' (provisional)' if e['provisional'] else ''}."
+        )
+    text = header("Models", env, "tessera bench models") + "\n" + "\n\n".join(sections)
+    return write("models", {"environment": env, "models": entries}, text, out)
 
 
 def ops_page(

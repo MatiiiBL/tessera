@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import onnx
+import pytest
 
 from e2e.onnx_models import cnn
 from tessera.bench.models import (
@@ -53,7 +54,7 @@ def test_samples_and_baseline_only_bench(tmp_path: Path) -> None:
 
 def test_failures_are_reported_not_raised(tmp_path: Path) -> None:
     spec = load_manifest(tiny_zoo(tmp_path))["resnet50"]
-    result = bench_model(spec, targets=["cuda"], baselines=[], ablations=False)
+    result = bench_model(spec, targets=["cuda"], baselines=[], variants=())
     assert [s.system for s in result.systems] == ["tessera-cuda", "tessera-cuda-untuned"]
     assert all("unknown target" in (s.error or "") for s in result.systems)
 
@@ -85,3 +86,45 @@ def test_markdown_tables() -> None:
     assert "| pytorch-mps | failed |" in text
     assert "| c:sme | full | 54 | 2.0 | 1.0 | 3.0 | 10.00 |" in text
     assert "| c:sme | fusion off | failed |" in text
+
+
+def test_results_round_trip_through_json() -> None:
+    lat = Latency(0.010, 0.009, 0.012, 50)
+    result = ModelResult(
+        "resnet50",
+        [
+            SystemResult("onnxruntime-cpu", lat, Agreement(0, 0, 1.0), 4),
+            SystemResult("x", error="E", details={"kernels": 3}),
+        ],
+        {"c:sme": {"full": {"kernels": 3}}},
+    )
+    assert ModelResult.from_dict(json.loads(json.dumps(result.as_dict()))) == result
+
+
+def test_pages_merge_models_measured_separately(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tessera.bench.pages import models_page
+
+    zoo = tiny_zoo(tmp_path)
+    manifest = json.loads((zoo / "manifest.json").read_text())
+    manifest["mobilenet_v2"] = manifest["resnet50"]
+    (zoo / "manifest.json").write_text(json.dumps(manifest))
+    monkeypatch.setenv("TESSERA_MODELS", str(zoo))
+    out = tmp_path / "results"
+    for name in ("mobilenet_v2", "resnet50"):
+        models_page(
+            [],
+            names=[name],
+            ablation_targets=["c:generic"],
+            variants=["no schedule"],
+            provisional=True,
+            directory=out,
+            progress=lambda message: None,
+        )
+    data = json.loads((out / "models.json").read_text())
+    assert [m["model"] for m in data["models"]] == ["resnet50", "mobilenet_v2"]
+    page = (out / "models.md").read_text()
+    assert page.index("### resnet50") < page.index("### mobilenet_v2")
+    assert "| c:generic | no schedule |" in page
+    assert page.count("(provisional).") == 2

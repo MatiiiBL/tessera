@@ -375,6 +375,20 @@ def bench_command(
     model: Annotated[
         list[str] | None, typer.Option("--model", "-m", help="Only these models (models suite).")
     ] = None,
+    baselines_only: Annotated[
+        bool, typer.Option(help="Models suite: no Tessera rows (ablations still run).")
+    ] = False,
+    ablation: Annotated[
+        list[str] | None,
+        typer.Option(
+            help="Models suite: ablation variants (full, fusion off, graph rewrites off, "
+            "no schedule; default all)."
+        ),
+    ] = None,
+    ablation_target: Annotated[
+        list[str] | None,
+        typer.Option(help="Models suite: targets of the ablations (default: --target)."),
+    ] = None,
     trials: Annotated[int, typer.Option(help="Trials per search (tuning suite).")] = 256,
     seeds: Annotated[int, typer.Option(help="Seeds per strategy (tuning suite).")] = 5,
     real_tasks: Annotated[
@@ -399,8 +413,22 @@ def bench_command(
     targets = list(target) if target else pages.default_targets()
     written = []
     if suite in (Suite.models, Suite.all):
+        from tessera.bench.models import VARIANTS
+
         names = list(model) if model else list(MODELS)
-        written.append(pages.models_page(targets, names=names, provisional=provisional))
+        variants = list(ablation) if ablation else list(VARIANTS)
+        unknown = sorted(set(variants) - set(VARIANTS))
+        if unknown:
+            raise typer.BadParameter(f"unknown ablations {unknown}; choose from {list(VARIANTS)}")
+        written.append(
+            pages.models_page(
+                [] if baselines_only else targets,
+                names=names,
+                ablation_targets=list(ablation_target) if ablation_target else targets,
+                variants=variants,
+                provisional=provisional,
+            )
+        )
     if suite in (Suite.ops, Suite.all):
         written.append(pages.ops_page(targets, provisional=provisional))
     if suite in (Suite.tuning, Suite.all):
