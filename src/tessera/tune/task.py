@@ -124,12 +124,14 @@ class Task:
         return sch.func
 
     def build(self, config: Mapping[str, KnobValue]) -> PrimFunc:
-        """Schedule ``config``; backends with a ``prebuild`` method also compile it
+        """Schedule ``config``; a backend that is a ``Prebuilder`` also compiles it
         here, so compilation happens in the parallel build processes."""
+        from tessera.backend.base import Prebuilder
+
         func = self.schedule(config)
-        prebuild = getattr(self._backend(), "prebuild", None)
-        if callable(prebuild):
-            prebuild(func, self.target)
+        backend = self._backend()
+        if isinstance(backend, Prebuilder):
+            backend.prebuild(func, self.target)
         return func
 
     def measure(self, built: PrimFunc) -> float:

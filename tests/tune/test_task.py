@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 import tessera.tir
+from tessera.backend.base import Prebuilder
 from tessera.dtype import DType
 from tessera.ir.graph import Node, TensorType, Value
 from tessera.plan import FusedGroup, LoweredGroup
@@ -54,3 +55,31 @@ def test_identical_structures_share_a_task() -> None:
 def test_task_key_uses_the_structural_hash(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(tessera.tir.__dict__, "structural_hash", lambda f: "0123456789abcdef99")
     assert task_key(lowered("x", 4)) == "matmul:0123456789abcdef"
+
+
+class FakeBackend:
+    def __init__(self, prebuilds: bool) -> None:
+        self.built: list[str] = []
+        self.timed: list[str] = []
+        if prebuilds:
+            self.prebuild = lambda func, target: self.built.append(func.name)
+
+    def measure(
+        self, func: PrimFunc, target: Target, *, repeat: int = 5, min_seconds: float = 0.05
+    ) -> float:
+        self.timed.append(func.name)
+        return 0.25
+
+
+@pytest.mark.parametrize("prebuilds", [True, False])
+def test_build_prebuilds_when_the_backend_can(
+    monkeypatch: pytest.MonkeyPatch, prebuilds: bool
+) -> None:
+    fake = FakeBackend(prebuilds)
+    assert isinstance(fake, Prebuilder) is prebuilds
+    task = Task.create(lowered("mm", 8), template, Target(), key="matmul:test")
+    monkeypatch.setattr(Task, "_backend", lambda self: fake)
+    built = task.build(task.space.default())
+    assert fake.built == (["mm"] if prebuilds else [])
+    assert task.measure(built) == 0.25
+    assert fake.timed == ["mm"]

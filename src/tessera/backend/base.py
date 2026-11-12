@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from tessera.ir.graph import NDArray, TensorType
 from tessera.plan import ExecutionPlan, LoweredGroup
@@ -75,6 +75,20 @@ class Backend(Protocol):
     ) -> float:
         """Median seconds of one call of ``func`` on random inputs (for tuning).
         Raises ``MeasureError`` if it does not build or run."""
+        ...
+
+
+@runtime_checkable
+class Prebuilder(Protocol):
+    """An optional capability of a backend, outside ``Backend`` so that backends
+    without it still satisfy that protocol. The tuner calls ``prebuild`` in its
+    parallel build processes when the backend has it, so that compilation runs
+    in parallel and ``measure`` only has to run the cached result."""
+
+    def prebuild(self, func: PrimFunc, target: Target) -> None:
+        """Compile ``func`` for ``measure`` into the build cache without running it;
+        safe to call from another process. Raises ``MeasureError`` if it does not
+        build."""
         ...
 
 
