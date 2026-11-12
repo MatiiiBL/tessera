@@ -266,11 +266,20 @@ def search(
     return default, best, best_values
 
 
+def lowering_options() -> dict[str, Any]:
+    """The options the backend lowers groups with (as the driver does), so the
+    benchmarks time the kernels a compiled model runs."""
+    from tessera.backend.metal import backend
+    from tessera.target import Target
+
+    return dict(backend().lowering_options(Target.parse("metal")))
+
+
 def _lower_one(graph: Graph, pattern: str) -> LoweredGroup:
     from tessera import compute, passes
 
     groups = [g for g in passes.fuse(graph) if g.pattern == pattern and not g.is_view]
-    return compute.lower_group(groups[0])
+    return compute.lower_group(groups[0], **lowering_options())
 
 
 def matmul_group(batch: int, m: int, n: int, k: int) -> LoweredGroup:
@@ -537,7 +546,7 @@ def resnet_convolutions(path: Path | None = None) -> list[tuple[LoweredGroup, in
     for group in passes.fuse(graph):
         if group.pattern != "conv2d":
             continue
-        lowered = compute.lower_group(group)
+        lowered = compute.lower_group(group, **lowering_options())
         key = (tuple(sorted(lowered.dims.items())), tuple(n.op for n in group.nodes))
         if key in seen:
             seen[key][1] += 1
