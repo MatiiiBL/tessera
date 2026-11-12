@@ -107,33 +107,51 @@ the same commands.
 
 ## Results
 
-**Provisional (2026-11-12):** these were measured on a busy machine (load
-averages 4 to 6.5 while each model ran) and before the backends' schedule
-templates existed, so the Tessera row is the unscheduled pipeline only. The
-full tables are in [results/models.md](../results/models.md).
+**Provisional (2026-11-12).** Measured while other packages ran tests and
+benchmarks (load averages 4 to 6.5), with the first C and Metal templates
+(loop code only; the NEON/SME microkernels and Metal's SIMD-group matrix
+code are not wired in yet) and without tuning logs, so every Tessera row is
+untuned. Under this load the same untuned ResNet-50 configuration measured
+57.8 ms and 76.2 ms in two rows of one run, so differences under about 30%
+are not meaningful here. The full tables are in
+[results/models.md](../results/models.md); the final numbers come from a
+quiet-machine run of the same commands.
 
 Median latency in milliseconds, batch 1:
 
-| model | ONNX Runtime CPU | PyTorch CPU | PyTorch MPS | Tessera c:sme, no schedule |
-|---|---|---|---|---|
-| ResNet-50 | 31.9 | 38.2 | 35.8 | 4,719 (12 runs) |
-| MobileNetV2 | 4.8 | 36.9 | 23.5 | 183 |
-| BERT-base | 47.1 | 63.4 | 21.1 | 17,130 (3 runs) |
-| GPT-2 | 65.8 | 85.5 | 40.4 | 23,167 (3 runs) |
+| model | ONNX Runtime CPU | PyTorch CPU | PyTorch MPS | Tessera c:sme | Tessera Metal |
+|---|---|---|---|---|---|
+| ResNet-50 | 23.0 | 24.1 | 23.2 | 76.2 | 64.5 |
+| MobileNetV2 | 4.1 | 38.1 | 13.5 | 5.9 | 6.4 |
+| BERT-base | 36.9 | 54.9 | 22.4 | 144.3 | 48.8 |
+| GPT-2 | 50.2 | 71.0 | 39.1 | 324.9 | 121.1 |
 
-Every system, the unscheduled Tessera pipeline included, agrees with ONNX
-Runtime to within 4e-6 of the output's largest magnitude; the baselines
-pick the same top-1 class on all 16 images (the ablation rows compare the
-fixed image only). Without schedules
-every loop is serial, which is why that column is two to three orders of
-magnitude slower: it is the baseline the templates are measured against.
-On Metal the unscheduled pipeline runs each kernel on a single GPU thread;
-one inference took 17 s for MobileNetV2 and 239 s for ResNet-50, too slow
-to benchmark.
+Every row agrees with ONNX Runtime to within 4e-6 of the output's largest
+magnitude, and every system picks the same top-1 class on all 16 images.
 
-Memory planning, from the same runs: the arena holds 10.0 MiB for ResNet-50
-(43.2 MiB of intermediate tensors), 6.5 MiB for MobileNetV2 (25.5 MiB),
-2.3 MiB for BERT (72.1 MiB) and 3.4 MiB for GPT-2 (72.8 MiB).
+**Fusion** cuts the kernel count to 37 to 53% and the bytes moved by 23 to
+43% (see Ablations for the definition):
+
+| model | kernels, fused / unfused | bytes moved, fused / unfused (MiB) |
+|---|---|---|
+| ResNet-50 | 56 / 123 | 206 / 322 |
+| MobileNetV2 | 54 / 101 | 66 / 115 |
+| BERT-base | 134 / 320 | 578 / 787 |
+| GPT-2 | 111 / 304 | 813 / 1,061 |
+
+The latency effect of fusion is within the noise of these runs; the final
+run measures it on a quiet machine.
+
+**Schedules.** Without templates every loop is serial: on `c:sme` one
+inference takes 4,719 ms for ResNet-50 (12 runs), 183 ms for MobileNetV2,
+17,130 ms for BERT and 23,167 ms for GPT-2 (3 runs each), 24 to 119 times
+the untuned scheduled code above. On Metal each unscheduled kernel runs on
+one GPU thread; one inference took 17 s for MobileNetV2 and 239 s for
+ResNet-50, too slow to benchmark.
+
+**Memory planning:** the arena holds 10.0 MiB for ResNet-50 (43.2 MiB of
+intermediate tensors), 6.5 MiB for MobileNetV2 (25.5 MiB), 2.3 MiB for BERT
+(72.1 MiB) and 3.4 MiB for GPT-2 (72.8 MiB).
 
 ## Limitations
 
