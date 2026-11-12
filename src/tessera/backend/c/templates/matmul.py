@@ -22,6 +22,7 @@ from tessera.backend.c.templates.common import (
     read_index,
     register_options,
     schedule_alone,
+    tile_options,
     try_apply,
     vectorize_inside,
 )
@@ -113,13 +114,16 @@ def _micro_knobs(cfg: Config, m: int, n: int, batches: int, target: CpuTarget) -
     counts = sorted({c for c in (1, 2, target.threads) if c <= target.threads})
     default_threads = 2 if target.isa == "sme" and 2 in counts else target.threads
     threads = choose_int(cfg, "micro_threads", counts, default_threads)
-    rows = [d for d in divisors(m) if d <= 512]
-    tile_m = choose_int(cfg, "micro_m", rows, max(d for d in rows if d <= 256))
-    row_tiles = batches * (m // max(d for d in rows if d <= 256))
-    columns = [d for d in divisors(n) if d <= 1024]
+    # Tiles need not divide the matrix: an edge tile computes its valid part.
+    rows = tile_options(m, 512)
+    default_m = min(m, 256)
+    tile_m = choose_int(cfg, "micro_m", rows, default_m)
+    row_tiles = batches * -(-m // default_m)
+    columns = tile_options(n, 1024)
     want = max(16, n * row_tiles // (2 * default_threads))
-    fitting = [d for d in columns if d <= want]
-    tile_n = choose_int(cfg, "micro_n", columns, max(fitting) if fitting else min(columns))
+    tile_n = choose_int(
+        cfg, "micro_n", columns, max(c for c in columns if c <= want) if want < n else n
+    )
     return MicroKnobs(enabled, tile_m, tile_n, threads)
 
 

@@ -11,7 +11,8 @@ NumPy reference the interpreter runs instead.
 
 - ``gemm``: ``C[.., i, j] += A[.., i, k] * B[.., k, j]`` (or ``B[.., j, k]``,
   read transposed) on a ``tile_m x tile_n`` tile, any reduction length;
-  the unit-stride axes must be the last ones. Calls ``tsr_<isa>_sgemm``.
+  the unit-stride axes must be the last ones. Calls ``tsr_<isa>_sgemm``
+  with the tile's valid rows and columns (fewer on an edge tile).
 - ``conv2d``: an NHWC convolution with HWIO weights over the whole output
   plane of one image and a strip of output channels, its padding as
   lower_group writes it (clamped indices under a Select). Calls
@@ -32,7 +33,7 @@ from typing import Any
 import numpy as np
 
 from tessera.backend.c.alloc import affine, sub_exprs
-from tessera.backend.c.codegen import substitute
+from tessera.backend.c.codegen import fold, substitute
 from tessera.backend.c.microkernels import CONV2D_KERNELS, SGEMM_KERNELS
 from tessera.backend.c.templates.common import realize
 from tessera.dtype import DType
@@ -120,7 +121,8 @@ def describe(
         if isinstance(e, Var) and e not in fresh
     }
     mapping: dict[Var, Expr] = {**outer, **fresh}
-    values = tuple(substitute(v, mapping) for v in r.iter_values)
+    # Folded, so that a binding reads d_j rather than 0 * 32 + d_j.
+    values = tuple(fold(substitute(v, mapping)) for v in r.iter_values)
     dblock = r.block if body is None else replace(r.block, body=body, reads=(), writes=())
     stmt: Stmt = BlockRealize(values, TRUE, dblock)
     for v in reversed(nest):
@@ -210,7 +212,7 @@ def gemm_intrinsic(
 ) -> str:
     """Register the GEMM intrinsic for the ``(rows, columns, reduction)`` nest
     and return its name."""
-    rows, cols, red = (sch.extent(v) for v in nest)
+    red = sch.extent(nest[2])
     kernel = SGEMM_KERNELS[isa][layout.transposed]
     # The description has a buffer of its own per operand, so two operands that
     # read one buffer (Q and K sliced from one projection) still get a region
@@ -228,8 +230,11 @@ def gemm_intrinsic(
 
     def impl(match: intrin.IntrinMatch) -> Stmt:
         (pa, pb, pc), (sa, sb, sc) = match.pointers, match.strides
+        # On an edge tile the valid rows and columns are fewer than the tile's:
+        # the microkernel takes them as its sizes, so it never reads past them.
+        valid_rows, valid_cols, _ = match.valid
         args = (
-            IntImm(rows), IntImm(cols), IntImm(red),
+            valid_rows, valid_cols, IntImm(red),
             pa, IntImm(sa[layout.a_rows]),
             pb, IntImm(sb[layout.b_stride_dim]),
             pc, IntImm(sc[layout.c_rows]),
@@ -238,10 +243,13 @@ def gemm_intrinsic(
         return Evaluate(Call(kernel.name, args, DType.int32))
 
     def reference(a: NDArray, b: NDArray, c: NDArray, *extents: int) -> None:
-        av = a.reshape(rows, red)
-        bv = b.reshape(cols, red).T if layout.transposed else b.reshape(red, cols)
-        cv = c.reshape(rows, cols)
-        cv += (av.astype(np.float64) @ bv.astype(np.float64)).astype(np.float32)
+        # Views of the valid part of the tile; their other dimensions have one
+        # element.
+        av = a.reshape(a.shape[layout.a_rows], a.shape[-1])
+        bv = b.reshape(b.shape[layout.b_stride_dim], b.shape[-1])
+        cv = c.reshape(c.shape[layout.c_rows], c.shape[-1])
+        product = av.astype(np.float64) @ (bv.T if layout.transposed else bv).astype(np.float64)
+        cv += product.astype(np.float32)
 
     return _register(f"{isa}_sgemm", desc, impl, reference)
 
@@ -336,7 +344,7 @@ def conv_intrinsic(
     """Register the convolution intrinsic for the nest ``(oh, ow, o, kh, kw, c)``
     (the whole output plane, a strip of channels) and return its name."""
     d = group.dims
-    oh, ow, strip = (sch.extent(v) for v in nest[:3])
+    oh, ow = sch.extent(nest[0]), sch.extent(nest[1])
     kernel = CONV2D_KERNELS[isa]
     desc = describe(sch, block, nest, (layout.x, layout.w, layout.y))
     geometry = (d["H"], d["W"], d["C"], d["KH"], d["KW"], d["SH"], d["SW"])
@@ -351,7 +359,7 @@ def conv_intrinsic(
         _, weights, output = match.pointers
         w_strides, y_strides = match.strides[1], match.strides[2]
         args = (
-            IntImm(oh * ow), IntImm(strip), IntImm(0),
+            IntImm(oh * ow), match.valid[2], IntImm(0),
             image, weights, IntImm(w_strides[2]), output, IntImm(y_strides[2]),
             *(IntImm(g) for g in geometry),
             IntImm(pads[0]), IntImm(pads[1]),
@@ -362,6 +370,7 @@ def conv_intrinsic(
     def reference(x: NDArray, w: NDArray, y: NDArray, *extents: int) -> None:
         h, wd, _, kh, kw, sh, sw = geometry
         xv = x.reshape(x.shape[1:]).astype(np.float64)
+        strip = w.shape[-1]  # the valid channels of an edge strip
         out = np.zeros((oh, ow, strip))
         for i in range(kh):
             for j in range(kw):

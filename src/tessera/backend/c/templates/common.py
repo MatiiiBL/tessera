@@ -51,6 +51,15 @@ def divisors(n: int) -> list[int]:
     return [d for d in range(1, n + 1) if n % d == 0]
 
 
+def tile_options(extent: int, most: int) -> list[int]:
+    """Tile sizes for a loop tensorized with edge tiles allowed: the divisors of
+    ``extent`` up to ``most``, the powers of two below ``extent`` and
+    ``extent`` itself (if not above ``most``)."""
+    options = {d for d in divisors(extent) if d <= most}
+    options |= {1 << e for e in range(4, most.bit_length()) if (1 << e) < extent}
+    return sorted(options)
+
+
 def nearest(options: Sequence[int], want: int) -> int:
     """The option closest to ``want`` (the larger one on a tie)."""
     return min(options, key=lambda v: (abs(v - want), -v))

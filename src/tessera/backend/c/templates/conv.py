@@ -13,7 +13,6 @@ from tessera.backend.c.templates.common import (
     choose,
     choose_bool,
     choose_int,
-    divisors,
     loop_kinds,
     nearest,
     parallel_knob,
@@ -22,6 +21,7 @@ from tessera.backend.c.templates.common import (
     read_index,
     register_options,
     schedule_alone,
+    tile_options,
     try_apply,
     vectorize_inside,
 )
@@ -136,10 +136,11 @@ def _micro_knobs(cfg: Config, channels: int, target: CpuTarget) -> MicroKnobs:
     counts = sorted({c for c in (1, 2, target.threads) if c <= target.threads})
     default_threads = 2 if target.isa == "sme" and 2 in counts else target.threads
     threads = choose_int(cfg, "micro_threads", counts, default_threads)
-    strips = divisors(channels)
-    want = max(16, channels // default_threads)
-    fitting = [d for d in strips if d <= want]
-    strip = choose_int(cfg, "micro_c", strips, max(fitting) if fitting else min(strips))
+    strips = tile_options(channels, 1024)
+    want = max(16, -(-channels // default_threads))
+    strip = choose_int(
+        cfg, "micro_c", strips, max(c for c in strips if c <= want) if want < channels else channels
+    )
     return MicroKnobs(enabled, strip, threads)
 
 

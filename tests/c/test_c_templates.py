@@ -124,3 +124,23 @@ def test_microkernels_are_used_by_default(name: str, isa: CpuIsa) -> None:
     sch = _scheduled(w, target, _space(w, target).default())
     assert any(line.startswith("tensorize(") for line in sch.trace)
     assert f"tsr_{isa}_" in generate_kernel(sch.func, isa).text
+
+
+EDGE_TILES = {
+    "matmul": (lambda: W.matmul(37, 50, 20), {"micro_m": 16, "micro_n": 32}),
+    "attention": (lambda: W.attention_scores(2, 40, 16), {"micro_m": 16, "micro_n": 32}),
+    "conv2d": (lambda: W.conv2d(1, 6, 6, 8, 40), {"micro_c": 16}),
+}
+
+
+@pytest.mark.parametrize("isa", ISAS[1:])
+@pytest.mark.parametrize("name", sorted(EDGE_TILES))
+def test_microkernels_on_edge_tiles(name: str, isa: CpuIsa) -> None:
+    """Tiles that do not divide the output: the last tile in each direction
+    passes its valid size to the microkernel."""
+    make, knobs = EDGE_TILES[name]
+    w = make()
+    target = Target(isa=isa, num_threads=3)
+    sch = _scheduled(w, target, {**_space(w, target).default(), **knobs})
+    assert any(line.startswith("tensorize(") for line in sch.trace)
+    _check(w, sch, target, interpret=True)
