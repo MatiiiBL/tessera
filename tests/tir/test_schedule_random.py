@@ -109,6 +109,12 @@ def test_random_schedules_preserve_results(data: st.DataObject) -> None:
             assert s.func is before
             continue
         event(f"applied {name}" if s.func is not before else "no-op")
+        tir.verify(s.func, threads=False)
+    try:
         tir.verify(s.func)
+    except tir.VerifyError:
+        # A local buffer left under different thread axes: not a finished kernel.
+        event("unfinished thread binding")
+        return
     got = run(s.func, w)
     np.testing.assert_allclose(got, expected, rtol=1e-4, atol=1e-5, err_msg="\n".join(s.trace))

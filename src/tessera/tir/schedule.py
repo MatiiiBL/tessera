@@ -22,7 +22,6 @@ from tessera.tir.primitives import loops as _loops
 from tessera.tir.primitives.common import (
     ScheduleError,
     block_paths,
-    check_thread_locals,
     find_loop,
     loop_of,
     realize_of,
@@ -42,7 +41,6 @@ class Schedule:
         return self._func
 
     def _apply(self, func: PrimFunc, line: str) -> None:
-        check_thread_locals(func)
         self._func = func
         self.trace.append(line)
 

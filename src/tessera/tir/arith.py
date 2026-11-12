@@ -210,6 +210,12 @@ class Analyzer:
             return self._from_lin(self._to_lin(e), e.dtype)
         return self._float(e)
 
+    def linear(self, e: Expr) -> tuple[dict[Expr, int], int]:
+        """``e`` (an integer expression) as ``const + sum(coef * term)``: the terms with
+        their coefficients, and the constant."""
+        lin = self._recombine(self._to_lin(e))
+        return dict(lin.terms), lin.const
+
     def can_prove(self, cond: Expr) -> bool:
         """True if ``cond`` holds for every value of its variables."""
         return self.simplify(cond) == TRUE
@@ -336,6 +342,10 @@ class Analyzer:
         if g > 1:
             r = _Lin({t: k // g for t, k in r.terms.items()}, r.const // g)
             c //= g
+        split = self._small_part(r, c)
+        if split is not None:
+            big, g = split
+            return q.add(self._floordiv(big, c // g))
         if len(r.terms) == 1 and r.const == 0:
             ((t, k),) = r.terms.items()
             if (
@@ -354,9 +364,10 @@ class Analyzer:
             return _Lin()
         r = _Lin()
         for t, k in la.terms.items():
-            k2 = k if 0 < k < c else k % c
-            if k2:
-                r.terms[t] = k2
+            # Only exact multiples of c drop: reducing 32*f to 8*f in (32*f + g) % 24
+            # would stop it recombining with (32*f + g) // 24.
+            if k % c:
+                r.terms[t] = k
         r.const = la.const % c
         b = self._bound_lin(r)
         if b.lo is not None and b.hi is not None and b.lo // c == b.hi // c:
@@ -366,6 +377,11 @@ class Analyzer:
         if g > 1:
             inner = _Lin({t: k // g for t, k in r.terms.items()}, r.const // g)
             return self._floormod(inner, c // g, dtype).scale(g)
+        split = self._small_part(r, c)
+        if split is not None:
+            big, g = split
+            small = _Lin({t: k for t, k in r.terms.items() if k % g}, r.const)
+            return self._floormod(big, c // g, dtype).scale(g).add(small)
         if len(r.terms) == 1 and r.const == 0:
             ((t, k),) = r.terms.items()
             if (
@@ -380,13 +396,51 @@ class Analyzer:
         dt = _lin_dtype(r, dtype)
         return _Lin.atom(Binary("floormod", self._from_lin(r, dt), IntImm(c, dt)))
 
+    def _small_part(self, r: _Lin, c: int) -> tuple[_Lin, int] | None:
+        """Write ``r`` as ``g * big + small`` with ``g`` dividing ``c`` and ``small`` in
+        ``[0, g)``; then ``r // c == big // (c / g)`` and
+        ``r % c == g * (big % (c / g)) + small``. Returns ``(big, g)``."""
+        for k in sorted({abs(k) for k in r.terms.values()}, reverse=True):
+            g = math.gcd(c, k)
+            if g <= 1 or g == c:
+                continue
+            small = _Lin({t: v for t, v in r.terms.items() if v % g}, r.const)
+            b = self._bound_lin(small)
+            if b.lo is not None and b.hi is not None and b.lo >= 0 and b.hi < g:
+                big = _Lin({t: v // g for t, v in r.terms.items() if v % g == 0})
+                return big, g
+        return None
+
     def _recombine(self, lin: _Lin) -> _Lin:
-        """Rewrites ``k*c*(x // c) + k*(x % c)`` into ``k*x`` and
-        ``k*x - k*c*(x // c)`` into ``k*(x % c)``."""
+        """Rewrites ``k*c*(x // c) + k*(x % c)`` into ``k*x``,
+        ``k*x - k*c*(x // c)`` into ``k*(x % c)`` and
+        ``k*c1*((x // c1) % c2) + k*(x % c1)`` into ``k*(x % (c1*c2))``: the digits
+        of a fused loop index recombine into the index."""
         changed = True
-        while changed:
+        rounds = 0
+        while changed and rounds < 64:
             changed = False
+            rounds += 1
             for t, k in list(lin.terms.items()):
+                if (
+                    isinstance(t, Binary)
+                    and t.op == "floormod"
+                    and isinstance(t.b, IntImm)
+                    and isinstance(t.a, Binary)
+                    and t.a.op == "floordiv"
+                    and isinstance(t.a.b, IntImm)
+                ):
+                    c1, c2 = t.a.b.value, t.b.value
+                    low = Binary("floormod", t.a.a, t.a.b)
+                    k_low = lin.terms.get(low)
+                    if c1 > 0 and c2 > 0 and k_low is not None and k == k_low * c1:
+                        rest = lin.copy()
+                        del rest.terms[t]
+                        del rest.terms[low]
+                        merged = self._floormod(self._to_lin(t.a.a), c1 * c2, t.dtype)
+                        lin = rest.add(merged, k_low)
+                        changed = True
+                        break
                 if isinstance(t, Binary) and t.op == "floordiv" and isinstance(t.b, IntImm):
                     c = t.b.value
                     whole = lin.terms.get(t.a)
@@ -394,7 +448,7 @@ class Analyzer:
                         rest = lin.copy()
                         del rest.terms[t]
                         del rest.terms[t.a]
-                        lin = rest.add(_Lin.atom(Binary("floormod", t.a, t.b)), whole)
+                        lin = rest.add(self._floormod(self._to_lin(t.a), c, t.dtype), whole)
                         changed = True
                         break
                 if not (isinstance(t, Binary) and t.op == "floormod" and isinstance(t.b, IntImm)):

@@ -70,6 +70,7 @@ from tessera.tir.stmt import (
     SeqStmt,
     Stmt,
 )
+from tessera.tir.verify import check_thread_locals
 
 type NDArray = npt.NDArray[Any]
 
@@ -633,6 +634,7 @@ class Kernel:
     """A PrimFunc compiled to Python."""
 
     def __init__(self, func: PrimFunc, check_bounds: bool) -> None:
+        check_thread_locals(func)
         gen = _Gen(func, check_bounds)
         self.source = gen.generate()
         namespace = gen.globals

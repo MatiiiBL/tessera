@@ -22,7 +22,7 @@ from tessera.tir.expr import (
     Select,
     Var,
 )
-from tessera.tir.functor import ExprMutator, ExprVisitor, walk_exprs
+from tessera.tir.functor import ExprMutator, ExprVisitor, children, walk_exprs
 from tessera.tir.printer import script
 from tessera.tir.stmt import (
     THREAD_TAGS,
@@ -47,7 +47,7 @@ class VerifyError(ValueError):
     """A PrimFunc is not well formed."""
 
 
-def verify(func: PrimFunc) -> None:
+def verify(func: PrimFunc, *, threads: bool = True) -> None:
     """Check that ``func`` is well formed; raise ``VerifyError`` naming the problem.
 
     Checked: parameters are distinct global buffers; the body is a root block;
@@ -57,9 +57,81 @@ def verify(func: PrimFunc) -> None:
     stay inside the iteration domains (taking predicates into account);
     every load, store and declared region is inside its buffer; buffers are
     parameters or allocated by an enclosing block; operand types agree; block
-    names are unique; thread-bound loops name a known grid axis.
+    names are unique; thread-bound loops name a known grid axis; and (unless
+    ``threads`` is False, for a function still being scheduled) the rule of
+    ``check_thread_locals``.
     """
     _Verifier(func).run()
+    if threads:
+        check_thread_locals(func)
+
+
+def check_thread_locals(func: PrimFunc) -> None:
+    """Every use of a ``local`` buffer sits under loops bound to the same ``thread.*``
+    axes with the same extents, or under none.
+
+    Each thread has its own copy of a local buffer (Metal), so the copy a thread
+    reads must be the one it wrote: an accumulator may be initialized, updated
+    and stored by three separate nests, as long as each nest binds the same
+    thread axes.
+    """
+    owners: dict[Buffer, dict[frozenset[tuple[str, int]], str]] = {}
+    for path in _leaf_paths(func.body):
+        node = path[-1]
+        where = frozenset(
+            (n.thread_tag, n.extent.value)
+            for n in path
+            if isinstance(n, For)
+            and n.thread_tag is not None
+            and n.thread_tag.startswith("thread.")
+            and isinstance(n.extent, IntImm)
+        )
+        for buf in _buffers_in(node):
+            if buf.scope == "local":
+                owners.setdefault(buf, {}).setdefault(where, _describe(where))
+    for buf, places in owners.items():
+        if len(places) > 1:
+            listed = "; ".join(sorted(places.values()))
+            raise VerifyError(
+                f"{func.name}: local buffer {buf.name} is used under different thread "
+                f"axes ({listed}); each thread sees only its own copy"
+            )
+
+
+def _describe(where: frozenset[tuple[str, int]]) -> str:
+    if not where:
+        return "no thread loop"
+    return ", ".join(f"{tag}={n}" for tag, n in sorted(where))
+
+
+def _leaf_paths(stmt: Stmt) -> list[tuple[Stmt, ...]]:
+    """Paths to statements that hold expressions: stores, calls, conditions, lets."""
+    out: list[tuple[Stmt, ...]] = []
+    stack: list[tuple[Stmt, ...]] = [(stmt,)]
+    while stack:
+        path = stack.pop()
+        node = path[-1]
+        if isinstance(node, BufferStore | Evaluate | IfThenElse | LetStmt):
+            out.append(path)
+        stack.extend((*path, c) for c in children(node))
+    return out
+
+
+def _buffers_in(node: Stmt) -> set[Buffer]:
+    exprs: list[Expr] = []
+    found: set[Buffer] = set()
+    if isinstance(node, BufferStore):
+        found.add(node.buffer)
+        exprs = [node.value, *node.indices]
+    elif isinstance(node, Evaluate | LetStmt):
+        exprs = [node.value]
+    elif isinstance(node, IfThenElse):
+        exprs = [node.condition]
+    for e in exprs:
+        for sub in walk_exprs(e):
+            if isinstance(sub, BufferLoad | AddressOf):
+                found.add(sub.buffer)
+    return found
 
 
 class _Verifier:

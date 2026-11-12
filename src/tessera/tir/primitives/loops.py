@@ -5,10 +5,14 @@ from __future__ import annotations
 import itertools
 from collections.abc import Sequence
 from math import prod
+from typing import Any
+
+import numpy as np
+import numpy.typing as npt
 
 from tessera.tir.analysis import is_leaf_block
-from tessera.tir.arith import Interval
-from tessera.tir.expr import Expr, IntImm, Var, lt
+from tessera.tir.arith import Analyzer, Interval
+from tessera.tir.expr import Binary, Compare, Expr, IntImm, Logical, Not, Select, Var, lt
 from tessera.tir.functor import StmtMutator, children, free_vars, substitute_stmt, walk_stmts
 from tessera.tir.primitives.common import (
     Path,
@@ -46,6 +50,8 @@ from tessera.tir.stmt import (
     PrimFunc,
     Stmt,
 )
+
+type NDArray = npt.NDArray[Any]
 
 
 def get_loops(func: PrimFunc, block: str) -> list[Var]:
@@ -295,19 +301,140 @@ def _is_leaf(block: Block) -> bool:
 def _injective(
     bpath: Path, lnode: For, loops: list[For], roles: list[str], r: BlockRealize
 ) -> bool:
-    """The spatial bindings map (``lnode`` and the loops inside it) one-to-one onto
-    a box of iteration points: the box has exactly as many points as iterations."""
+    """Different iterations of ``lnode`` and the spatial loops inside it write
+    different elements of the block's domain."""
     start = loops.index(lnode)
-    inner = [(f, role) for f, role in zip(loops[start:], roles[start:], strict=True)]
-    relaxed = {
-        f.loop_var: Interval(0, const_extent(f) - 1)
-        for f, role in inner
-        if role == "S" and isinstance(f.min, IntImm) and f.min.value == 0
-    }
-    if len(relaxed) != sum(1 for _, role in inner if role == "S"):
+    inner = [f for f, role in zip(loops[start:], roles[start:], strict=True) if role == "S"]
+    if not all(isinstance(f.min, IntImm) and f.min.value == 0 for f in inner):
         return False
-    iterations = prod(const_extent(f) for f, role in inner if role == "S")
     an = analyzer_for(bpath)
+    return (
+        _flat_index_injective(an, inner, r)
+        or _box_injective(an, inner, r)
+        or _enumerated_injective(loops[:start], inner, r)
+    )
+
+
+def _flat_index_injective(an: Analyzer, inner: list[For], r: BlockRealize) -> bool:
+    """The row-major position of the written point in the block's domain is an affine
+    function of the loops whose coefficients form a mixed radix (each one larger
+    than the span of the smaller ones), so no two iterations share a point.
+
+    Fused and split loops pass this test even when the split is imperfect: the
+    digits ``f // 24`` and ``f % 24`` of a fused index recombine into ``f``.
+    """
+    flat: Expr = IntImm(0)
+    stride = 1
+    for iv, value in reversed(list(zip(r.block.iter_vars, r.iter_values, strict=True))):
+        if iv.kind != IterKind.SPATIAL:
+            continue
+        flat = flat + value * stride
+        assert isinstance(iv.dom.extent, IntImm)
+        stride *= iv.dom.extent.value
+    terms, _ = an.linear(flat)
+    loop_vars = {f.loop_var for f in inner}
+    coefs: dict[Var, int] = {}
+    for t, k in terms.items():
+        if isinstance(t, Var) and t in loop_vars:
+            coefs[t] = k
+        elif free_vars(t) & loop_vars:
+            return False
+    radix = sorted((abs(coefs.get(f.loop_var, 0)), const_extent(f)) for f in inner)
+    span = 0
+    for coef, extent in radix:
+        if extent == 1:
+            continue
+        if coef <= span:
+            return False
+        span += coef * (extent - 1)
+    return True
+
+
+# Concurrent iteration spaces up to this many points are checked exhaustively.
+_ENUMERATION_LIMIT = 1 << 20
+
+
+def _enumerated_injective(outer: list[For], inner: list[For], r: BlockRealize) -> bool:
+    """Evaluate the spatial bindings at every iteration (where the predicate holds)
+    and check that, for each iteration of the enclosing loops, no point repeats."""
+    used = set().union(*(free_vars(v) for v in r.iter_values), free_vars(r.predicate))
+    fixed = [f for f in outer if f.loop_var in used]
+    loops = fixed + inner
+    if not all(isinstance(f.min, IntImm) and f.min.value == 0 for f in loops):
+        return False
+    extents = [const_extent(f) for f in loops]
+    if prod(extents) > _ENUMERATION_LIMIT:
+        return False
+    if used - {f.loop_var for f in loops}:
+        return False
+    grid = np.indices(extents).reshape(len(extents), -1)
+    env = {f.loop_var: grid[k] for k, f in enumerate(loops)}
+    n = grid.shape[1]
+    values = [
+        v
+        for iv, v in zip(r.block.iter_vars, r.iter_values, strict=True)
+        if iv.kind == IterKind.SPATIAL
+    ]
+    try:
+        mask = np.broadcast_to(_evaluate(r.predicate, env), (n,)).astype(bool)
+        cols = [np.broadcast_to(_evaluate(v, env), (n,)) for v in values]
+    except _NotEnumerable:
+        return False
+    keys = np.stack([*grid[: len(fixed)], *cols])[:, mask]
+    if keys.size == 0:
+        return True
+    return bool(np.unique(keys, axis=1).shape[1] == int(mask.sum()))
+
+
+class _NotEnumerable(Exception):
+    pass
+
+
+def _evaluate(e: Expr, env: dict[Var, NDArray]) -> NDArray:
+    """An integer or boolean index expression evaluated on arrays of loop values."""
+    if isinstance(e, IntImm):
+        return np.asarray(e.value)
+    if isinstance(e, Var):
+        if e not in env:
+            raise _NotEnumerable
+        return env[e]
+    if isinstance(e, Binary):
+        a, b = _evaluate(e.a, env), _evaluate(e.b, env)
+        ops = {
+            "add": np.add,
+            "sub": np.subtract,
+            "mul": np.multiply,
+            "floordiv": np.floor_divide,
+            "floormod": np.mod,
+            "min": np.minimum,
+            "max": np.maximum,
+        }
+        if e.op not in ops:
+            raise _NotEnumerable
+        return np.asarray(ops[e.op](a, b))
+    if isinstance(e, Compare):
+        a, b = _evaluate(e.a, env), _evaluate(e.b, env)
+        cmp = {"lt": np.less, "le": np.less_equal, "eq": np.equal, "ne": np.not_equal,
+               "gt": np.greater, "ge": np.greater_equal}  # fmt: skip
+        return np.asarray(cmp[e.op](a, b))
+    if isinstance(e, Logical):
+        a, b = _evaluate(e.a, env), _evaluate(e.b, env)
+        return np.asarray(np.logical_and(a, b) if e.op == "and" else np.logical_or(a, b))
+    if isinstance(e, Not):
+        return np.asarray(np.logical_not(_evaluate(e.a, env)))
+    if isinstance(e, Select):
+        return np.asarray(
+            np.where(
+                _evaluate(e.cond, env), _evaluate(e.true_value, env), _evaluate(e.false_value, env)
+            )
+        )
+    raise _NotEnumerable
+
+
+def _box_injective(an: Analyzer, inner: list[For], r: BlockRealize) -> bool:
+    """The written points fill a box with exactly as many points as iterations."""
+    relaxed = {f.loop_var: Interval(0, const_extent(f) - 1) for f in inner}
+    iterations = prod(const_extent(f) for f in inner)
     points = 1
     for iv, value in zip(r.block.iter_vars, r.iter_values, strict=True):
         if iv.kind != IterKind.SPATIAL:

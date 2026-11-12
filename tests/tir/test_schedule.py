@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
-from tessera import tir
+from tessera import te, tir
 from tessera.dtype import DType
 from tessera.tir.expr import IntImm
 from tessera.tir.schedule import Schedule, ScheduleError
@@ -189,13 +191,96 @@ def test_bind_and_cross_thread_reduction() -> None:
     check(s, w)
 
 
-def test_thread_loops_keep_local_buffers_inside() -> None:
+def test_local_buffers_under_different_thread_axes_fail_verification() -> None:
     w = box_filter(2, 2, 2)
     s = Schedule(w.func)
     s.cache_write("pad", 0, "local")
     fused = s.fuse(*s.get_loops("pad"))
-    refuses(s, "each thread would see only its own copy", s.bind, fused, "thread.x")
-    s.bind(fused, "threadgroup.x")
+    s.bind(fused, "thread.x")  # the copy-out still runs outside the thread loop
+    tir.verify(s.func, threads=False)
+    with pytest.raises(tir.VerifyError, match="different thread axes"):
+        tir.verify(s.func)
+    with pytest.raises(tir.VerifyError, match="each thread sees only its own copy"):
+        run(s.func, w)
+
+
+def gpu_matmul(m: int, n: int, k: int, tile: int) -> tuple[Schedule, Workload]:
+    """The tiled GPU matmul: a register accumulator per thread, initialized, updated
+    and stored by three nests that each bind thread.y and thread.x."""
+    a = te.placeholder((m, k), DType.float32, "A")
+    b = te.placeholder((k, n), DType.float32, "B")
+    r = te.reduce_axis(k, "k")
+    c = te.compute((m, n), lambda i, j: te.sum(a[i, r] * b[r, j], axis=r), "C", ["i", "j"])
+    rng = np.random.default_rng(3)
+    w = Workload(
+        te.create_prim_func([a, b, c]),
+        [
+            rng.standard_normal((m, k)).astype(np.float32),
+            rng.standard_normal((k, n)).astype(np.float32),
+        ],
+        lambda x, y: x @ y,
+    )
+    s = Schedule(w.func)
+    out = s.cache_write("C", 0, "local")
+    i, j, kk = s.get_loops("C")
+    io, ii = s.split(i, [None, tile])
+    jo, ji = s.split(j, [None, tile])
+    s.reorder(io, jo, ii, ji, kk)
+    s.reverse_compute_at(out, jo)
+    init = s.decompose_reduction("C", ii)
+    s.bind(io, "threadgroup.y")
+    s.bind(jo, "threadgroup.x")
+    for block in (init, "C", out):
+        loops = s.get_loops(block)
+        s.bind(loops[2], "thread.y")
+        s.bind(loops[3], "thread.x")
+    return s, w
+
+
+def test_gpu_matmul_with_a_per_thread_accumulator() -> None:
+    s, w = gpu_matmul(16, 12, 8, 4)
+    check(s, w)
+    text = tir.script(s.func)
+    assert text.count("thread='thread.x'") == 3
+
+
+def test_bind_after_fuse_and_imperfect_split() -> None:
+    x = te.placeholder((10, 24), DType.float32, "x")
+    y = te.compute((10, 24), lambda i, j: x[i, j] * 2.0, "y")
+    rng = np.random.default_rng(4)
+    w = Workload(te.create_prim_func([x, y]), [rng.standard_normal((10, 24)).astype(np.float32)],
+                 lambda v: v * 2)  # fmt: skip
+    s = Schedule(w.func)
+    g, t = s.split(s.fuse(*s.get_loops("y")), [None, 32])
+    s.bind(t, "thread.x")
+    s.bind(g, "threadgroup.x")
+    check(s, w)
+
+
+@settings(max_examples=60, deadline=None)
+@given(
+    st.lists(st.integers(1, 9), min_size=1, max_size=3),
+    st.integers(1, 40),
+    st.sampled_from(["gpu", "parallel", "vectorize"]),
+)
+def test_concurrent_loops_after_fuse_and_split(shape: list[int], factor: int, how: str) -> None:
+    x = te.placeholder(tuple(shape), DType.float32, "x")
+    y = te.compute(tuple(shape), lambda *i: x[i] + 1.0, "y")
+    data = np.random.default_rng(5).standard_normal(shape).astype(np.float32)
+    w = Workload(te.create_prim_func([x, y]), [data], lambda v: v + 1)
+    s = Schedule(w.func)
+    loops = s.get_loops("y")
+    fused = s.fuse(*loops) if len(loops) > 1 else loops[0]
+    outer, inner = s.split(fused, [None, factor])
+    if how == "gpu":
+        s.bind(inner, "thread.x")
+        s.bind(outer, "threadgroup.x")
+    elif how == "parallel":
+        s.parallel(outer)
+        s.unroll(inner)
+    else:
+        s.parallel(outer)
+        s.vectorize(inner)
     check(s, w)
 
 
@@ -392,3 +477,4 @@ def test_failed_primitive_leaves_schedule_unchanged() -> None:
         s.parallel(s.get_loops("matmul")[2])
     assert s.func is before
     assert s.trace == trace
+
