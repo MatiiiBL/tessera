@@ -83,10 +83,9 @@ static inline float tsr_rsqrtf(float x) { return 1.0f / sqrtf(x); }
 /*
  * exp, log, tanh and erf without branches or calls, so that clang vectorizes
  * the loops that use them (libm calls keep a loop scalar). Every case is
- * computed and the answer picked with selects. The polynomials are Cephes'
- * single-precision ones (expf, logf, tanhf) and the erfc approximation of
- * Numerical Recipes (fractional error below 1.2e-7); tests/c checks the
- * error of each against float64 over its whole range.
+ * computed and the answer picked with selects. exp and log use Cephes'
+ * single-precision polynomials; tests/c checks the error of every function
+ * against float64 over its whole range.
  */
 
 static inline float tsr_bits_float(int32_t bits) {
@@ -155,48 +154,47 @@ static inline float tsr_logf(float x) {
   return x < 0.0f || x != x ? NAN : y;
 }
 
+/* tanh and erf as x P(x^2) / Q(x^2) on a clamped range (the rational forms
+ * Eigen uses): a dozen FMAs and one division, no exp. Their error is a few
+ * ulp where the result approaches +-1 (absolute error below 4e-7). */
 static inline float tsr_tanhf(float x) {
-  float a = fabsf(x);
-  /* Small |x|: odd polynomial; otherwise 1 - 2 / (exp(2|x|) + 1). */
-  float z = x * x;
-  float p = -5.70498872745e-3f;
-  p = fmaf(p, z, 2.06390887954e-2f);
-  p = fmaf(p, z, -5.37397155531e-2f);
-  p = fmaf(p, z, 1.33314422036e-1f);
-  p = fmaf(p, z, -3.33332819422e-1f);
-  float small = fmaf(x * z, p, x);
-  float large = 1.0f - 2.0f / (tsr_expf(a + a) + 1.0f);
-  large = x < 0.0f ? -large : large;
-  return a < 0.625f ? small : large;
+  float xc = fminf(fmaxf(x, -7.90531110763549805f), 7.90531110763549805f);
+  float z = xc * xc;
+  float p = -2.76076847742355e-16f;
+  p = fmaf(p, z, 2.00018790482477e-13f);
+  p = fmaf(p, z, -8.60467152213735e-11f);
+  p = fmaf(p, z, 5.12229709037114e-08f);
+  p = fmaf(p, z, 1.48572235717979e-05f);
+  p = fmaf(p, z, 6.37261928875436e-04f);
+  p = fmaf(p, z, 4.89352455891786e-03f);
+  float q = 1.19825839466702e-06f;
+  q = fmaf(q, z, 1.18534705686654e-04f);
+  q = fmaf(q, z, 2.26843463243900e-03f);
+  q = fmaf(q, z, 4.89352518554385e-03f);
+  float y = xc * p / q;
+  y = fabsf(x) < 0.0004f ? x : y;
+  y = fabsf(x) > 9.0f ? copysignf(1.0f, x) : y; /* tanh(9) rounds to 1 */
+  return x != x ? x : y;
 }
 
 static inline float tsr_erff(float x) {
-  float a = fabsf(x);
-  /* Small |x|: Taylor series of erf; otherwise 1 - erfc(|x|) with
-   * erfc(a) = t exp(-a^2 + P(t)), t = 1 / (1 + a / 2). */
-  float z = x * x;
-  float s = 1.0f / 9360.0f;
-  s = fmaf(s, z, -1.0f / 1320.0f);
-  s = fmaf(s, z, 1.0f / 216.0f);
-  s = fmaf(s, z, -1.0f / 42.0f);
-  s = fmaf(s, z, 1.0f / 10.0f);
-  s = fmaf(s, z, -1.0f / 3.0f);
-  s = fmaf(s, z, 1.0f);
-  float small = 1.12837916709551257f * x * s;
-  float t = 1.0f / fmaf(0.5f, a, 1.0f);
-  float q = 0.17087277f;
-  q = fmaf(q, t, -0.82215223f);
-  q = fmaf(q, t, 1.48851587f);
-  q = fmaf(q, t, -1.13520398f);
-  q = fmaf(q, t, 0.27886807f);
-  q = fmaf(q, t, -0.18628806f);
-  q = fmaf(q, t, 0.09678418f);
-  q = fmaf(q, t, 0.37409196f);
-  q = fmaf(q, t, 1.00002368f);
-  q = fmaf(q, t, -1.26551223f);
-  float large = 1.0f - t * tsr_expf(q - z);
-  large = x < 0.0f ? -large : large;
-  return a < 0.5f ? small : large;
+  float xc = fminf(fmaxf(x, -4.0f), 4.0f);
+  float z = xc * xc;
+  float p = -2.72614225801306e-10f;
+  p = fmaf(p, z, 2.77068142495902e-08f);
+  p = fmaf(p, z, -2.10102402082508e-06f);
+  p = fmaf(p, z, -5.69250639462346e-05f);
+  p = fmaf(p, z, -7.34990630326855e-04f);
+  p = fmaf(p, z, -2.95459980854025e-03f);
+  p = fmaf(p, z, -1.60960333262415e-02f);
+  float q = -1.45660718464996e-05f;
+  q = fmaf(q, z, -2.13374055278905e-04f);
+  q = fmaf(q, z, -1.68282697438203e-03f);
+  q = fmaf(q, z, -7.37332916720468e-03f);
+  q = fmaf(q, z, -1.42647390514189e-02f);
+  float y = xc * p / q;
+  y = fabsf(x) > 3.92f ? copysignf(1.0f, x) : y; /* erf(3.92) rounds to 1 */
+  return x != x ? x : y;
 }
 
 static inline float tsr_sigmoidf(float x) { return 1.0f / (1.0f + tsr_expf(-x)); }
