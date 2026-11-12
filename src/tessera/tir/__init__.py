@@ -5,11 +5,14 @@ from tessera.tir.analysis import structural_equal, structural_hash
 from tessera.tir.arith import Analyzer, Interval, simplify
 from tessera.tir.interpreter import interpret, python_source
 from tessera.tir.printer import script
+from tessera.tir.schedule import Schedule, ScheduleError
 from tessera.tir.verify import VerifyError, verify
 
 __all__ = [
     "Analyzer",
     "Interval",
+    "Schedule",
+    "ScheduleError",
     "VerifyError",
     "interpret",
     "intrin",
