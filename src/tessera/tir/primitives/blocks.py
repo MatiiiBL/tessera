@@ -508,8 +508,8 @@ def compute_at(func: PrimFunc, name: str, loop: Var) -> PrimFunc:
     assert an is not None
     outer = analyzer_for(lpath)
     outer.bind(target.loop_var, an.ranges.get(target.loop_var, Interval.everything()))
-    nest = _nest_for(func, pb, {v: d for d, v in enumerate(dims) if v is not None}, region, outer)
     out = _remove_block(func, ppath)
+    nest = _nest_for(out, pb, {v: d for d, v in enumerate(dims) if v is not None}, region, outer)
     lpath = find_loop(out, loop)
     target = loop_of(lpath)
     items = seq_items(target.body)
@@ -611,8 +611,8 @@ def reverse_compute_at(func: PrimFunc, name: str, loop: Var) -> PrimFunc:
     }
     outer = analyzer_for(lpath)
     outer.bind(target.loop_var, an.ranges.get(target.loop_var, Interval.everything()))
-    nest = _nest_for(func, cb, dim_of, region, outer)
     out = _remove_block(func, cpath)
+    nest = _nest_for(out, cb, dim_of, region, outer)
     lpath = find_loop(out, loop)
     target = loop_of(lpath)
     new_target = replace_for(target, body=flat_seq([*seq_items(target.body), nest]))
