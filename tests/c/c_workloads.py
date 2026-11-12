@@ -228,3 +228,16 @@ def concat_slice(n: int, c: int) -> Workload:
         return g.op("Concat", a, b, axis=1)
 
     return lowered(build)
+
+
+def shared_operands(seq: int, dim: int) -> Workload:
+    """Q @ K^T with Q and K two column slices of one projection: both operands
+    of the product read the same buffer."""
+
+    def build(g: Graph, rng: np.random.Generator) -> Value:
+        x = g.add_input("QK", TensorType((seq, 2 * dim), F32))
+        q = g.op("Slice", x, starts=(0, 0), ends=(seq, dim), steps=(1, 1))
+        k = g.op("Slice", x, starts=(0, dim), ends=(seq, 2 * dim), steps=(1, 1))
+        return g.op("MatMul", q, g.op("Transpose", k, perm=(1, 0)))
+
+    return lowered(build)

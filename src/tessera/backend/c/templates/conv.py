@@ -3,6 +3,7 @@ reduced over a window (and input channels)."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from math import prod
 
 from tessera.backend.c.templates.common import (
@@ -12,15 +13,22 @@ from tessera.backend.c.templates.common import (
     choose,
     choose_bool,
     choose_int,
+    divisors,
     loop_kinds,
     nearest,
     parallel_knob,
+    parallel_on,
     parallelize,
     read_index,
     register_options,
+    schedule_alone,
+    try_apply,
+    vectorize_inside,
 )
 from tessera.backend.c.templates.matmul import tile_loops
+from tessera.backend.c.templates.micro import ConvLayout, conv_intrinsic, conv_layout
 from tessera.plan import LoweredGroup
+from tessera.tir.expr import Var
 from tessera.tir.schedule import Schedule
 from tessera.tune.space import Config
 
@@ -33,7 +41,10 @@ def schedule_conv2d(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: 
     loop over channel strips is outermost and each strip's weights
     (KH x KW x C x ``tile_c``) are copied into a contiguous local buffer
     (``pack_w``, when the strip fits the stack) that every pixel tile
-    reuses; "pixels" puts the pixel tiles outside."""
+    reuses; "pixels" puts the pixel tiles outside.
+
+    On NEON and SME targets an NHWC convolution is computed by the implicit
+    GEMM microkernel instead (``kernel``, see ``_micro_knobs``)."""
     _schedule_windowed(sch, group, cfg, target, rows_default=4, lanes_default=16, weights=True)
 
 
@@ -82,6 +93,13 @@ def _schedule_windowed(
         order, pack_w = "pixels", False
     enabled = parallel_knob(cfg, work)
 
+    layout = conv_layout(sch, main, group) if weights and target.isa != "generic" else None
+    if layout is not None:
+        micro = _micro_knobs(cfg, channels, target)
+        if micro.enabled:
+            _schedule_micro(sch, group, layout, spatial, reduce, micro, enabled, target)
+            return
+
     owo, owi = sch.split(ow, [None, tile_ow])
     co, ci = sch.split(ch, [None, tile_c])
     if order == "pixels":
@@ -100,3 +118,57 @@ def _schedule_windowed(
     if pack_w and w_index is not None and strip <= PACK_LIMIT:
         sch.compute_at(sch.cache_read(main, w_index, "local"), co if strips_only else oh)
     parallelize(sch, [co] if strips_only else [co, n, oh], enabled)
+
+
+@dataclass(frozen=True)
+class MicroKnobs:
+    enabled: bool  # use the convolution microkernel (else the generated loops)
+    strip: int  # output channels per call
+    threads: int
+
+
+def _micro_knobs(cfg: Config, channels: int, target: CpuTarget) -> MicroKnobs:
+    """The microkernel path's knobs: one call computes the whole output plane of
+    an image for a strip of ``micro_c`` output channels; strips run in
+    parallel on ``micro_threads`` threads (two by default on SME, whose unit
+    the performance cores share). The default strip gives each thread one."""
+    enabled = choose(cfg, "kernel", ["micro", "loops"], "micro") == "micro"
+    counts = sorted({c for c in (1, 2, target.threads) if c <= target.threads})
+    default_threads = 2 if target.isa == "sme" and 2 in counts else target.threads
+    threads = choose_int(cfg, "micro_threads", counts, default_threads)
+    strips = divisors(channels)
+    want = max(16, channels // default_threads)
+    fitting = [d for d in strips if d <= want]
+    strip = choose_int(cfg, "micro_c", strips, max(fitting) if fitting else min(strips))
+    return MicroKnobs(enabled, strip, threads)
+
+
+def _schedule_micro(
+    sch: Schedule,
+    group: LoweredGroup,
+    layout: ConvLayout,
+    spatial: list[Var],
+    reduce: list[Var],
+    knobs: MicroKnobs,
+    enabled: bool,
+    target: CpuTarget,
+) -> None:
+    """Strips of output channels computed by the convolution microkernel (an
+    implicit GEMM over the whole output plane), the bias written by the
+    reduction's init before each call and the epilogue applied after it."""
+    main = group.main_block
+    assert main is not None
+    n, oh, ow, ch = spatial
+    co, ci = sch.split(ch, [None, knobs.strip])
+    sch.reorder(n, co, oh, ow, ci)
+    init = sch.decompose_reduction(main, oh)
+    vectorize_inside(sch, init, co)
+    epilogue = group.epilogue_block
+    if epilogue is not None:
+        if try_apply(sch.reverse_compute_at, epilogue, co):
+            vectorize_inside(sch, epilogue, co)
+        else:
+            schedule_alone(sch, epilogue)
+    parallel_on(sch, [n, co], enabled, knobs.threads)
+    nest = [oh, ow, ci, *reduce]
+    sch.tensorize(oh, conv_intrinsic(sch, main, group, layout, nest, target.isa))

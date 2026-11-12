@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from math import prod
 
 from tessera.backend.c.alloc import children, sub_exprs
-from tessera.backend.c.codegen import STACK_LIMIT
+from tessera.backend.c.codegen import PARALLEL_THREADS, STACK_LIMIT
 from tessera.target import Target
 from tessera.tir.expr import Var
 from tessera.tir.schedule import Schedule, ScheduleError
@@ -102,6 +102,15 @@ def realize(sch: Schedule, block: str) -> BlockRealize:
         if isinstance(s, BlockRealize) and s.block.name == block:
             return s
     raise ScheduleError(f"no block named {block!r}")
+
+
+def iter_var_of(sch: Schedule, block: str, loop: Var) -> Var | None:
+    """The iteration variable of ``block`` bound to exactly ``loop``."""
+    r = realize(sch, block)
+    for iv, value in zip(r.block.iter_vars, r.iter_values, strict=True):
+        if value is loop:
+            return iv.var
+    return None
 
 
 def loop_kinds(sch: Schedule, block: str) -> list[str]:
@@ -194,6 +203,24 @@ def schedule_alone(sch: Schedule, block: str) -> None:
     else:
         outer.append(inner)
     parallelize(sch, outer, work >= PARALLEL_WORK)
+
+
+def vectorize_inside(sch: Schedule, block: str, tile: Var) -> None:
+    """Vectorize the innermost loop of ``block`` below ``tile``, if it has one
+    of more than one iteration (the nests an init or an epilogue gets under a
+    tile)."""
+    loops = sch.get_loops(block)
+    inside = loops[loops.index(tile) + 1 :] if tile in loops else []
+    if inside and sch.extent(inside[-1]) > 1:
+        sch.vectorize(inside[-1])
+
+
+def parallel_on(sch: Schedule, loops: Sequence[Var], enabled: bool, threads: int) -> None:
+    """Fuse ``loops`` and run them on at most ``threads`` threads of the pool
+    (the ``parallel.threads`` annotation)."""
+    fused = parallelize(sch, loops, enabled)
+    if fused is not None and enabled and sch.extent(fused) > 1 and threads > 0:
+        sch.annotate(fused, PARALLEL_THREADS, threads)
 
 
 def parallel_knob(cfg: Config, work: int, name: str = "parallel") -> bool:
