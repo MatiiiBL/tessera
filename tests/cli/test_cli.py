@@ -93,7 +93,9 @@ def test_missing_model() -> None:
 
 def test_bench_tuning_writes_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TESSERA_RESULTS", str(tmp_path))
-    out = invoke("bench", "tuning", "--trials", "16", "--seeds", "1", "--final")
+    out = invoke(
+        "bench", "tuning", "--trials", "16", "--seeds", "1", "--real-tasks", "0", "--final"
+    )
     assert "tuning.md" in out
     page = (tmp_path / "tuning.md").read_text()
     assert page.startswith("# Tuning")

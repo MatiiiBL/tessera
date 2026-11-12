@@ -49,7 +49,9 @@ class OpResult:
 
     @property
     def gflops(self) -> float | None:
-        return self.flops / self.latency.median / 1e9 if self.latency else None
+        if self.latency is None or self.latency.median <= 0:
+            return None  # failed, or faster than the profiler's timer resolves
+        return self.flops / self.latency.median / 1e9
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -109,7 +111,7 @@ def _gemm_baseline(system: str, x: NDArray, w: NDArray) -> Latency:
         return time_runs(lambda: np.matmul(x, w, out=out), runs=RUNS)
     import torch
 
-    a, b = torch.from_numpy(x).to("mps"), torch.from_numpy(w).to("mps")
+    a, b = torch.from_numpy(x.copy()).to("mps"), torch.from_numpy(w.copy()).to("mps")
 
     def run() -> None:
         torch.mm(a, b)
@@ -147,8 +149,10 @@ def markdown(results: Sequence[OpResult]) -> str:
             r = by.get((op, s))
             if r is None:
                 row.append("")
-            elif r.gflops is None:
+            elif r.latency is None:
                 row.append("failed")
+            elif r.gflops is None:
+                row.append("below timer resolution")
             else:
                 row.append(f"{r.gflops:.1f} ({r.latency.median * 1e3:.3f} ms)" if r.latency else "")
         rows.append(row)

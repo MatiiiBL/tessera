@@ -413,7 +413,7 @@ def bench_command(
             help="Tuning suite: also compare on this many of the heaviest tasks of ResNet-50 "
             "and BERT, measured on the first target (0: synthetic tasks only)."
         ),
-    ] = 0,
+    ] = 2,
     real_trials: Annotated[
         int, typer.Option(help="Tuning suite: trials per search on the real tasks.")
     ] = 96,

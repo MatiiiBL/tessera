@@ -41,6 +41,7 @@ CLASSIFIER_SAMPLES = 16
 WARMUP = 10
 RUNS = 50
 MIB = 2**20
+METAL_UNSCHEDULED = "not measured: unscheduled Metal kernels run on one GPU thread"
 ROW_SECONDS = 60.0  # timing budget of one row: slower rows get fewer runs (at least 3)
 
 # Ablation variants of the untuned pipeline: (fuse, optimize, schedule) for lower().
@@ -243,8 +244,11 @@ def ablate(
     """Each variant of ``VARIANTS``, untuned, on the fixed input."""
     out: dict[str, Any] = {}
     for name in variants:
-        progress(f"{spec.name}: {target} ablation, {name}")
         fuse, optimize, schedule = VARIANTS[name]
+        if not schedule and _target_kind(target) == "metal":
+            out[name] = {"system": name, "skipped": METAL_UNSCHEDULED}
+            continue
+        progress(f"{spec.name}: {target} ablation, {name}")
         try:
             comp = lower(
                 spec.onnx_path(),
@@ -327,8 +331,11 @@ def _ablation_table(r: ModelResult) -> str:
     rows: list[list[object]] = []
     for target, variants in r.ablations.items():
         for name, v in variants.items():
-            if v.get("error"):
-                rows.append([target, name, "failed", "", "", "", "", v["error"][:80]])
+            if v.get("error") or v.get("skipped"):
+                reason = v.get("error") or v["skipped"]
+                rows.append(
+                    [target, name, "failed" if v.get("error") else "", "", "", "", "", reason[:80]]
+                )
                 continue
             lat = v["latency"]
             rows.append(
@@ -361,5 +368,12 @@ def _ablation_table(r: ModelResult) -> str:
 def _target_key(target: str) -> str | None:
     try:
         return resolve_target(target).key
+    except ValueError:
+        return None
+
+
+def _target_kind(target: str) -> str | None:
+    try:
+        return resolve_target(target).kind
     except ValueError:
         return None

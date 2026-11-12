@@ -108,13 +108,14 @@ def merge_model(
 def ops_page(
     targets: Sequence[str],
     *,
+    shapes: Sequence[tuple[int, int, int]] = ops_bench.GEMM_SHAPES,
     provisional: bool | None = None,
     directory: Path | None = None,
     progress: Progress = print,
 ) -> Path:
     """``results/ops``: GEMM throughput and the ResNet-50 convolutions."""
     env = environment(provisional=provisional)
-    gemm = ops_bench.bench_gemm(targets=targets, progress=progress)
+    gemm = ops_bench.bench_gemm(shapes, targets=targets, progress=progress)
     convs: list[ops_bench.OpResult] = []
     resnet = load_manifest()["resnet50"]
     for i, target in enumerate(targets):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 from onnx import numpy_helper
@@ -70,3 +72,29 @@ def test_markdown_has_a_column_per_system() -> None:
     text = markdown(results)
     assert "| operation | numpy GFLOP/s (ms) | tessera-c:sme GFLOP/s (ms) |" in text
     assert "| gemm 8x8x8 | 2.0 (1.000 ms) | failed |" in text
+
+
+def test_ops_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import json
+
+    from bench.test_models_bench import tiny_zoo
+    from tessera.bench.pages import ops_page
+
+    (tmp_path / "zoo").mkdir()
+    monkeypatch.setenv("TESSERA_MODELS", str(tiny_zoo(tmp_path / "zoo")))
+    md = ops_page(
+        ["c:generic"],
+        shapes=[(64, 64, 64)],
+        provisional=True,
+        directory=tmp_path / "results",
+        progress=lambda message: None,
+    )
+    text = md.read_text()
+    assert "| gemm 64x64x64 |" in text
+    assert "tessera-c:generic GFLOP/s" in text
+    data = json.loads((tmp_path / "results" / "ops.json").read_text())
+    [gemm] = [r for r in data["gemm"] if r["system"] == "tessera-c:generic"]
+    assert gemm["gflops"] > 0
+    convs = [r for r in data["convolutions"] if r["system"] == "tessera-c:generic"]
+    assert convs
+    assert all(r["op"].startswith("conv ") for r in convs)

@@ -160,3 +160,14 @@ def test_reruns_replace_only_what_they_measure() -> None:
     assert set(new["ablations"]["c:sme"]) == {"no schedule", "full"}
     assert new["ablations"]["c:sme"]["no schedule"]["measured"] == first["date"]
     assert new["runs"] == [first, second]
+
+
+def test_unscheduled_metal_is_not_measured(tmp_path: Path) -> None:
+    from tessera.bench.models import METAL_UNSCHEDULED, ablate
+
+    spec = load_manifest(tiny_zoo(tmp_path))["resnet50"]
+    out = ablate(spec, "metal", ["no schedule"], [], [], lambda message: None)
+    assert out == {"no schedule": {"system": "no schedule", "skipped": METAL_UNSCHEDULED}}
+    text = markdown([ModelResult("resnet50", [], {"metal": out})])
+    assert "| metal | no schedule |" in text
+    assert "one GPU thread" in text
