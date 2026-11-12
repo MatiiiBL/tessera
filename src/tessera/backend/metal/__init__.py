@@ -18,7 +18,7 @@ class MetalBackend:
 
     name = "metal"
 
-    def templates(self) -> Mapping[str, Template]:
+    def templates(self, target: Target | None = None) -> Mapping[str, Template]:
         """The GPU schedule template of every pattern that has one."""
         return {}
 

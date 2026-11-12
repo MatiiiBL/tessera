@@ -22,7 +22,7 @@ class CBackend:
 
     name = "c"
 
-    def templates(self) -> Mapping[str, Template]:
+    def templates(self, target: Target | None = None) -> Mapping[str, Template]:
         """One schedule template per pattern of ``tessera.plan.PATTERNS``."""
         return {}
 

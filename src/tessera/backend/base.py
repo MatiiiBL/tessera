@@ -57,8 +57,11 @@ class CompiledModel(Protocol):
 class Backend(Protocol):
     name: str
 
-    def templates(self) -> Mapping[str, Template]:
-        """One template per ``tessera.plan.PATTERNS`` key."""
+    def templates(self, target: Target | None = None) -> Mapping[str, Template]:
+        """One template per ``tessera.plan.PATTERNS`` key, specialized for
+        ``target`` (its ISA and thread count); None means ``Target.host``
+        of this backend's kind. The driver and the tuner pass the target
+        they compile or tune for."""
         ...
 
     def build(self, plan: ExecutionPlan, target: Target) -> CompiledModel:
