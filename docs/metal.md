@@ -116,9 +116,9 @@ loop runs under `if (thread_x < extent)`.
 Threadgroups are launched one-dimensional, and the code computes each axis
 position from `thread_index_in_threadgroup`, x fastest (`thread_index % 32`,
 `thread_index / 32`). `generate(func, flat=False)` launches the threadgroup in
-the thread loops' shape instead, and `results/metal/shape.md` compares the two
-on SIMD-group matrix multiplies (see Measurements). A flat launch costs a few
-integer divisions by constants per thread.
+the thread loops' shape instead; on SIMD-group matrix multiplies the flat
+launch was never slower and up to 1.6 times faster (`results/metal/shape.md`).
+It costs a few integer divisions by constants per thread.
 
 **Buffers.** A function's parameters become `device` pointers, `const`
 when the kernel never writes them, bound at buffer indices 0, 1, .... Buffers
@@ -329,43 +329,80 @@ generation and compilation without running, so the tuner's parallel build
 processes report broken candidates.
 
 Before timing, `measure` keeps the GPU busy for 50 ms in one command buffer.
-An idle M4 GPU runs at a low clock and speeds up only under sustained load:
-in `results/metal/warmup.md`, a compute-bound kernel run in batches with the
-CPU waiting for each batch took 1592 µs per launch in the first batch after
-3 s of idle time, 612 to 616 µs in the next two, and 388 µs once about 37 ms
-of work had gone through; after one continuous command buffer of 24 ms it took
-386 to 413 µs from the first batch. Without the warmup, the tuner would compare
-candidates measured at different clocks.
+An idle M4 GPU runs at a low clock and speeds up only under sustained load. In
+`results/metal/warmup.md`, a compute-bound kernel run in batches of 10
+launches, the CPU waiting for each batch, took 1333 µs per launch in the first
+batch after 3 s of idle time and about 615 µs in the next ones; after one
+continuous command buffer of 34 ms, the first batch already took 610 µs. The
+clock keeps rising with sustained work, though: in both runs the time per
+launch fell to about 435 µs after some 200 ms of batches. The warmup removes
+the slow start, which would otherwise make the first candidates of a tuning
+run look several times slower; the tuner then measures candidates back to
+back, which keeps the GPU busy.
 
 ## Measurements
 
-All files in `results/metal/` record the date, machine, commit and load
-average of their run, and are marked provisional when the machine was busy.
+Every file in `results/metal/` records the date, machine, commit and load
+average of its run and the command that regenerates it. The numbers below were
+measured on a quiet machine (load average 0.9 to 1.5) on 12 November 2026;
+kernel times are GPU times from Metal's timestamps, MPS times come from MPS
+timing events.
+
+**Whole models** (`results/metal/models.md`): each exported model compiled
+through the driver with the templates' default configurations (no tuning
+log), median wall-clock time of 100 runs, with the error of its output against
+the ONNX Runtime output stored with the model:
+
+| Model | ms, median (p10 to p90) | Kernels | Max abs error | Max rel error | Top-1 |
+|---|---|---|---|---|---|
+| ResNet-50 | 16.87 (16.78 to 17.02) | 56 | 3.46e-06 | 7.46e-07 | same |
+| MobileNetV2 | 1.93 (1.89 to 2.00) | 54 | 6.20e-06 | 1.71e-06 | same |
+| BERT-base (128 tokens) | 12.34 (12.22 to 12.44) | 134 | 1.10e-05 | 1.26e-06 | |
+| GPT-2 small (128 tokens) | 16.73 (16.42 to 16.89) | 111 | 2.98e-04 | 1.11e-06 | |
+
+The comparison with PyTorch on MPS and the other baselines, and the tuned
+times, are in `results/models.md` (the evaluation package's benchmark).
+
+**GEMM** (`results/metal/gemm.md`, GFLOPS of `C = A @ B` with B constant):
+
+| Shape (batch, M, N, K) | Tessera default | Tessera best of 16 | MPS |
+|---|---|---|---|
+| 512 x 512 x 512 | 2634 | 2634 | 2070 |
+| 1024 x 1024 x 1024 | 2691 | 2691 | 2560 |
+| 2048 x 2048 x 2048 | 2620 | 2620 | 2750 |
+| 4096 x 4096 x 4096 | 1253 | 1270 | 1828 |
+| 128 x 768 x 768 (attention projection) | 1640 | 1973 | 1597 |
+| 128 x 2304 x 768 (GPT-2 fused QKV) | 1749 | 1869 | 2255 |
+| 128 x 3072 x 768 (MLP up) | 2449 | 2449 | 2114 |
+| 128 x 768 x 3072 (MLP down) | 1972 | 1972 | 1922 |
+| 12 x 128 x 128 x 64 (attention scores) | 1484 | 1495 | 697 |
+
+The SIMD-group microkernel is within about 5% of MPS or faster from 512 to
+2048 and on the transformer shapes except GPT-2's fused QKV projection; at
+4096 it reaches 69% of MPS. On the small batched attention products and on
+256 x 256 x 256 (in the file), MPS's time includes PyTorch's dispatch between
+calls, which dominates there.
+
+**ResNet-50 convolutions** (`results/metal/conv.md`): the 53 convolutions take
+18.46 ms in total with the default configurations and 13.28 ms with the best of
+16 random configurations per layer, against 9.01 ms for MPS. The 1 x 1
+convolutions with stride 1 run at 889 to 1520 GFLOPS with the defaults and are
+faster than MPS on every layer; the 3 x 3 convolutions with stride 1 run at 750
+to 1151 GFLOPS, 1.6 to 2.1 times slower than MPS; the strided convolutions, on
+scalar tiles (see Limitations), run at 83 to 272 GFLOPS and take 7.3 ms with
+the best configurations found, more than half of the total.
 
 **The cost of a launch** (`results/metal/launch.md`, a one-threadgroup kernel
 launched up to 1024 times in one command buffer): a launch that waits for the
-previous one costs about 3.2 µs of GPU time with the concurrent encoder and
-2.8 µs with Metal's serial encoder; independent launches cost 0.2 µs. A
-command buffer with one launch takes about 180 µs from encoding until the CPU
-sees it complete, which is why a model runs as one command buffer.
+previous one costs 0.89 µs of GPU time with the concurrent encoder and its
+barriers, and 0.73 µs with Metal's serial encoder; independent launches cost
+0.07 µs. A command buffer with one launch takes about 180 µs from encoding until
+the CPU sees it complete, which is why a model runs as one command buffer.
 
-**GEMM** (`results/metal/gemm.md`, provisional, measured on a busy machine,
-GPU time per call with the default configurations): on square sizes 512 to
-2048 and the four BERT and GPT-2 projection shapes, the SIMD-group path ran
-1240 to 2310 GFLOPS against 985 to 2163 for `torch.matmul` on MPS; at 4096 it
-ran 1056 against MPS's 1614. On the smallest shapes (256 x 256 x 256, the 12-head
-attention products), MPS's time includes PyTorch's dispatch between calls,
-which dominates there.
-
-**Threadgroup shape** (`results/metal/shape.md`, provisional): the same
-SIMD-group kernels launched flat and shaped were within 6% of each other on
-five of six configurations; the sixth (1024³, 1 x 2 SIMD groups) ran 1.71
-times faster flat.
-
-**ResNet-50 convolutions** (`results/metal/conv.md`, provisional): with the
-generated scalar loops, the 53 convolutions took 54.3 ms against MPS's 11.0 ms.
-That file predates the SIMD-group convolutions; it is regenerated in the final
-measurement run.
+**Threadgroup shape** (`results/metal/shape.md`): the same SIMD-group matrix
+multiplies launched flat ran as fast as with the threadgroup shaped like
+their thread loops on four of six configurations, and 1.44 and 1.60 times
+faster on two at 2048 x 2048 x 2048.
 
 ## Limitations
 
@@ -381,4 +418,5 @@ measurement run.
   a reduction that is a multiple of 8; other shapes use scalar tiles.
 - A strided convolution whose output width is not a multiple of 8 uses scalar
   tiles: tensorize refuses an edge tile on a loop that indexes the input with a
-  stride (three 1 x 1 and three 3 x 3 layers of ResNet-50).
+  stride (in ResNet-50: three 1 x 1 and three 3 x 3 layers, and the 7 x 7 stem,
+  whose 3 input channels are not a multiple of 8 either).

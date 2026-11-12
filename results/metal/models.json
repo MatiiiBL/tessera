@@ -1,0 +1,98 @@
+{
+  "environment": {
+    "commit": "7ed8435",
+    "cores": 10,
+    "date": "2026-11-12T07:41:55Z",
+    "load_average": [
+      0.98,
+      1.38,
+      2.12
+    ],
+    "machine": "Apple M4",
+    "memory_gb": 16,
+    "numpy": "2.5.4",
+    "os": "Darwin 27.0.0",
+    "performance_cores": 4,
+    "provisional": false,
+    "python": "3.13.7"
+  },
+  "models": [
+    {
+      "compile_seconds": 3.127176333000534,
+      "errors": [
+        {
+          "max_abs": 3.4570693969726562e-06,
+          "max_rel": 7.464187856209062e-07,
+          "output": "logits",
+          "same_top1": true
+        }
+      ],
+      "kernels": 56,
+      "latency": {
+        "median": 0.016870937501153094,
+        "p10": 0.016782016666547862,
+        "p90": 0.017015837496364837,
+        "runs": 100
+      },
+      "model": "resnet50"
+    },
+    {
+      "compile_seconds": 1.8559059170002001,
+      "errors": [
+        {
+          "max_abs": 6.198883056640625e-06,
+          "max_rel": 1.7145335868556997e-06,
+          "output": "logits",
+          "same_top1": true
+        }
+      ],
+      "kernels": 54,
+      "latency": {
+        "median": 0.001932249999299529,
+        "p10": 0.001888954167952761,
+        "p90": 0.0019964750015788015,
+        "runs": 100
+      },
+      "model": "mobilenet_v2"
+    },
+    {
+      "compile_seconds": 2.574104791001446,
+      "errors": [
+        {
+          "max_abs": 1.0967254638671875e-05,
+          "max_rel": 1.262552100859249e-06,
+          "output": "last_hidden_state",
+          "same_top1": null
+        }
+      ],
+      "kernels": 134,
+      "latency": {
+        "median": 0.012344520833721617,
+        "p10": 0.012221074998524272,
+        "p90": 0.012440649999916786,
+        "runs": 100
+      },
+      "model": "bert"
+    },
+    {
+      "compile_seconds": 2.0365840830017987,
+      "errors": [
+        {
+          "max_abs": 0.00029754638671875,
+          "max_rel": 1.1061874110653686e-06,
+          "output": "logits",
+          "same_top1": null
+        }
+      ],
+      "kernels": 111,
+      "latency": {
+        "median": 0.016732437501559616,
+        "p10": 0.016424483331502416,
+        "p90": 0.01689075833201059,
+        "runs": 100
+      },
+      "model": "gpt2"
+    }
+  ],
+  "runs": 100
+}

@@ -1,19 +1,17 @@
 # Metal: GPU clock warmup
 
-**Provisional:** measured while the machine was busy (load average 6.28 at the start). Re-run on a quiet machine for final numbers.
-
-Measured 2026-11-12T05:54:25Z on Apple M4 (4 performance cores, 10 cores, 16 GB), Darwin 27.0.0, commit `e854764`. Reproduce with `uv run python -m tessera.backend.metal.bench warmup`.
+Measured 2026-11-12T07:35:26Z on Apple M4 (4 performance cores, 10 cores, 16 GB), Darwin 27.0.0, commit `fac1e9b`. Reproduce with `uv run python -m tessera.backend.metal.bench warmup`.
 
 A compute-bound kernel of 256 x 256 threads, in batches of 10 (one command buffer each,
 the CPU waiting for each), after the GPU has been idle for 3 s. The last column repeats
-the batches after one continuous command buffer of 24 ms of the same kernel.
+the batches after one continuous command buffer of 34 ms of the same kernel.
 
 | Batch | GPU time so far (ms) | Per launch, from idle (µs) | Per launch, after warmup (µs) |
 |---|---|---|---|
-| 1 | 15.9 | 1592.2 | 413.4 |
-| 2 | 22.1 | 615.7 | 389.5 |
-| 3 | 28.2 | 611.5 | 388.1 |
-| 5 | 36.9 | 388.5 | 391.8 |
-| 10 | 56.3 | 388.2 | 388.9 |
-| 20 | 95.2 | 389.0 | 386.1 |
-| 40 | 172.8 | 393.2 | 388.5 |
+| 1 | 13.3 | 1332.6 | 609.9 |
+| 2 | 19.5 | 617.0 | 616.9 |
+| 3 | 25.7 | 620.7 | 607.9 |
+| 5 | 38.0 | 613.4 | 595.0 |
+| 10 | 67.0 | 546.7 | 541.4 |
+| 20 | 119.1 | 498.3 | 489.9 |
+| 40 | 212.0 | 434.8 | 436.4 |

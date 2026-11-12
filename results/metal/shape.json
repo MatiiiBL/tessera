@@ -1,30 +1,30 @@
 {
   "environment": {
-    "commit": "cb94edd",
+    "commit": "fac1e9b",
     "cores": 10,
-    "date": "2026-11-12T06:54:24Z",
+    "date": "2026-11-12T07:35:32Z",
     "load_average": [
-      6.22,
-      6.07,
-      6.28
+      1.45,
+      2.05,
+      2.67
     ],
     "machine": "Apple M4",
     "memory_gb": 16,
     "numpy": "2.5.4",
     "os": "Darwin 27.0.0",
     "performance_cores": 4,
-    "provisional": true,
+    "provisional": false,
     "python": "3.13.7"
   },
   "kernels": [
     {
-      "flat_seconds": 0.0009234765624720845,
+      "flat_seconds": 0.0008251415816556225,
       "flops": 2147483648,
       "groups": [
         1,
         2
       ],
-      "shaped_seconds": 0.001581768939407387,
+      "shaped_seconds": 0.000830522606384933,
       "size": 1024,
       "threads": [
         32,
@@ -33,13 +33,13 @@
       ]
     },
     {
-      "flat_seconds": 0.0015585818452694053,
+      "flat_seconds": 0.000834872340419679,
       "flops": 2147483648,
       "groups": [
         2,
         1
       ],
-      "shaped_seconds": 0.0014614746376774628,
+      "shaped_seconds": 0.0008344778368754828,
       "size": 1024,
       "threads": [
         32,
@@ -48,13 +48,13 @@
       ]
     },
     {
-      "flat_seconds": 0.001366485119108672,
+      "flat_seconds": 0.0008394122340448914,
       "flops": 2147483648,
       "groups": [
         2,
         2
       ],
-      "shaped_seconds": 0.0013450580357000166,
+      "shaped_seconds": 0.0008484415760824999,
       "size": 1024,
       "threads": [
         32,
@@ -63,13 +63,13 @@
       ]
     },
     {
-      "flat_seconds": 0.010325812500013853,
+      "flat_seconds": 0.006696833333383741,
       "flops": 17179869184,
       "groups": [
         1,
         2
       ],
-      "shaped_seconds": 0.010356875000070431,
+      "shaped_seconds": 0.00965850000041731,
       "size": 2048,
       "threads": [
         32,
@@ -78,13 +78,13 @@
       ]
     },
     {
-      "flat_seconds": 0.01081783854169771,
+      "flat_seconds": 0.00677624999989348,
       "flops": 17179869184,
       "groups": [
         2,
         1
       ],
-      "shaped_seconds": 0.011175124999984595,
+      "shaped_seconds": 0.006834024999989197,
       "size": 2048,
       "threads": [
         32,
@@ -93,13 +93,13 @@
       ]
     },
     {
-      "flat_seconds": 0.01083209722188864,
+      "flat_seconds": 0.006736124999952154,
       "flops": 17179869184,
       "groups": [
         2,
         2
       ],
-      "shaped_seconds": 0.011455020833333643,
+      "shaped_seconds": 0.010795951389203159,
       "size": 2048,
       "threads": [
         32,

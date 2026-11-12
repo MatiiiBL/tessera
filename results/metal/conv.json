@@ -1,27 +1,27 @@
 {
   "environment": {
-    "commit": "cb94edd",
+    "commit": "fac1e9b",
     "cores": 10,
-    "date": "2026-11-12T06:54:14Z",
+    "date": "2026-11-12T07:38:49Z",
     "load_average": [
-      6.62,
-      6.14,
-      6.31
+      1.31,
+      1.69,
+      2.39
     ],
     "machine": "Apple M4",
     "memory_gb": 16,
     "numpy": "2.5.4",
     "os": "Darwin 27.0.0",
     "performance_cores": 4,
-    "provisional": true,
+    "provisional": false,
     "python": "3.13.7"
   },
   "layers": [
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 4}",
-      "best_seconds": 0.001786645833271905,
+      "best_config": "{\"element_threads\": 64, \"image_rows\": 1, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [4, 2], \"strategy\": \"tiles\", \"threads\": [16, 16], \"tile_k\": 4}",
+      "best_seconds": 0.0008673428030140877,
       "count": 1,
-      "default_seconds": 0.001786645833271905,
+      "default_seconds": 0.0016828693180948242,
       "dims": {
         "C": 3,
         "DH": 1,
@@ -34,6 +34,7 @@
         "O": 64,
         "OH": 112,
         "OW": 112,
+        "PAD_BLOCK": 1,
         "PB": 3,
         "PL": 3,
         "PR": 3,
@@ -43,14 +44,14 @@
         "W": 224
       },
       "flops": 236027904,
-      "mps_seconds": 0.00032104249999974853,
+      "mps_seconds": 0.0002686750000430038,
       "name": "224x224x3 -> 64, 7x7/2 +conv2d+relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.00012704107142607902,
+      "best_config": "{\"element_threads\": 512, \"image_rows\": 1, \"registers\": [8, 4], \"shared\": false, \"simd_groups\": [2, 2], \"simd_k\": 16, \"simd_tiles\": [1, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 16], \"tile_k\": 32}",
+      "best_seconds": 2.444288194409536e-05,
       "count": 1,
-      "default_seconds": 0.00012704107142607902,
+      "default_seconds": 2.45804387580823e-05,
       "dims": {
         "C": 64,
         "DH": 1,
@@ -63,6 +64,7 @@
         "O": 64,
         "OH": 56,
         "OW": 56,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -72,14 +74,14 @@
         "W": 56
       },
       "flops": 25690112,
-      "mps_seconds": 8.384333334106486e-05,
+      "mps_seconds": 5.884416670596693e-05,
       "name": "56x56x64 -> 64, 1x1/1 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0017472159091663673,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.00021673825354577895,
       "count": 3,
-      "default_seconds": 0.0017472159091663673,
+      "default_seconds": 0.00021673825354577895,
       "dims": {
         "C": 64,
         "DH": 1,
@@ -92,6 +94,7 @@
         "O": 64,
         "OH": 56,
         "OW": 56,
+        "PAD_BLOCK": 1,
         "PB": 1,
         "PL": 1,
         "PR": 1,
@@ -101,14 +104,14 @@
         "W": 56
       },
       "flops": 231211008,
-      "mps_seconds": 0.00014772166665352415,
+      "mps_seconds": 0.0001050891666818643,
       "name": "56x56x64 -> 64, 3x3/1 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0004339311224389441,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 8.24492031839269e-05,
       "count": 1,
-      "default_seconds": 0.0004339311224389441,
+      "default_seconds": 8.24492031839269e-05,
       "dims": {
         "C": 64,
         "DH": 1,
@@ -121,6 +124,7 @@
         "O": 256,
         "OH": 56,
         "OW": 56,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -130,14 +134,14 @@
         "W": 56
       },
       "flops": 102760448,
-      "mps_seconds": 0.00015136249996430706,
+      "mps_seconds": 9.704916672490072e-05,
       "name": "56x56x64 -> 256, 1x1/1"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.00044951373105174173,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.00010574101795868329,
       "count": 3,
-      "default_seconds": 0.00044951373105174173,
+      "default_seconds": 0.00010574101795868329,
       "dims": {
         "C": 64,
         "DH": 1,
@@ -150,6 +154,7 @@
         "O": 256,
         "OH": 56,
         "OW": 56,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -159,14 +164,14 @@
         "W": 56
       },
       "flops": 102760448,
-      "mps_seconds": 0.0002387425000051735,
+      "mps_seconds": 0.00022362166666425764,
       "name": "56x56x64 -> 256, 1x1/1 +add+relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0005121741452547632,
+      "best_config": "{\"element_threads\": 512, \"image_rows\": 1, \"registers\": [8, 4], \"shared\": false, \"simd_groups\": [2, 2], \"simd_k\": 16, \"simd_tiles\": [1, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 16], \"tile_k\": 32}",
+      "best_seconds": 9.106368267912251e-05,
       "count": 2,
-      "default_seconds": 0.0005121741452547632,
+      "default_seconds": 0.00011564095744843337,
       "dims": {
         "C": 256,
         "DH": 1,
@@ -179,6 +184,7 @@
         "O": 64,
         "OH": 56,
         "OW": 56,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -188,14 +194,14 @@
         "W": 56
       },
       "flops": 102760448,
-      "mps_seconds": 0.00013519000000087545,
+      "mps_seconds": 0.00012143083338742145,
       "name": "56x56x256 -> 64, 1x1/1 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0009951443453246611,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.0001613937969988254,
       "count": 1,
-      "default_seconds": 0.0009951443453246611,
+      "default_seconds": 0.0001613937969988254,
       "dims": {
         "C": 256,
         "DH": 1,
@@ -208,6 +214,7 @@
         "O": 128,
         "OH": 56,
         "OW": 56,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -217,14 +224,14 @@
         "W": 56
       },
       "flops": 205520896,
-      "mps_seconds": 0.00020448083334486,
+      "mps_seconds": 0.00017489500001829583,
       "name": "56x56x256 -> 128, 1x1/1 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0017636249998759014,
+      "best_config": "{\"element_threads\": 512, \"image_rows\": 4, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [4, 1], \"simd_k\": 16, \"simd_tiles\": [1, 8], \"strategy\": \"elements\", \"threads\": [1, 64], \"tile_k\": 16}",
+      "best_seconds": 0.0010789479167215177,
       "count": 1,
-      "default_seconds": 0.0017636249998759014,
+      "default_seconds": 0.002034523148015271,
       "dims": {
         "C": 128,
         "DH": 1,
@@ -237,6 +244,7 @@
         "O": 128,
         "OH": 28,
         "OW": 28,
+        "PAD_BLOCK": 1,
         "PB": 1,
         "PL": 1,
         "PR": 1,
@@ -246,14 +254,14 @@
         "W": 56
       },
       "flops": 231211008,
-      "mps_seconds": 0.00022778999998990913,
+      "mps_seconds": 0.00021014833335357254,
       "name": "56x56x128 -> 128, 3x3/2 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0009322874999876755,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 2, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [2, 4], \"simd_k\": 8, \"simd_tiles\": [1, 1], \"strategy\": \"tiles\", \"threads\": [8, 16], \"tile_k\": 16}",
+      "best_seconds": 0.0008511093750106132,
       "count": 1,
-      "default_seconds": 0.0009322874999876755,
+      "default_seconds": 0.0009704656249596155,
       "dims": {
         "C": 256,
         "DH": 1,
@@ -266,6 +274,7 @@
         "O": 512,
         "OH": 28,
         "OW": 28,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -275,14 +284,14 @@
         "W": 56
       },
       "flops": 205520896,
-      "mps_seconds": 0.00017957083335204516,
+      "mps_seconds": 0.00015428166669153142,
       "name": "56x56x256 -> 512, 1x1/2"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.00045201508616847947,
+      "best_config": "{\"element_threads\": 512, \"image_rows\": 1, \"registers\": [8, 4], \"shared\": false, \"simd_groups\": [2, 2], \"simd_k\": 16, \"simd_tiles\": [1, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 16], \"tile_k\": 32}",
+      "best_seconds": 9.661298799409787e-05,
       "count": 4,
-      "default_seconds": 0.00045201508616847947,
+      "default_seconds": 9.759051035827863e-05,
       "dims": {
         "C": 128,
         "DH": 1,
@@ -295,6 +304,7 @@
         "O": 512,
         "OH": 28,
         "OW": 28,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -304,14 +314,14 @@
         "W": 28
       },
       "flops": 102760448,
-      "mps_seconds": 0.00016414999998232816,
+      "mps_seconds": 0.00014221749996067956,
       "name": "28x28x128 -> 512, 1x1/1 +add+relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0004836770833337921,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 8.918480861729566e-05,
       "count": 3,
-      "default_seconds": 0.0004836770833337921,
+      "default_seconds": 8.918480861729566e-05,
       "dims": {
         "C": 512,
         "DH": 1,
@@ -324,6 +334,7 @@
         "O": 128,
         "OH": 28,
         "OW": 28,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -333,14 +344,14 @@
         "W": 28
       },
       "flops": 102760448,
-      "mps_seconds": 0.0001598849999572849,
+      "mps_seconds": 0.00010261999996146187,
       "name": "28x28x512 -> 128, 1x1/1 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0018743312499282182,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.00020088509450736814,
       "count": 3,
-      "default_seconds": 0.0018743312499282182,
+      "default_seconds": 0.00020088509450736814,
       "dims": {
         "C": 128,
         "DH": 1,
@@ -353,6 +364,7 @@
         "O": 128,
         "OH": 28,
         "OW": 28,
+        "PAD_BLOCK": 1,
         "PB": 1,
         "PL": 1,
         "PR": 1,
@@ -362,14 +374,14 @@
         "W": 28
       },
       "flops": 231211008,
-      "mps_seconds": 0.00020763000000442844,
+      "mps_seconds": 0.0001241183333331719,
       "name": "28x28x128 -> 128, 3x3/1 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.000937146780333106,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 1, \"registers\": [4, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.00016701562502324425,
       "count": 1,
-      "default_seconds": 0.000937146780333106,
+      "default_seconds": 0.00016701562502324425,
       "dims": {
         "C": 512,
         "DH": 1,
@@ -382,6 +394,7 @@
         "O": 256,
         "OH": 28,
         "OW": 28,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -391,14 +404,14 @@
         "W": 28
       },
       "flops": 205520896,
-      "mps_seconds": 0.00024143750000803264,
+      "mps_seconds": 0.00018465416666003877,
       "name": "28x28x512 -> 256, 1x1/1 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 2, \"registers\": [2, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0017824242424301867,
+      "best_config": "{\"element_threads\": 512, \"image_rows\": 4, \"registers\": [1, 4], \"shared\": false, \"simd_groups\": [4, 1], \"simd_k\": 16, \"simd_tiles\": [2, 2], \"strategy\": \"elements\", \"threads\": [16, 16], \"tile_k\": 4}",
+      "best_seconds": 0.0010845263156960229,
       "count": 1,
-      "default_seconds": 0.0017824242424301867,
+      "default_seconds": 0.0019979500000772534,
       "dims": {
         "C": 256,
         "DH": 1,
@@ -411,6 +424,7 @@
         "O": 256,
         "OH": 14,
         "OW": 14,
+        "PAD_BLOCK": 1,
         "PB": 1,
         "PL": 1,
         "PR": 1,
@@ -420,14 +434,14 @@
         "W": 28
       },
       "flops": 231211008,
-      "mps_seconds": 0.0002971341666852822,
+      "mps_seconds": 0.0002870033333601896,
       "name": "28x28x256 -> 256, 3x3/2 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 2, \"registers\": [2, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0009597406249667983,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 2, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [2, 4], \"simd_k\": 8, \"simd_tiles\": [1, 1], \"strategy\": \"tiles\", \"threads\": [8, 16], \"tile_k\": 16}",
+      "best_seconds": 0.0008721358695449611,
       "count": 1,
-      "default_seconds": 0.0009597406249667983,
+      "default_seconds": 0.0010041006944447872,
       "dims": {
         "C": 512,
         "DH": 1,
@@ -440,6 +454,7 @@
         "O": 1024,
         "OH": 14,
         "OW": 14,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -449,14 +464,14 @@
         "W": 28
       },
       "flops": 205520896,
-      "mps_seconds": 0.00021533416664169637,
+      "mps_seconds": 0.0001656491666653892,
       "name": "28x28x512 -> 1024, 1x1/2"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 2, \"registers\": [2, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0004369099462506241,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 2, \"registers\": [2, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 6.762599206217138e-05,
       "count": 6,
-      "default_seconds": 0.0004369099462506241,
+      "default_seconds": 6.762599206217138e-05,
       "dims": {
         "C": 256,
         "DH": 1,
@@ -469,6 +484,7 @@
         "O": 1024,
         "OH": 14,
         "OW": 14,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -478,14 +494,14 @@
         "W": 14
       },
       "flops": 102760448,
-      "mps_seconds": 0.00015020833336166107,
+      "mps_seconds": 0.00014403083339857404,
       "name": "14x14x256 -> 1024, 1x1/1 +add+relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 2, \"registers\": [2, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0005312821180420239,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 2, \"registers\": [2, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 7.987814154018582e-05,
       "count": 5,
-      "default_seconds": 0.0005312821180420239,
+      "default_seconds": 7.987814154018582e-05,
       "dims": {
         "C": 1024,
         "DH": 1,
@@ -498,6 +514,7 @@
         "O": 256,
         "OH": 14,
         "OW": 14,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -507,14 +524,14 @@
         "W": 14
       },
       "flops": 102760448,
-      "mps_seconds": 0.00016911750004510394,
+      "mps_seconds": 0.00012066916664480232,
       "name": "14x14x1024 -> 256, 1x1/1 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 2, \"registers\": [2, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0019796967592103304,
+      "best_config": "{\"element_threads\": 512, \"image_rows\": 1, \"registers\": [8, 4], \"shared\": false, \"simd_groups\": [2, 2], \"simd_k\": 16, \"simd_tiles\": [1, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 16], \"tile_k\": 32}",
+      "best_seconds": 0.00022537637362672416,
       "count": 5,
-      "default_seconds": 0.0019796967592103304,
+      "default_seconds": 0.00026524537037807424,
       "dims": {
         "C": 256,
         "DH": 1,
@@ -527,6 +544,7 @@
         "O": 256,
         "OH": 14,
         "OW": 14,
+        "PAD_BLOCK": 1,
         "PB": 1,
         "PL": 1,
         "PR": 1,
@@ -536,14 +554,14 @@
         "W": 14
       },
       "flops": 231211008,
-      "mps_seconds": 0.0001823833333037328,
+      "mps_seconds": 0.00014946166666049976,
       "name": "14x14x256 -> 256, 3x3/1 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 2, \"registers\": [2, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0007583067129720197,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 2, \"registers\": [2, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [2, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.00013945916667580606,
       "count": 1,
-      "default_seconds": 0.0007583067129720197,
+      "default_seconds": 0.00013945916667580606,
       "dims": {
         "C": 1024,
         "DH": 1,
@@ -556,6 +574,7 @@
         "O": 512,
         "OH": 14,
         "OW": 14,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -565,14 +584,14 @@
         "W": 14
       },
       "flops": 205520896,
-      "mps_seconds": 0.0001924575000157347,
+      "mps_seconds": 0.00018204250001872425,
       "name": "14x14x1024 -> 512, 1x1/1 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 4, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0023682083335318438,
+      "best_config": "{\"element_threads\": 512, \"image_rows\": 1, \"registers\": [1, 8], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 16, \"simd_tiles\": [2, 4], \"strategy\": \"elements\", \"threads\": [2, 32], \"tile_k\": 32}",
+      "best_seconds": 0.001363215277766964,
       "count": 1,
-      "default_seconds": 0.0023682083335318438,
+      "default_seconds": 0.0028003124998576823,
       "dims": {
         "C": 512,
         "DH": 1,
@@ -585,6 +604,7 @@
         "O": 512,
         "OH": 7,
         "OW": 7,
+        "PAD_BLOCK": 1,
         "PB": 1,
         "PL": 1,
         "PR": 1,
@@ -594,14 +614,14 @@
         "W": 14
       },
       "flops": 231211008,
-      "mps_seconds": 0.0009794333333411488,
+      "mps_seconds": 0.0008907275000092341,
       "name": "14x14x512 -> 512, 3x3/2 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 4, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0016759488637696697,
+      "best_config": "{\"element_threads\": 1024, \"image_rows\": 1, \"registers\": [4, 2], \"shared\": true, \"simd_groups\": [2, 4], \"simd_k\": 64, \"simd_tiles\": [1, 1], \"strategy\": \"elements\", \"threads\": [1, 64], \"tile_k\": 4}",
+      "best_seconds": 0.0012067472222649183,
       "count": 1,
-      "default_seconds": 0.0016759488637696697,
+      "default_seconds": 0.0017628371211189501,
       "dims": {
         "C": 1024,
         "DH": 1,
@@ -614,6 +634,7 @@
         "O": 2048,
         "OH": 7,
         "OW": 7,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -623,14 +644,14 @@
         "W": 14
       },
       "flops": 205520896,
-      "mps_seconds": 0.00037827499996637924,
+      "mps_seconds": 0.0003335758333560079,
       "name": "14x14x1024 -> 2048, 1x1/2"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 4, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0005538072916806414,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 4, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [1, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 8.038408120158308e-05,
       "count": 3,
-      "default_seconds": 0.0005538072916806414,
+      "default_seconds": 8.038408120158308e-05,
       "dims": {
         "C": 512,
         "DH": 1,
@@ -643,6 +664,7 @@
         "O": 2048,
         "OH": 7,
         "OW": 7,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -652,14 +674,14 @@
         "W": 7
       },
       "flops": 102760448,
-      "mps_seconds": 0.00020531916663458106,
+      "mps_seconds": 0.00019183916665497236,
       "name": "7x7x512 -> 2048, 1x1/1 +add+relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 4, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0006599947916583915,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 4, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [1, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 9.326225490380821e-05,
       "count": 2,
-      "default_seconds": 0.0006599947916583915,
+      "default_seconds": 9.326225490380821e-05,
       "dims": {
         "C": 2048,
         "DH": 1,
@@ -672,6 +694,7 @@
         "O": 512,
         "OH": 7,
         "OW": 7,
+        "PAD_BLOCK": 0,
         "PB": 0,
         "PL": 0,
         "PR": 0,
@@ -681,14 +704,14 @@
         "W": 7
       },
       "flops": 102760448,
-      "mps_seconds": 0.0002461616666550981,
+      "mps_seconds": 0.00018259166659845505,
       "name": "7x7x2048 -> 512, 1x1/1 +relu"
     },
     {
-      "best_config": "{\"element_threads\": 128, \"image_rows\": 4, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_tiles\": [2, 4], \"strategy\": \"tiles\", \"threads\": [8, 8], \"tile_k\": 8}",
-      "best_seconds": 0.0025756458335308707,
+      "best_config": "{\"element_threads\": 128, \"image_rows\": 4, \"registers\": [1, 4], \"shared\": true, \"simd_groups\": [1, 2], \"simd_k\": 32, \"simd_tiles\": [1, 4], \"strategy\": \"simdgroup\", \"threads\": [8, 8], \"tile_k\": 8}",
+      "best_seconds": 0.00030845913460535277,
       "count": 2,
-      "default_seconds": 0.0025756458335308707,
+      "default_seconds": 0.00030845913460535277,
       "dims": {
         "C": 512,
         "DH": 1,
@@ -701,6 +724,7 @@
         "O": 512,
         "OH": 7,
         "OW": 7,
+        "PAD_BLOCK": 1,
         "PB": 1,
         "PL": 1,
         "PR": 1,
@@ -710,10 +734,10 @@
         "W": 7
       },
       "flops": 231211008,
-      "mps_seconds": 0.00027901249995920807,
+      "mps_seconds": 0.00018325249999179505,
       "name": "7x7x512 -> 512, 3x3/1 +relu"
     }
   ],
   "torch": "2.15.0",
-  "trials": 0
+  "trials": 16
 }
