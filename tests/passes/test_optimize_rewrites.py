@@ -7,11 +7,11 @@ from collections import Counter
 
 import numpy as np
 import pytest
-from graph_strategies import graphs
+from graph_strategies import assert_same_outputs, graphs
 from hypothesis import HealthCheck, given, settings
 
 from tessera.dtype import DType
-from tessera.ir import Graph, TensorType, Value, interpret, random_inputs
+from tessera.ir import Graph, TensorType, Value
 from tessera.passes import optimize
 
 F32 = DType.float32
@@ -29,14 +29,6 @@ def scalar(g: Graph, value: float) -> Value:
 
 def ops(g: Graph) -> Counter[str]:
     return Counter(n.op for n in g.nodes)
-
-
-def same_outputs(before: Graph, after: Graph) -> None:
-    feeds = random_inputs(before, seed=2)
-    want = interpret(before, feeds, float64=True)
-    got = interpret(after, feeds)
-    for out, value in zip(after.outputs, want.values(), strict=True):
-        np.testing.assert_allclose(got[out.name], value, rtol=1e-4, atol=1e-5)
 
 
 def layernorm_graph(rsqrt: bool) -> Graph:
@@ -63,7 +55,7 @@ def test_decomposed_layernorm_becomes_one_node(rsqrt: bool) -> None:
     (ln,) = out.nodes
     assert ln.attrs["axis"] == 2
     assert ln.attrs["epsilon"] == pytest.approx(1e-6)
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
     assert ops(optimize(g, fold=False))["LayerNorm"] == 0
 
 
@@ -78,7 +70,7 @@ def test_layernorm_over_two_axes_and_scale_on_other_axes_stays() -> None:
     out = optimize(g)
     assert ops(out) == Counter({"LayerNorm": 1, "Mul": 1})
     assert out.nodes[0].attrs["axis"] == 1
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
 
 
 def gelu_erf(g: Graph, x: Value, variant: int) -> Value:
@@ -105,7 +97,7 @@ def test_gelu_forms(build: object, approximate: str, variant: int) -> None:
     out = optimize(g)
     assert ops(out) == Counter({"Gelu": 1})
     assert out.nodes[0].attrs["approximate"] == approximate
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
 
 
 def test_gelu_with_a_wrong_constant_stays_decomposed() -> None:
@@ -125,7 +117,7 @@ def test_silu_hardswish_and_rsqrt() -> None:
     g.set_outputs([silu, hard, root])
     out = optimize(g)
     assert ops(out) == Counter({"Silu": 1, "HardSwish": 1, "Abs": 1, "Rsqrt": 1})
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
 
 
 def conv_bn(g: Graph, x: Value, channels: int, out: int, bias: bool) -> Value:
@@ -142,10 +134,10 @@ def test_batchnorm_folds_into_the_convolution(bias: bool) -> None:
     g.set_outputs([g.op("Relu", conv_bn(g, x, 3, 4, bias))])
     out = optimize(g, layout="NCHW")
     assert ops(out) == Counter({"Conv2d": 1, "Relu": 1})
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
     unfolded = optimize(g, layout="NCHW", fold=False)
     assert ops(unfolded) == Counter({"Conv2d": 1, "Mul": 1, "Add": 1, "Relu": 1})
-    same_outputs(g, unfolded)
+    assert_same_outputs(g, unfolded)
 
 
 def test_batchnorm_after_a_shared_convolution_is_decomposed() -> None:
@@ -156,7 +148,7 @@ def test_batchnorm_after_a_shared_convolution_is_decomposed() -> None:
     g.set_outputs([g.op("BatchNorm", y, *stats), y])
     out = optimize(g, layout="NCHW")
     assert ops(out) == Counter({"Conv2d": 1, "Mul": 1, "Add": 1})
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
 
 
 @pytest.mark.parametrize("layout", ["NCHW", "NHWC"])
@@ -167,7 +159,7 @@ def test_grouped_convolution_is_split(layout: str) -> None:
     out = optimize(g, layout=layout)
     assert ops(out)["Conv2d"] == 2
     assert all(n.attrs["groups"] == 1 for n in out.nodes if n.op == "Conv2d")
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
 
 
 def small_cnn() -> Graph:
@@ -198,7 +190,7 @@ def test_cnn_has_transposes_only_at_inputs_and_outputs() -> None:
         x = out.inputs[0]
         assert {n.inputs[0].name for n in transposes} >= {x.name}
         assert any(n.output in out.outputs for n in transposes)
-        same_outputs(g, out)
+        assert_same_outputs(g, out)
     for conv in (n for n in optimize(g).nodes if n.op == "Conv2d"):
         assert conv.inputs[1].shape[3] == conv.output.shape[3]  # HWIO weights
         assert conv.inputs[1].is_constant
@@ -219,7 +211,7 @@ def test_reductions_without_keepdims_and_layernorm_follow_the_layout() -> None:
     normed = g.op("LayerNorm", g.op("Relu", y), const(g, 5), const(g, 5))
     g.set_outputs([reduced, sliced, normed])
     out = optimize(g)
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
 
 
 @settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow])
@@ -229,4 +221,50 @@ def test_layouts_preserve_semantics_on_random_graphs(g: Graph) -> None:
         out = optimize(g, layout=layout)
         if layout == "NHWC":
             assert all(n.attrs.get("layout", "NHWC") == "NHWC" for n in out.nodes)
-        same_outputs(g, out)
+        assert_same_outputs(g, out)
+
+
+def test_gemm_on_merged_rows_keeps_batch_axes_so_gelu_joins_the_epilogue() -> None:
+    """GPT-2's Conv1D: Reshape to rows, Gemm, Reshape back, then the activation."""
+    from tessera.passes import fuse
+
+    g = Graph()
+    x = g.add_input("x", TensorType((1, 6, 8), F32))
+    rows = g.op("Reshape", x, shape=(6, 8))
+    h = g.op("Gemm", rows, const(g, 8, 16), const(g, 16))
+    h = g.op("Reshape", h, shape=(1, 6, 16))
+    g.set_outputs([g.op("Add", g.op("Gelu", h, approximate="tanh"), g.add_input("r", h.type))])
+    out = optimize(g)
+    assert ops(out) == Counter({"MatMul": 1, "Add": 2, "Gelu": 1})
+    assert [n.op for n in fuse(out)[0].nodes] == ["MatMul", "Add", "Gelu", "Add"]
+    assert_same_outputs(g, out)
+
+
+def test_merged_heads_view_keeps_batch_axes() -> None:
+    g = Graph()
+    ctx = g.add_input("ctx", TensorType((1, 2, 6, 4), F32))
+    merged = g.op("Reshape", g.op("Transpose", ctx, perm=(0, 2, 1, 3)), shape=(6, 8))
+    y = g.op("Reshape", g.op("MatMul", merged, const(g, 8, 8)), shape=(1, 6, 8))
+    g.set_outputs([y])
+    out = optimize(g)
+    (matmul,) = (n for n in out.nodes if n.op == "MatMul")
+    assert matmul.inputs[0].shape == (1, 6, 8)
+    assert_same_outputs(g, out)
+
+
+def test_single_row_products_are_left_alone() -> None:
+    g = Graph()
+    x = g.add_input("x", TensorType((1, 1, 1, 8), F32))
+    g.set_outputs([g.op("MatMul", g.op("Reshape", x, shape=(1, 8)), const(g, 8, 3))])
+    out = optimize(g)
+    assert [n.op for n in out.nodes] == ["Reshape", "MatMul"]
+
+
+def test_reshape_does_not_sink_past_a_full_size_operand() -> None:
+    g = Graph()
+    x = g.add_input("x", TensorType((2, 3, 4), F32))
+    y = g.add_input("y", TensorType((6, 4), F32))
+    g.set_outputs([g.op("Add", g.op("Reshape", x, shape=(6, 4)), y)])
+    out = optimize(g)
+    assert [n.op for n in out.nodes] == ["Reshape", "Add"]
+    assert_same_outputs(g, out)

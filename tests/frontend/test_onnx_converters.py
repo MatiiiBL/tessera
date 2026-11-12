@@ -231,6 +231,15 @@ CASES: dict[str, tuple[list[onnx.NodeProto], dict[str, Array], dict[str, Array],
         {"ones": np.ones((4, 4), np.float32), "neg": np.array(-1e9, np.float32)},
         17,
     ),
+    "gather_elements_of_constants": (
+        [
+            node("GatherElements", ["table", "idx"], ["picked"], axis=1),
+            node("Add", ["x", "picked"], ["y"]),
+        ],
+        {"x": f32(2, 3)},
+        {"table": f32(2, 5), "idx": np.array([[0, 4, -1], [2, 2, 1]], I64)},
+        13,
+    ),
     "dropout_with_ratio": (
         [node("Dropout", ["x", "ratio", "train"])],
         {"x": f32(3)},

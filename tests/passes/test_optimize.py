@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from graph_strategies import graphs
+from graph_strategies import assert_same_outputs, graphs
 from hypothesis import HealthCheck, given, settings
 
 from tessera.dtype import DType
-from tessera.ir import Graph, TensorType, Value, interpret, random_inputs
+from tessera.ir import Graph, TensorType, Value
 from tessera.ir.opdefs import CANONICAL_OPS
 from tessera.passes import optimize
 
@@ -18,16 +18,6 @@ RNG = np.random.default_rng(7)
 
 def const(g: Graph, *shape: int, name: str = "c") -> Value:
     return g.add_constant(RNG.standard_normal(shape).astype(np.float32), name)
-
-
-def same_outputs(before: Graph, after: Graph, rtol: float = 1e-4) -> None:
-    feeds = random_inputs(before, seed=1)
-    want = interpret(before, feeds, float64=True)
-    got = interpret(after, feeds)
-    assert len(got) == len(want)
-    # By position: an output that optimizes to a graph input takes the input's name.
-    for out, value in zip(after.outputs, want.values(), strict=True):
-        np.testing.assert_allclose(got[out.name], value, rtol=rtol, atol=1e-5)
 
 
 def ops(g: Graph) -> list[str]:
@@ -49,7 +39,7 @@ def test_noops_disappear() -> None:
     out = optimize(g)
     assert ops(out) == ["Relu"]
     assert out.outputs[0].name == y.name
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
 
 
 def test_broadcasting_neutral_operands_stay() -> None:
@@ -70,7 +60,7 @@ def test_reshape_and_transpose_chains_merge() -> None:
     assert sorted(ops(out)) == ["Relu", "Reshape", "Transpose"]
     (transpose,) = (n for n in out.nodes if n.op == "Transpose")
     assert transpose.attrs["perm"] == (1, 2, 0)
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
 
 
 def test_transpose_of_unit_axes_becomes_reshape() -> None:
@@ -79,7 +69,7 @@ def test_transpose_of_unit_axes_becomes_reshape() -> None:
     g.set_outputs([g.op("Transpose", x, perm=(0, 3, 1, 2))])
     out = optimize(g)
     assert ops(out) == ["Reshape"]
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
 
 
 def test_constants_fold_and_merge() -> None:
@@ -93,10 +83,10 @@ def test_constants_fold_and_merge() -> None:
     out = optimize(g)
     assert ops(out) == ["Add", "Mul", "Mul"]
     assert len(out.constants()) == 2
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
     unfolded = optimize(g, fold=False)
     assert ops(unfolded) == ["Mul", "Transpose", "Add", "Add", "Mul", "Mul"]
-    same_outputs(g, unfolded)
+    assert_same_outputs(g, unfolded)
 
 
 def test_large_expansions_are_not_folded() -> None:
@@ -118,7 +108,7 @@ def test_fold_off_is_the_minimal_pipeline() -> None:
     # The weight is relaid out at compile time; alpha stays a node; the no-op Reshape stays.
     assert ops(out) == ["MatMul", "Mul", "Add", "Reshape", "Add"]
     assert out.nodes[0].inputs[1].shape == (3, 4)
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
 
 
 def test_dead_nodes_are_removed() -> None:
@@ -136,7 +126,7 @@ def test_batchnorm_without_a_convolution_becomes_mul_add() -> None:
     g.set_outputs([g.op("BatchNorm", x, const(g, 3), const(g, 3), const(g, 3), var)])
     out = optimize(g)
     assert ops(out) == ["Mul", "Add"]
-    same_outputs(g, out)
+    assert_same_outputs(g, out)
 
 
 def test_unknown_layout_is_rejected() -> None:
@@ -151,4 +141,4 @@ def test_optimize_preserves_semantics_on_random_graphs(g: Graph) -> None:
         out = optimize(g, fold=fold)
         assert {n.op for n in out.nodes} <= CANONICAL_OPS
         assert [v.name for v in out.inputs] == [v.name for v in g.inputs]
-        same_outputs(g, out)
+        assert_same_outputs(g, out)

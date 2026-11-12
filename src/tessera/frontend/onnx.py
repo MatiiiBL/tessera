@@ -860,6 +860,14 @@ for _op, _fn in _CONSTANT_ONLY.items():
     _CONVERTERS[_op] = _constant_only(_fn)
 
 
+@converter("GatherElements")
+def _gather_elements(n: OnnxNode) -> list[Value]:
+    data, indices = n.constant(0, "data"), n.constant(1, "indices")
+    axis = int(n.attr("axis", 0))
+    indices = np.where(indices < 0, indices + data.shape[axis], indices)
+    return [n.const(np.take_along_axis(data, indices, axis=axis))]
+
+
 @converter("CumSum")
 def _cumsum(n: OnnxNode) -> list[Value]:
     x = n.constant(0, "input")

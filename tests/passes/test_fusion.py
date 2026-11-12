@@ -258,3 +258,17 @@ def test_verify_groups_catches_broken_partitions() -> None:
 def test_fusion_preserves_semantics_on_random_graphs(g: Graph) -> None:
     for kwargs in ({}, {"enabled": False}, {"options": FusionOptions(duplicate=False)}):
         check(g, **kwargs)
+
+
+def test_duplication_is_one_level_deep() -> None:
+    """A residual stream: each Add is read by a LayerNorm and by the next Add."""
+    g = Graph()
+    h = g.add_input("x", TensorType((4, 8), F32))
+    outputs = []
+    for i in range(4):
+        h = g.op("Add", h, g.add_input(f"r{i}", TensorType((4, 8), F32)), name=f"h{i}")
+        outputs.append(g.op("LayerNorm", h, const(g, 8), const(g, 8), name=f"ln{i}"))
+    g.set_outputs([*outputs, h])
+    groups = check(g)
+    longest = max(len(gr.nodes) for gr in groups)
+    assert longest <= 3, summary(groups)

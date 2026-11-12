@@ -261,8 +261,13 @@ def _join_targets(
                 return None
             if group not in targets:
                 targets.append(group)
-    if len(targets) > 1 and not (options.duplicate and _cheap(node)):
-        return None
+    if len(targets) > 1:
+        if not (options.duplicate and _cheap(node)):
+            return None
+        # One level only: a producer read by a duplicated node is stored, so a chain of
+        # cheap nodes (a residual stream) is not recomputed from its start in every kernel.
+        if any(len(owners[id(r)]) > 1 for r in readers):
+            return None
     return targets
 
 

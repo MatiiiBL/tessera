@@ -292,3 +292,29 @@ def _group_graph(group: FusedGroup) -> Graph:
     g.nodes = list(group.nodes)
     g.outputs = [group.output]
     return g
+
+
+def assert_same_outputs(before: Graph, after: Graph, seed: int = 2) -> None:
+    """``after`` computes ``before``'s outputs about as accurately as ``before`` itself.
+
+    Both run in float32 against a float64 run of ``before``; the error of
+    ``after`` may exceed the error of ``before`` by a few times (rewrites
+    reorder rounding) or by 2e-5 of the output's magnitude.
+    """
+    from tessera.ir import random_inputs
+
+    feeds = random_inputs(before, seed=seed)
+    exact = interpret(before, feeds, float64=True)
+    plain = interpret(before, feeds)
+    got = interpret(after, feeds)
+    assert len(got) == len(exact)
+    for out, (name, ref) in zip(after.outputs, exact.items(), strict=True):
+        value = got[out.name]
+        assert value.shape == ref.shape
+        if ref.dtype.kind in "biu":
+            np.testing.assert_array_equal(value, ref)
+            continue
+        scale = max(1.0, float(np.abs(ref).max()))
+        error = float(np.abs(value - ref).max())
+        baseline = float(np.abs(plain[name] - ref).max())
+        assert error <= max(4 * baseline, 2e-5 * scale), (name, error, baseline)

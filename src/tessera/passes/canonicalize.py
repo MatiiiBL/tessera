@@ -10,9 +10,12 @@ transposes.
 
 from __future__ import annotations
 
+from math import prod
+
 import numpy as np
 
 from tessera.ir.graph import Node, Value
+from tessera.ir.ops import OpKind
 from tessera.passes.rewrite import Rewriter, Rule, scalar
 
 
@@ -156,5 +159,78 @@ def transpose_as_reshape(rw: Rewriter, node: Node) -> Value | None:
     return rw.op("Reshape", node.inputs[0], name=node.name, shape=node.output.shape)
 
 
-SIMPLIFY: list[Rule] = [_noop, _neutral_operand, _reshape_chain, compose_transposes]
+def _row_view(rw: Rewriter, value: Value) -> Value | None:
+    """For ``value = Reshape(x)`` of shape [P, K] where x's leading axes multiply to P and
+    the others to K: x viewed as [..., K] (keeping the leading axes), else None."""
+    node = value.producer
+    if node is None or node.op != "Reshape" or value.type.rank != 2:
+        return None
+    src = node.inputs[0]
+    rows, cols = value.shape
+    if rows == 1:
+        return None  # a single row: there are no batch axes to keep
+    # At least two leading axes must stay, or the view is the 2-D Reshape itself.
+    for i in range(2, src.type.rank):
+        if prod(src.shape[:i]) == rows and prod(src.shape[i:]) == cols:
+            if i == src.type.rank - 1:
+                return src
+            return rw.op("Reshape", src, name=f"{node.name}_rows", shape=(*src.shape[:i], cols))
+    return None
+
+
+def _matmul_of_rows(rw: Rewriter, node: Node) -> Value | None:
+    """MatMul(Reshape(x), w) where the Reshape only merges rows is Reshape(MatMul(x, w)),
+    so the product keeps the batch axes and its epilogue meets no Reshape."""
+    if node.op != "MatMul" or node.inputs[1].type.rank != 2:
+        return None
+    src = _row_view(rw, node.inputs[0])
+    if src is None:
+        return None
+    y = rw.op("MatMul", src, node.inputs[1], name=node.name)
+    return rw.op("Reshape", y, name=f"{node.name}_rows", shape=node.output.shape)
+
+
+def _sink_reshape(rw: Rewriter, node: Node) -> Value | None:
+    """Elementwise ops (and broadcasts of a last-axis vector) commute with a Reshape that
+    keeps the last axis; moving the Reshape down lets matrix products keep their epilogues."""
+    kind = node.opdef.kind
+    if kind not in (OpKind.ELEMWISE, OpKind.BROADCAST) or node.op == "BatchNorm":
+        return None
+    reshaped = [v for v in node.inputs if v.producer is not None and v.producer.op == "Reshape"]
+    if not reshaped:
+        return None
+    src = reshaped[0].producer.inputs[0]  # type: ignore[union-attr]
+    out = node.output
+    if out.type.rank == 0 or src.type.rank == 0 or src.shape[-1] != out.shape[-1]:
+        return None
+    args: list[Value] = []
+    for v in node.inputs:
+        producer = v.producer
+        if (
+            producer is not None
+            and producer.op == "Reshape"
+            and producer.inputs[0].shape == src.shape
+        ):
+            if v.shape != out.shape:
+                return None
+            args.append(producer.inputs[0])
+        elif all(d == 1 for d in v.shape[:-1]) and v.type.rank <= out.type.rank:
+            # Broadcasts along the last axis only: the same on the source's shape.
+            args.append(v)
+        else:
+            return None
+    y = rw.op(node.op, *args, name=node.name, **node.attrs)
+    if y.shape != src.shape:
+        return None
+    return rw.op("Reshape", y, name=f"{node.name}_shape", shape=out.shape)
+
+
+SIMPLIFY: list[Rule] = [
+    _noop,
+    _neutral_operand,
+    _reshape_chain,
+    compose_transposes,
+    _matmul_of_rows,
+    _sink_reshape,
+]
 TRANSPOSE_AS_RESHAPE: list[Rule] = [transpose_as_reshape]
