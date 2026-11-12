@@ -166,10 +166,14 @@ nests of a `cache_write(..., "local")` buffer each bind `thread.y` and
 `thread.x`, and every thread sees its own register tile
 (`test_gpu_matmul_with_a_per_thread_accumulator`). `tir.verify` and the
 interpreter reject a local buffer used under different sets of thread axes
-(for example inside a thread loop and outside it), since a thread could then
-read a copy nobody wrote; the check is not run after each primitive, because
-a schedule passes through such states while it binds its nests one at a
-time.
+(for example inside a thread loop and outside it), or indexed by thread in
+different ways (a nest in which each thread writes a row and one in which it
+reads a column), since a thread could then read elements another thread
+wrote (`test_thread_loops_must_index_a_local_buffer_the_same_way`). The
+check compares, for every use, the terms of each index that involve a thread
+loop, with the loops named by their axis. It is not run after each
+primitive, because a schedule passes through such states while it binds its
+nests one at a time.
 
 ## 4. Tensor expressions
 
@@ -476,7 +480,7 @@ becomes a `float32[4, 4]` allocated under the tile loop
   fuse and imperfect splits over random shapes and factors.
 - The model sweep (section 5) schedules every group of the real models.
 
-The package has 187 tests (`uv run pytest tests/tir tests/te tests/compute`,
+The package has 188 tests (`uv run pytest tests/tir tests/te tests/compute`,
 a few seconds) plus the model sweep (`uv run pytest -m models tests/compute`).
 Floating-point results are compared with a tolerance relative to the largest
 magnitude, because reordered reductions round differently.

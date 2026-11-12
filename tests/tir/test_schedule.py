@@ -536,3 +536,16 @@ def test_reverse_compute_at_with_imperfect_tiles_too_large_to_enumerate() -> Non
     s.reorder(io, jo, ko, ii, ji, ki)
     s.reverse_compute_at(out, jo)
     tir.verify(s.func)
+
+
+def test_thread_loops_must_index_a_local_buffer_the_same_way() -> None:
+    # Each thread computes a row of the local cache but would copy out a column.
+    w = box_filter(2, 2, 2)
+    s = Schedule(w.func)
+    s.cache_write("box", 0, "local")
+    s.bind(s.get_loops("box")[0], "thread.x")
+    s.bind(s.get_loops("box_local")[1], "thread.x")
+    with pytest.raises(tir.VerifyError, match="index it by thread differently"):
+        tir.verify(s.func)
+    with pytest.raises(tir.VerifyError, match="index it by thread differently"):
+        run(s.func, w)

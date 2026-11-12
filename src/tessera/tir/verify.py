@@ -22,7 +22,14 @@ from tessera.tir.expr import (
     Select,
     Var,
 )
-from tessera.tir.functor import ExprMutator, ExprVisitor, children, walk_exprs
+from tessera.tir.functor import (
+    ExprMutator,
+    ExprVisitor,
+    children,
+    free_vars,
+    substitute,
+    walk_exprs,
+)
 from tessera.tir.printer import script
 from tessera.tir.stmt import (
     THREAD_TAGS,
@@ -68,27 +75,41 @@ def verify(func: PrimFunc, *, threads: bool = True) -> None:
 
 def check_thread_locals(func: PrimFunc) -> None:
     """Every use of a ``local`` buffer sits under loops bound to the same ``thread.*``
-    axes with the same extents, or under none.
+    axes with the same extents, or under none, and all uses map thread indices
+    to elements the same way.
 
     Each thread has its own copy of a local buffer (Metal), so the copy a thread
     reads must be the one it wrote: an accumulator may be initialized, updated
     and stored by three separate nests, as long as each nest binds the same
-    thread axes.
+    thread axes and indexes the buffer by them in the same way (the part of
+    every index that depends on a thread loop is the same in every use).
     """
     owners: dict[Buffer, dict[frozenset[tuple[str, int]], str]] = {}
+    patterns: dict[Buffer, set[tuple[frozenset[tuple[Expr, int]], ...]]] = {}
+    tags: dict[str, Var] = {}
     for path in _leaf_paths(func.body):
         node = path[-1]
-        where = frozenset(
-            (n.thread_tag, n.extent.value)
+        threads = [
+            n
             for n in path
             if isinstance(n, For)
             and n.thread_tag is not None
             and n.thread_tag.startswith("thread.")
             and isinstance(n.extent, IntImm)
-        )
-        for buf in _buffers_in(node):
-            if buf.scope == "local":
-                owners.setdefault(buf, {}).setdefault(where, _describe(where))
+        ]
+        where = frozenset((str(n.thread_tag), _extent(n)) for n in threads)
+        rename: dict[Var, Expr] = {
+            n.loop_var: tags.setdefault(str(n.thread_tag), Var(str(n.thread_tag))) for n in threads
+        }
+        bindings = _bindings(path)
+        for buf, indices in _accesses_in(node):
+            if buf.scope != "local":
+                continue
+            owners.setdefault(buf, {}).setdefault(where, _describe(where))
+            if threads:
+                patterns.setdefault(buf, set()).add(
+                    _thread_part(indices, bindings, rename, set(tags.values()))
+                )
     for buf, places in owners.items():
         if len(places) > 1:
             listed = "; ".join(sorted(places.values()))
@@ -96,6 +117,43 @@ def check_thread_locals(func: PrimFunc) -> None:
                 f"{func.name}: local buffer {buf.name} is used under different thread "
                 f"axes ({listed}); each thread sees only its own copy"
             )
+    for buf, seen in patterns.items():
+        if len(seen) > 1:
+            raise VerifyError(
+                f"{func.name}: uses of local buffer {buf.name} index it by thread "
+                "differently; a thread would read elements another thread wrote"
+            )
+
+
+def _extent(loop: For) -> int:
+    assert isinstance(loop.extent, IntImm)
+    return loop.extent.value
+
+
+def _bindings(path: tuple[Stmt, ...]) -> dict[Var, Expr]:
+    """Block iteration variables on ``path`` in terms of loop variables."""
+    out: dict[Var, Expr] = {}
+    for n in path:
+        if isinstance(n, BlockRealize):
+            for iv, value in zip(n.block.iter_vars, n.iter_values, strict=True):
+                out[iv.var] = substitute(value, out)
+    return out
+
+
+def _thread_part(
+    indices: tuple[Expr, ...],
+    bindings: dict[Var, Expr],
+    rename: dict[Var, Expr],
+    tag_vars: set[Var],
+) -> tuple[frozenset[tuple[Expr, int]], ...]:
+    """For each index, its terms that involve a thread loop (named by axis)."""
+    an = Analyzer()
+    out: list[frozenset[tuple[Expr, int]]] = []
+    for e in indices:
+        e = substitute(substitute(e, bindings), rename)
+        terms, _ = an.linear(e)
+        out.append(frozenset((t, k) for t, k in terms.items() if free_vars(t) & tag_vars))
+    return tuple(out)
 
 
 def _describe(where: frozenset[tuple[str, int]]) -> str:
@@ -117,11 +175,12 @@ def _leaf_paths(stmt: Stmt) -> list[tuple[Stmt, ...]]:
     return out
 
 
-def _buffers_in(node: Stmt) -> set[Buffer]:
+def _accesses_in(node: Stmt) -> list[tuple[Buffer, tuple[Expr, ...]]]:
+    """The buffer accesses held by ``node`` itself (not its children), with indices."""
     exprs: list[Expr] = []
-    found: set[Buffer] = set()
+    found: list[tuple[Buffer, tuple[Expr, ...]]] = []
     if isinstance(node, BufferStore):
-        found.add(node.buffer)
+        found.append((node.buffer, node.indices))
         exprs = [node.value, *node.indices]
     elif isinstance(node, Evaluate | LetStmt):
         exprs = [node.value]
@@ -130,7 +189,7 @@ def _buffers_in(node: Stmt) -> set[Buffer]:
     for e in exprs:
         for sub in walk_exprs(e):
             if isinstance(sub, BufferLoad | AddressOf):
-                found.add(sub.buffer)
+                found.append((sub.buffer, sub.indices))
     return found
 
 
