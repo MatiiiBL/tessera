@@ -281,6 +281,7 @@ def test_fold_simplifies_integer_identities() -> None:
     assert fold(i * 1 + 0) is i
     assert fold((i * 0) + IntImm(3) * 4) == IntImm(12)
     assert fold(i // 1) is i
+    assert fold((i + 3) // 8 * 8 + (i + 3) % 8) == i + 3
 
 
 def test_generation_is_deterministic() -> None:

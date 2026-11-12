@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -161,6 +161,9 @@ using namespace metal;
 
 def generate(func: PrimFunc, *, max_threadgroup_memory: int = 32768) -> Kernel:
     """Generate the MSL kernel of ``func`` and its launch configuration."""
+    from tessera.backend.metal.lower import compact_buffers
+
+    func = compact_buffers(func, intrinsic_extents)
     return _KernelWriter(func, max_threadgroup_memory).write()
 
 
@@ -389,11 +392,13 @@ def insert_barriers(func: PrimFunc, synced: Iterable[Buffer] | None = None) -> P
 
 @dataclass(frozen=True)
 class Intrinsic:
-    """A ``metal.*`` call: how to print it and which pointer arguments it writes."""
+    """A ``metal.*`` call: how to print it, which pointer arguments it writes, and
+    how many elements each pointer argument covers in its trailing dimensions."""
 
     emit: Callable[[_KernelWriter, Call], str]
     writes: tuple[int, ...] = ()
     statement: bool = True  # used inside Evaluate (False: an expression)
+    extents: tuple[tuple[int, tuple[int, ...]], ...] = ()  # (argument, extents)
 
 
 INTRINSICS: dict[str, Intrinsic] = {}
@@ -405,9 +410,19 @@ def register_intrinsic(
     *,
     writes: Sequence[int] = (),
     statement: bool = True,
+    extents: Mapping[int, tuple[int, ...]] | None = None,
 ) -> None:
     """Teach the code generator a ``metal.<name>`` call."""
-    INTRINSICS[name] = Intrinsic(emit, tuple(writes), statement)
+    covered = tuple(sorted((extents or {}).items()))
+    INTRINSICS[name] = Intrinsic(emit, tuple(writes), statement, covered)
+
+
+def intrinsic_extents(call: Call, position: int) -> tuple[int, ...] | None:
+    """The trailing extents the pointer at ``position`` covers, if the intrinsic says."""
+    intrinsic = INTRINSICS.get(call.name)
+    if intrinsic is None:
+        return None
+    return dict(intrinsic.extents).get(position)
 
 
 def intrinsic_writes(call: Call) -> Sequence[int]:
@@ -604,6 +619,18 @@ def fold(expr: Expr) -> Expr:
                     return b
                 if _is_int(b, 0):
                     return a
+                # (x / c) * c + x % c is x: what flattening a (row, column) split gives.
+                if (
+                    isinstance(a, Binary)
+                    and a.op == "mul"
+                    and isinstance(a.a, Binary)
+                    and a.a.op == "floordiv"
+                    and isinstance(b, Binary)
+                    and b.op == "floormod"
+                    and a.a.a == b.a
+                    and a.a.b == b.b == a.b
+                ):
+                    return b.a
             if op == "sub" and _is_int(b, 0):
                 return a
             if op == "mul":

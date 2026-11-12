@@ -368,3 +368,92 @@ def run_case(case: Case) -> tuple[Array, Array]:
 
 def assert_close(result: Array, reference: Array, rtol: float = 1e-5, atol: float = 1e-5) -> None:
     np.testing.assert_allclose(result, reference, rtol=rtol, atol=atol)
+
+
+def matmul_tiled(
+    m: int, n: int, k: int, rng: np.random.Generator, *, threads: int = 8, reg: int = 2, kt: int = 8
+) -> Case:
+    """The shape a schedule leaves: cache buffers with the whole tensor's shape
+    (``A_shared``, ``B_shared``, ``C_local``) used under tile loops. Each of
+    ``threads x threads`` threads computes a ``reg x reg`` tile; tiles of A and
+    B are loaded cooperatively, ``kt`` columns at a time. The function is
+    correct when run sequentially, so the GPU result depends on compaction
+    giving each thread its own accumulators."""
+    bm = threads * reg
+    assert m % bm == 0
+    assert n % bm == 0
+    assert k % kt == 0
+    a, b, c = Buffer("A", (m, k)), Buffer("B", (k, n)), Buffer("C", (m, n))
+    a_sh = Buffer("A_shared", (m, k), scope="shared")
+    b_sh = Buffer("B_shared", (k, n), scope="shared")
+    c_loc = Buffer("C_local", (m, n), scope="local")
+    by, bx, ko = Var("by"), Var("bx"), Var("ko")
+
+    def per_thread(body: Callable[[Var, Var], Stmt]) -> Stmt:
+        ty, tx = Var("ty"), Var("tx")
+        return bound(ty, threads, "thread.y", bound(tx, threads, "thread.x", body(ty, tx)))
+
+    def tile(body: Callable[[Expr, Expr], Stmt], ty: Var, tx: Var) -> Stmt:
+        i, j = Var("i"), Var("j")
+        row, col = by * bm + ty * reg + i, bx * bm + tx * reg + j
+        return loop(i, reg, loop(j, reg, body(row, col), ForKind.UNROLLED), ForKind.UNROLLED)
+
+    def init(ty: Var, tx: Var) -> Stmt:
+        return tile(lambda r, c_: BufferStore(c_loc, FloatImm(0.0), (r, c_)), ty, tx)
+
+    def load(src: Buffer, dst: Buffer, rows: int, cols: int, row0: Expr, col0: Expr) -> Stmt:
+        ty, tx, e = Var("ty"), Var("tx"), Var("e")
+        count = rows * cols // (threads * threads)
+        flat = e * (threads * threads) + ty * threads + tx
+        r, c_ = row0 + flat // cols, col0 + flat % cols
+        return bound(
+            ty,
+            threads,
+            "thread.y",
+            bound(tx, threads, "thread.x", loop(e, count, BufferStore(dst, src[r, c_], (r, c_)))),
+        )
+
+    def update(ty: Var, tx: Var) -> Stmt:
+        kk = Var("kk")
+
+        def body(r: Expr, c_: Expr) -> Stmt:
+            kidx = ko * kt + kk
+            return BufferStore(c_loc, c_loc[r, c_] + a_sh[r, kidx] * b_sh[kidx, c_], (r, c_))
+
+        return loop(kk, kt, tile(body, ty, tx))
+
+    def store(ty: Var, tx: Var) -> Stmt:
+        return tile(lambda r, c_: BufferStore(c, c_loc[r, c_], (r, c_)), ty, tx)
+
+    body = bound(
+        by,
+        m // bm,
+        "threadgroup.y",
+        bound(
+            bx,
+            n // bm,
+            "threadgroup.x",
+            seq(
+                [
+                    per_thread(init),
+                    loop(
+                        ko,
+                        k // kt,
+                        seq(
+                            [
+                                load(a, a_sh, bm, kt, by * bm, ko * kt),
+                                load(b, b_sh, kt, bm, ko * kt, bx * bm),
+                                per_thread(update),
+                            ]
+                        ),
+                    ),
+                    per_thread(store),
+                ]
+            ),
+        ),
+    )
+    return Case(
+        prim_func("matmul_tiled", [a, b, c], body, alloc=[a_sh, b_sh, c_loc]),
+        lambda xs: xs[0] @ xs[1],
+        [rand(rng, m, k), rand(rng, k, n)],
+    )
