@@ -168,3 +168,32 @@ def test_tune_shares_one_budget_across_models(tmp_path: Path) -> None:
         "in the model",
     }
     assert "inside the models" in again
+
+
+def test_tune_new_only_skips_tasks_already_in_the_log(tmp_path: Path) -> None:
+    from e2e.onnx_models import cnn, mlp
+    from tessera.tune.log import TuningLog
+
+    paths = {}
+    for name, model in (("mlp", mlp()), ("cnn", cnn())):
+        paths[name] = tmp_path / f"{name}.onnx"
+        onnx.save(model, paths[name])
+    log = tmp_path / "c-generic.jsonl"
+    common = ["-t", "c:generic", "--log", str(log), "--strategy", "random"]
+    quick = ["--validate-rounds", "0", "--model-rounds", "0"]
+    invoke("tune", str(paths["mlp"]), *common, *quick, "--trials", "16")
+    mlp_tasks = {r.task for r in TuningLog(log).records()}
+    out = invoke(
+        "tune",
+        str(paths["mlp"]),
+        str(paths["cnn"]),
+        *common,
+        *quick,
+        "--trials",
+        "16",
+        "--new-only",
+    )
+    assert "of 2 models" in out
+    added = TuningLog(log).records()[16:]
+    assert added
+    assert not {r.task for r in added} & mlp_tasks

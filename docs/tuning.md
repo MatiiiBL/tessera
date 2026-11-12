@@ -100,8 +100,18 @@ trains the cost model on them, so running the same command again resumes
 it. Lines that do not parse, such as one cut off by a killed process, are
 ignored. `BestConfigs` loads any number of log files and directories and
 returns the fastest successful record of a (target, task) pair that the
-current template still accepts, so a log written before a template gained
-or renamed a knob falls back to the next valid record or to the defaults.
+current template still accepts (see Validation below for how it chooses),
+so a log written before a template gained or renamed a knob falls back to
+the next valid record or to the defaults.
+
+Task keys changed once, when they started to cover which inputs are
+constants (see Tasks). The Metal log was migrated then, with a one-time
+script: 11,917 of its 14,294 records were renamed to the new keys of the
+same functions, 137 kept keys that did not change, and the 2,240 records
+of the 8 matmul tasks whose functions a fix in the Metal backend had
+changed were dropped; those tasks were tuned again. The `c:sme` log was
+discarded instead, because the C backend's timing harness changed (it now
+prepares constant inputs the way a loaded model does).
 
 ## Search
 

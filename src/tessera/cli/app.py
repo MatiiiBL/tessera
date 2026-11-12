@@ -305,6 +305,9 @@ def tune_command(
         ),
     ] = 3,
     validate_top: Annotated[int, typer.Option(help="Configurations validated per task.")] = 3,
+    new_only: Annotated[
+        bool, typer.Option(help="Tune only the tasks that have no record in the log yet.")
+    ] = False,
     model_rounds: Annotated[
         int,
         typer.Option(
@@ -334,10 +337,13 @@ def tune_command(
         for task in comp.tasks.values():
             merge_task(by_key, task)
     tasks = list(by_key.values())
+    if new_only:
+        logged = {r.task for r in TuningLog(log or _default_log(comp)).records()}
+        tasks = [t for t in tasks if t.key not in logged]
     if not tasks:
         console.print("nothing to tune: no kernel of these models has a template")
         return
-    path = log if log is not None else driver.default_logs() / f"{_target_slug(comp)}.jsonl"
+    path = log if log is not None else _default_log(comp)
     console.print(
         f"{len(tasks)} tasks for {kernels} kernels of {len(models)} models; logging to {path}"
     )
@@ -532,6 +538,10 @@ def _default_key(state: object) -> str:
 
     assert isinstance(state, TaskState)
     return config_json(state.task.space.default())
+
+
+def _default_log(comp: driver.Compilation) -> Path:
+    return driver.default_logs() / f"{_target_slug(comp)}.jsonl"
 
 
 def _target_slug(comp: driver.Compilation) -> str:
