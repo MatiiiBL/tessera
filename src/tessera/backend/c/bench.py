@@ -2,7 +2,7 @@
 
     uv run python -m tessera.backend.c.bench [--quick] [--out results/cpu]
 
-Four studies, each saved as Markdown and JSON:
+Five studies, each saved as Markdown and JSON:
 
 - ``gemm``: C = A B in fp32 for square sizes and the matrix products of a
   transformer layer, compiled through the matmul template for each ISA
@@ -11,6 +11,7 @@ Four studies, each saved as Markdown and JSON:
 - ``conv``: every distinct convolution of ResNet-50 at 224 x 224, batch 1,
   NHWC, with its bias and ReLU, through the conv2d template.
 - ``schedules``: the generated-loop matmul's loop order and packing choices.
+- ``sme_template``: the matmul template's SME path on 1, 2 and 4 threads.
 - ``sme_threads``: the SME microkernel driven from 1 to 4 threads, and one
   SME thread working beside NEON threads, to show how the performance cores
   share one SME unit.
@@ -40,6 +41,7 @@ from tessera.backend.c import build as cbuild
 from tessera.backend.c.measure import build_harness, measure, run_harness
 from tessera.backend.c.microkernels import header_files, host_supports
 from tessera.backend.c.templates import make_templates
+from tessera.backend.c.templates.common import balanced_tile, tile_options
 from tessera.dtype import DType
 from tessera.ir import Graph, TensorType
 from tessera.ir.graph import Value
@@ -339,6 +341,38 @@ def sme_threads_study(quick: bool) -> list[Row]:
     return rows
 
 
+def sme_template_study(quick: bool) -> list[Row]:
+    """The matmul template's SME path on 1, 2 and 4 threads (tiles sized for
+    each count as the defaults would be), each variant's best time over
+    interleaved rounds."""
+    if not host_supports("sme"):
+        return []
+    target = Target(isa="sme", num_threads=performance_cores())
+    rows = []
+    for m, n, k in TRANSFORMER[:1] if quick else TRANSFORMER:
+        counts = sorted({1, 2, target.threads})
+        funcs = []
+        for t in counts:
+            columns = tile_options(n, 1024)
+            override: dict[str, KnobValue] = {
+                "micro_threads": t,
+                "micro_n": balanced_tile(n, 1, t, columns),
+            }
+            funcs.append(configured(gemm_graph(m, n, k), target, override))
+        times = interleaved(funcs, target, 3 if quick else 12)
+        for t, seconds in zip(counts, times, strict=True):
+            rows.append(
+                Row(
+                    "sme_template",
+                    f"{m}x{n}x{k}",
+                    f"t{t}",
+                    seconds,
+                    2.0 * m * n * k / seconds * 1e-9,
+                )
+            )
+    return rows
+
+
 def machine() -> dict[str, Any]:
     load = os.getloadavg()[0] if hasattr(os, "getloadavg") else None
     return {
@@ -396,6 +430,12 @@ NOTES = {
         "of rows of C, against the NEON microkernel on the same bands; then one thread "
         "running SME on the given share of the rows while three run NEON on the rest."
     ),
+    "sme_template": (
+        "The matmul template's SME path (tiles of C computed by the microkernel, "
+        "with the init and the copy of each tile) with its tiles on one, two or four "
+        "threads, the tiles sized for each count as the defaults would size them. "
+        "Each variant's best time over interleaved rounds."
+    ),
 }
 
 TITLES = {
@@ -403,6 +443,7 @@ TITLES = {
     "conv": "ResNet-50 convolutions",
     "schedules": "Matmul loop order and packing",
     "sme_threads": "SME and threads",
+    "sme_template": "SME tiles and threads",
 }
 
 
@@ -419,6 +460,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "conv": conv_study,
         "schedules": schedules_study,
         "sme_threads": sme_threads_study,
+        "sme_template": sme_template_study,
     }
     for name in args.only or list(studies):
         info = machine()
