@@ -142,3 +142,18 @@ def test_optimize_preserves_semantics_on_random_graphs(g: Graph) -> None:
         assert {n.op for n in out.nodes} <= CANONICAL_OPS
         assert [v.name for v in out.inputs] == [v.name for v in g.inputs]
         assert_same_outputs(g, out)
+
+
+def test_equal_constants_merge_only_when_every_byte_matches() -> None:
+    g = Graph()
+    x = g.add_input("x", TensorType((64,), F32))
+    base = np.arange(64, dtype=np.float32)
+    same_head = base.copy()
+    same_head[-1] = -1.0  # equal first elements, different data
+    a = g.op("Add", x, g.add_constant(base, "a"))
+    b = g.op("Add", x, g.add_constant(base.copy(), "b"))
+    c = g.op("Add", x, g.add_constant(same_head, "c"))
+    g.set_outputs([a, b, c])
+    out = optimize(g)
+    assert len(out.constants()) == 2
+    assert_same_outputs(g, out)

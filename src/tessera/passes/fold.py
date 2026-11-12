@@ -38,16 +38,27 @@ def _attr_key(attrs: dict[str, Attr]) -> tuple[tuple[str, Attr], ...]:
 
 
 def merge_constants(graph: Graph) -> bool:
-    """Make equal constants (same type and bytes) one value; return whether any merged."""
-    canonical: dict[tuple[str, tuple[int, ...], bytes], Value] = {}
-    subst: dict[int, Value] = {}
+    """Make equal constants (same type, shape and bytes) one value; return whether any merged.
+
+    Constants are first bucketed by type, shape and their first elements, so
+    only the few that could be equal are hashed in full (weights rarely are).
+    """
+    buckets: dict[tuple[str, tuple[int, ...], bytes], list[Value]] = {}
     for v in graph.constants():
         assert v.data is not None
-        digest = hashlib.blake2b(np.asarray(v.data, order="C").tobytes(), digest_size=16).digest()
-        key = (str(v.dtype), v.shape, digest)
-        first = canonical.setdefault(key, v)
-        if first is not v:
-            subst[id(v)] = first
+        head = np.asarray(v.data, order="C").reshape(-1)[:16].tobytes()
+        buckets.setdefault((str(v.dtype), v.shape, head), []).append(v)
+    subst: dict[int, Value] = {}
+    for candidates in buckets.values():
+        if len(candidates) < 2:
+            continue
+        canonical: dict[bytes, Value] = {}
+        for v in candidates:
+            assert v.data is not None
+            data = np.asarray(v.data, order="C").tobytes()
+            first = canonical.setdefault(hashlib.blake2b(data, digest_size=16).digest(), v)
+            if first is not v:
+                subst[id(v)] = first
     if not subst:
         return False
     for node in graph.nodes:
