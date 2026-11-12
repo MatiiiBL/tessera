@@ -365,6 +365,11 @@ def _dim_region(
     fixed: set[Var] = set()
     canonical: dict[Var, Affine] = {}
     for loop in use.loops:
+        if loop.lo is not None and loop.lo == loop.hi:
+            # One iteration: the variable is a constant, however the indices
+            # mention it (a schedule may have simplified it away in some).
+            canonical[loop.var] = {None: loop.lo}
+            continue
         inside = loop.path[: len(lca)] == lca and len(loop.path) >= len(lca)
         if buf.scope == "local":
             relaxed = inside and loop.tag is None
@@ -482,26 +487,50 @@ def interval(expr: Expr, ranges: dict[Var, tuple[int, int]]) -> tuple[int, int] 
 def _subtract(
     index: Expr, offset: Affine, canonical: dict[Var, Affine], symbols: _Symbols
 ) -> Expr | None:
-    """``index - offset``, cancelling the terms of ``index`` that the offset covers;
-    None if ``index`` does not contain the offset's terms."""
+    """``index - offset``, cancelling the parts of ``index`` that the offset covers;
+    None if ``index`` does not contain the offset's terms. What is left is written
+    in the index's own variables: an affine term mixing fixed and inner variables
+    (``(by * 8 + ty) * 2``) keeps its inner part (``ty * 2``)."""
     fixed = {v for v in offset if v is not None}
-    expand = _expander(canonical)
     exprs = _canonical_exprs(canonical)
     kept: list[tuple[int, Expr]] = []
+    rest: Affine = {}
     covered: Affine = {None: 0}
+
+    def cover(var: Var | None, coef: int) -> None:
+        covered[var] = covered.get(var, 0) + coef
+
     for sign, term in terms(index):
-        form = affine(term, expand)
+        form = affine(term)
         if form is None:
             symbol = symbols.vars.get(substitute(term, exprs))
-            form = {symbol: 1} if symbol is not None else None
-        if form is not None and all(v is None or v in fixed for v in form):
-            for var, coef in form.items():
-                covered[var] = covered.get(var, 0) + sign * coef
-        else:
-            kept.append((sign, term))
+            if symbol is not None and symbol in fixed:
+                cover(symbol, sign)
+            else:
+                kept.append((sign, term))
+            continue
+        for var, coef in form.items():
+            coef *= sign
+            if var is None:
+                cover(None, coef)
+            elif var in canonical:
+                # A grid position (or a loop of one iteration): fixed when its axis is.
+                axis = [v for v in canonical[var] if v is not None]
+                if all(a in fixed for a in axis):
+                    for v, c in canonical[var].items():
+                        cover(v, coef * c)
+                else:
+                    rest[var] = rest.get(var, 0) + coef
+            elif var in fixed:
+                cover(var, coef)
+            else:
+                rest[var] = rest.get(var, 0) + coef
     if any(covered.get(v, 0) != c for v, c in offset.items() if v is not None):
         return None
     out: Expr | None = None
+    rest = {v: c for v, c in rest.items() if c != 0}
+    if rest:
+        out = affine_expr(rest, index.dtype)
     for sign, term in kept:
         if out is None:
             out = term if sign > 0 else Binary("sub", IntImm(0, index.dtype), term)
@@ -603,8 +632,10 @@ class _Rewriter:
             case SeqStmt(seq):
                 return SeqStmt(tuple(self.stmt(x) for x in seq))
             case For():
-                if s.kind is ForKind.THREAD_BINDING and s.thread_tag in self.axes:
-                    lo = s.min.value if isinstance(s.min, IntImm) else 0
+                lo = s.min.value if isinstance(s.min, IntImm) else 0
+                if isinstance(s.extent, IntImm) and s.extent.value == 1:
+                    self.canonical[s.loop_var] = {None: lo}
+                elif s.kind is ForKind.THREAD_BINDING and s.thread_tag in self.axes:
                     self.canonical[s.loop_var] = {self.axes[s.thread_tag]: 1, None: lo}
                 return For(
                     s.loop_var,

@@ -145,3 +145,35 @@ def test_a_gathered_per_thread_element_compacts_to_one() -> None:
     func, _ = schedule_default(depthwise((1, 28, 28, 48), stride=2).lowered)
     assert shapes(func) == {"conv2d_local": (1, 1, 1, 1)}
     assert "float conv2d_local;" in generate(func).source
+
+
+def test_a_loop_of_one_iteration_is_its_start() -> None:
+    from metal_workloads import conv2d
+
+    from tessera.backend.metal.bench import schedule_default
+
+    # 7 output pixels per row and an 8-pixel tile: the tile loop runs once, and the
+    # schedule writes its variable in some indices and not in others.
+    func, _ = schedule_default(conv2d((1, 7, 7, 32), 64, 3, pad=1).lowered)
+    sizes = shapes(func)
+    assert sizes["conv2d_local"] == (1, 1, 1, 4)
+
+
+def test_terms_mixing_fixed_and_inner_variables_are_split() -> None:
+    from metal_workloads import conv2d
+
+    from tessera.backend.metal.bench import schedule_with
+    from tessera.backend.metal.templates import TEMPLATES
+    from tessera.tir.schedule import Schedule
+    from tessera.tune.space import space_of
+
+    # A strided 1 x 1 convolution reads its input at (ow_0 * 8 + ow_1 * 4 + ow_2) * 2;
+    # staged in threadgroup memory, the tile's offset is ow_0 * 16.
+    workload = conv2d((1, 16, 16, 8), 16, 1, stride=2)
+    space = space_of(
+        lambda cfg: TEMPLATES["conv2d"](Schedule(workload.func), workload.lowered, cfg)
+    )
+    values = dict(space.default(), shared=True, threads=(2, 32), registers=(4, 2))
+    func = schedule_with(workload.lowered, values)
+    assert "x_shared" in shapes(func)
+    generate(func)

@@ -221,6 +221,7 @@ class GemmKnobs:
     element_threads: int
     simd_groups: tuple[int, int] = (1, 1)  # SIMD groups per threadgroup (rows, columns)
     simd_tiles: tuple[int, int] = (1, 1)  # 8 x 8 accumulator tiles per SIMD group
+    image_rows: int = 1  # convolution: output rows per threadgroup, on thread.z
 
 
 SIMD_GROUPS = ((1, 1), (1, 2), (2, 1), (2, 2), (1, 4), (4, 1), (2, 4), (4, 2))
@@ -254,15 +255,23 @@ def gemm_knobs(
     outputs: int,
     can_stage: bool,
     simd: tuple[tuple[int, int], tuple[int, int]] | None = None,
+    *,
+    image_rows: Sequence[int] = (1,),
 ) -> GemmKnobs:
     """Every knob of the GEMM templates, asked whatever the strategy. ``simd`` is
-    the SIMD-group layout to default to, when that strategy applies."""
+    the SIMD-group layout to default to, when that strategy applies; a
+    convolution also chooses among ``image_rows`` output rows per threadgroup.
+    Small rows (a 7 x 7 image) get several rows per threadgroup and a pixel tile
+    no wider than the row."""
     default = "simdgroup" if simd else "elements" if m <= 4 else "tiles"
     strategy = knob_str(cfg, "strategy", ["tiles", "elements", "simdgroup"], default)
     shapes = [s for s in THREAD_SHAPES if s[0] <= max(m, 1) * 2 and s[1] <= max(n, 32)]
     default_threads = (8, 8) if (8, 8) in shapes else shapes[0]
     threads = knob_pair(cfg, "threads", shapes, default_threads)
-    regs = knob_pair(cfg, "registers", REGISTER_TILES, (4, 4) if m >= 32 else (1, 4))
+    row_tile = 4 if m > 16 else 2 if m > 8 else 1
+    regs = knob_pair(cfg, "registers", REGISTER_TILES, (row_tile, 4))
+    stack_default = 1 if m > 16 or len(image_rows) == 1 else 2 if m > 8 else 4
+    stack = knob_int(cfg, "image_rows", image_rows, stack_default)
     tile_k = knob_int(
         cfg, "tile_k", [t for t in (4, 8, 16, 32) if t <= max(k, 4)], min(8, max(k, 4))
     )
@@ -275,7 +284,7 @@ def gemm_knobs(
     simd_groups = knob_pair(cfg, "simd_groups", SIMD_GROUPS, groups)
     simd_tiles = knob_pair(cfg, "simd_tiles", FRAGMENT_TILES, tiles)
     return GemmKnobs(
-        strategy, threads, regs, tile_k, stage, element_threads, simd_groups, simd_tiles
+        strategy, threads, regs, tile_k, stage, element_threads, simd_groups, simd_tiles, stack
     )
 
 
@@ -296,10 +305,15 @@ def _gemm(
     cols: Sequence[Var],
     reduction: Sequence[Var],
     staged: Sequence[int] = (),
+    stack: Var | None = None,
+    window: Sequence[Var] = (),
 ) -> None:
     """Tile an output of ``rows x cols`` (each a list of loops to fuse) reduced
     over ``reduction``, as described in the module docstring; ``staged`` are the
-    main block's reads that may be copied to threadgroup memory."""
+    main block's reads that may be copied to threadgroup memory, ``stack``
+    (a convolution's output rows) is split so that ``knobs.image_rows`` of its
+    iterations share a threadgroup, on thread.z, and ``window`` (a convolution's
+    kernel loops) are reduction loops kept whole outside the tiled one."""
     main = lowered.main_block
     assert main is not None
     if knobs.strategy == "elements":
@@ -318,9 +332,17 @@ def _gemm(
     mo, mt, mr = sch.split(m_loop, [None, ty, rm])
     no, nt, nr = sch.split(n_loop, [None, tx, rn])
     ko, ki = sch.split(k_loop, [None, knobs.tile_k])
+    stacked: list[Var] = []
+    if stack is not None and knobs.image_rows > 1:
+        so, si = sch.split(stack, [None, knobs.image_rows])
+        batch, stacked = [*batch, so], [si]
+    elif stack is not None:
+        batch = [*batch, stack]
     # The reduction steps outside the thread loops, so that the tile copies and
     # the accumulators' init and store can each get their own thread loops.
-    sch.reorder(mo, no, ko, mt, nt, ki, mr, nr)
+    sch.reorder(*batch, mo, no, *window, ko, *stacked, mt, nt, ki, mr, nr)
+    for loop in stacked:
+        sch.bind(loop, "thread.z")
     batch_loop = fuse_all(sch, batch)
     if batch_loop is not None:
         sch.bind(batch_loop, "threadgroup.z")
@@ -331,14 +353,25 @@ def _gemm(
     sch.reverse_compute_at(store, no)
     if lowered.epilogue_block is not None:
         sch.reverse_compute_inline(lowered.epilogue_block)
-    _tile_threads(sch, sch.get_loops(store)[-2:], threads, regs)
+    store_loops = sch.get_loops(store)
+    below = store_loops[store_loops.index(no) + 1 :]
+    if len(below) < 2 + len(stacked):
+        # A tile with a single row has no row loop in its store to give the threads
+        # that hold each row (matrix-vector products use the "elements" strategy).
+        raise ScheduleError("the output tile has a single row")
+    if stacked:
+        # The store's loops below the tile: rows of the image, pixels, channels.
+        sch.bind(below[-3], "thread.z")
+    _tile_threads(sch, below[-2:], threads, regs)
 
     if knobs.shared:
         for index in staged:
             attempt(sch, partial(_stage, block=main, index=index, at=ko, threads=threads))
-    init = sch.decompose_reduction(main, ko)
+    init = sch.decompose_reduction(main, window[0] if window else ko)
     # The init's loops mirror the update's below ko: threads, then registers.
     *_, it, jt, ir, jr = sch.get_loops(init)
+    if stacked:
+        sch.bind(sch.get_loops(init)[-5], "thread.z")
     sch.bind(it, "thread.y")
     sch.bind(jt, "thread.x")
     sch.unroll(ir)
@@ -480,20 +513,37 @@ def _affine_reads(block: Block) -> list[int]:
 
 
 def schedule_conv2d(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
-    """Conv2d over NHWC/HWIO as a GEMM per output row: each ``(n, oh)`` is a batch,
-    its output pixels ``ow`` the rows, output channels the columns and
-    ``(kh, kw, c)`` the reduction. Tiling ``ow`` rather than the fused pixel index
-    keeps every index affine, so a thread's accumulators stay a small register
-    tile and the store reads the same elements the thread computed."""
+    """Conv2d over NHWC/HWIO as a GEMM per output row: each output row's pixels
+    ``ow`` are the rows, output channels the columns and ``(kh, kw, c)`` the
+    reduction. Tiling ``ow`` rather than the fused pixel index keeps every index
+    affine, so a thread's accumulators stay a small register tile and the store
+    reads the same elements the thread computed. The window loops ``kh, kw``
+    stay outside the tiled channel loop, so the input's coordinates and padding
+    test do not change inside it. A threadgroup takes ``image_rows``
+    consecutive output rows (on thread.z), so that small images still give it
+    enough work."""
     main = lowered.main_block
     assert main is not None
     spatial, reduction = split_loops(sch, main)
-    *batch, pixels, channels = spatial
-    m, n, k = sch.extent(pixels), sch.extent(channels), _extent(sch, reduction)
-    # The input tile of a block of output pixels is gathered through the window,
-    # not a box, so only direct loads are scheduled.
-    knobs = gemm_knobs(cfg, m, n, k, _extent(sch, spatial), can_stage=False)
-    _gemm(sch, lowered, knobs, batch=batch, rows=[pixels], cols=[channels], reduction=reduction)
+    *batch, rows, pixels, channels = spatial
+    *window, in_channels = reduction
+    m, n, k = sch.extent(pixels), sch.extent(channels), sch.extent(in_channels)
+    # The input is read through the padding test (not a plain affine load), so of
+    # the two operands only the weights can be staged in threadgroup memory.
+    staged = _affine_reads(find_block(sch.func, main).block)
+    knobs = gemm_knobs(cfg, m, n, k, _extent(sch, spatial), bool(staged), image_rows=(1, 2, 4, 8))
+    _gemm(
+        sch,
+        lowered,
+        knobs,
+        batch=batch,
+        rows=[pixels],
+        cols=[channels],
+        reduction=[in_channels],
+        staged=staged,
+        stack=rows,
+        window=window,
+    )
 
 
 # -- reductions ----------------------------------------------------------------------------
