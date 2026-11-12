@@ -8,9 +8,14 @@ the tuner's running. Every process is isolated: a candidate that crashes
 is recorded as a failure with a reason, its process is replaced, and the
 run continues.
 
-Processes are started with ``spawn`` and kept for the runner's lifetime;
-each receives a task once and then only configurations, so tasks with
-large constants are not sent again for every candidate.
+Each process is a fresh interpreter running this module
+(``python -m tessera.tune.measure``) that talks to the tuner over two pipes.
+Unlike ``multiprocessing``'s ``spawn``, it never re-imports the caller's
+main script, so the runner works from any script. Tasks and results cross
+the pipes pickled: a task must be an instance of a class its module
+defines at top level. Processes are kept for the runner's lifetime and
+receive each task once, then only configurations, so a task with large
+constants is not sent again for every candidate.
 
 ``InlineRunner`` builds and measures in the calling process, without
 isolation, for synthetic tasks and tests.
@@ -19,13 +24,16 @@ isolation, for synthetic tasks and tests.
 from __future__ import annotations
 
 import contextlib
-import multiprocessing
+import io
+import os
+import pickle
 import signal
+import subprocess
+import sys
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from multiprocessing.connection import Connection, wait
-from multiprocessing.context import SpawnProcess
 from types import TracebackType
 from typing import Any, Literal, Protocol
 
@@ -168,25 +176,29 @@ class _Worker:
     """One child process that builds or measures on request."""
 
     def __init__(self) -> None:
-        self.proc: SpawnProcess | None = None
-        self.conn: Connection | None = None
+        self.proc: subprocess.Popen[bytes] | None = None
+        self.conn: Connection | None = None  # answers from the child
+        self._jobs: Connection | None = None  # requests to the child
         self.tasks: set[tuple[str, str]] = set()
 
     def submit(self, task: TuningTask, op: _Op, job: int, payload: Any) -> None:
-        if self.proc is None or not self.proc.is_alive():
+        if self.proc is None or self.proc.poll() is not None:
             self._start()
-        assert self.conn is not None
+        assert self._jobs is not None
         ident = (task.target_key, task.key)
         if ident not in self.tasks:
-            self.conn.send(("task", ident, task))
+            self._jobs.send(("task", ident, task))
             self.tasks.add(ident)
-        self.conn.send(("job", job, ident, op, payload))
+        self._jobs.send(("job", job, ident, op, payload))
 
     def death(self) -> str:
         """Why the process ended (after its pipe closed); it is restarted on next use."""
         proc = self.proc
+        code = None
+        if proc is not None:
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                code = proc.wait(timeout=5.0)
         self.stop()
-        code = proc.exitcode if proc is not None else None
         if code is not None and code < 0:
             try:
                 return f"process killed by {signal.Signals(-code).name}"
@@ -195,34 +207,59 @@ class _Worker:
         return f"process exited with code {code}"
 
     def stop(self) -> None:
-        if self.conn is not None:
+        if self._jobs is not None:
             with contextlib.suppress(OSError, ValueError):
-                self.conn.send(("stop",))
+                self._jobs.send(("stop",))
+            self._jobs.close()
+        if self.conn is not None:
             self.conn.close()
         if self.proc is not None:
-            self.proc.join(timeout=1.0)
-            if self.proc.is_alive():
+            try:
+                self.proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
                 self.proc.kill()
-                self.proc.join(timeout=5.0)
-        self.proc, self.conn, self.tasks = None, None, set()
+                self.proc.wait(timeout=5.0)
+        self.proc, self.conn, self._jobs, self.tasks = None, None, None, set()
 
     def _start(self) -> None:
-        ctx = multiprocessing.get_context("spawn")
-        parent, child = ctx.Pipe()
-        proc = ctx.Process(target=_serve, args=(child,), daemon=True, name="tessera-tune")
-        proc.start()
-        child.close()
-        self.proc, self.conn, self.tasks = proc, parent, set()
+        # A fresh interpreter running this module, rather than multiprocessing's
+        # spawn, which re-runs the caller's main script in every child.
+        jobs_read, jobs_write = os.pipe()
+        answers_read, answers_write = os.pipe()
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
+        self.proc = subprocess.Popen(
+            [sys.executable, "-m", __spec__.name, str(jobs_read), str(answers_write)],
+            pass_fds=(jobs_read, answers_write),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            env=env,
+        )
+        os.close(jobs_read)
+        os.close(answers_write)
+        self._jobs = Connection(jobs_write, readable=False)
+        self.conn = Connection(answers_read, writable=False)
+        self.tasks = set()
 
 
-def _serve(conn: Connection) -> None:
+def _serve(jobs: Connection, answers: Connection) -> None:
     """The child process: keep tasks, run jobs, answer with (job, ok, value)."""
+    # Ctrl-C reaches the whole process group; the parent decides what to stop.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     tasks: dict[tuple[str, str], Any] = {}
+    broken: dict[tuple[str, str], str] = {}
     while True:
         try:
-            message = conn.recv()
+            data = jobs.recv_bytes()
         except (EOFError, OSError):
             return
+        try:
+            message = pickle.loads(data)
+        except Exception as e:  # a task whose class this process cannot import
+            ident = _task_ident(data)
+            if ident is not None:
+                broken[ident] = f"cannot load the task here: {_describe(e)}"
+            continue
         if message[0] == "stop":
             return
         if message[0] == "task":
@@ -230,13 +267,48 @@ def _serve(conn: Connection) -> None:
             continue
         _, job, ident, op, payload = message
         try:
+            if ident in broken:
+                raise RuntimeError(broken[ident])
             task = tasks[ident]
             value = task.build(payload) if op == "build" else task.measure(payload)
-            conn.send((job, True, value))
+            answers.send((job, True, value))
         except Exception as e:  # reported to the parent as this candidate's failure
-            conn.send((job, False, _describe(e)))
+            answers.send((job, False, _describe(e)))
+
+
+def _task_ident(data: bytes) -> tuple[str, str] | None:
+    """The identity of a task message that failed to unpickle, read without the task."""
+
+    class _Stub:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def __setstate__(self, state: object) -> None:
+            pass
+
+    class _Lenient(pickle.Unpickler):
+        def find_class(self, module: str, name: str) -> Any:
+            try:
+                return super().find_class(module, name)
+            except (ImportError, AttributeError):
+                return _Stub
+
+    try:
+        message = _Lenient(io.BytesIO(data)).load()
+    except Exception:
+        return None
+    if isinstance(message, tuple) and len(message) == 3 and message[0] == "task":
+        ident: tuple[str, str] = message[1]
+        return ident
+    return None
 
 
 def _describe(e: BaseException) -> str:
     text = str(e).strip().splitlines()
     return f"{type(e).__name__}: {text[0][:300]}" if text else type(e).__name__
+
+
+if __name__ == "__main__":
+    _serve(
+        Connection(int(sys.argv[1]), writable=False), Connection(int(sys.argv[2]), readable=False)
+    )

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import os
 import signal
+import sys
 import time
+import types
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -87,3 +89,25 @@ def test_unpicklable_tasks_fail_their_candidates() -> None:
 def test_at_most_three_build_processes() -> None:
     with pytest.raises(ValueError, match="between 1 and 3"):
         LocalRunner(build_workers=4)
+
+
+def test_tasks_the_worker_cannot_import_fail_their_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = types.ModuleType("only_in_this_process")
+
+    @dataclass(frozen=True)
+    class Elsewhere(SyntheticMatmul):
+        pass
+
+    Elsewhere.__module__ = module.__name__
+    Elsewhere.__qualname__ = "Elsewhere"
+    module.Elsewhere = Elsewhere  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    task = Elsewhere(4, 4, 4)
+    with LocalRunner(build_workers=1) as runner:
+        results = runner.run(task, [task.space.default()] * 2)
+        other = SyntheticMatmul(8, 8, 8)  # a different key: the worker loads it
+        fine = runner.run(other, [other.space.default()])
+    assert all("cannot load the task here" in (r.error or "") for r in results)
+    assert fine[0].seconds is not None
