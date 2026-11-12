@@ -121,7 +121,7 @@ def _conv(xs: Sequence[NDArray], attrs: Mapping[str, Attr]) -> list[NDArray]:
         y = y + xs[2].reshape(1, -1, 1, 1)
     if nhwc:
         y = np.transpose(y, (0, 2, 3, 1))
-    return [keep_dtype(np.ascontiguousarray(y), xs[0])]
+    return [keep_dtype(np.asarray(y, order="C"), xs[0])]
 
 
 define(

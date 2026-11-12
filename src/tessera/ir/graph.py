@@ -192,7 +192,7 @@ class Graph:
         return value
 
     def add_constant(self, data: npt.ArrayLike, name: str = "const") -> Value:
-        array = np.ascontiguousarray(data)
+        array = np.asarray(data, order="C")
         return Value(self.fresh_name(name), TensorType.of(array), data=array)
 
     def add_node(

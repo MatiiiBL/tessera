@@ -289,6 +289,8 @@ def _pad_infer(types: Sequence[TensorType], attrs: Mapping[str, Attr]) -> list[T
 
 def _pad(xs: Sequence[NDArray], attrs: Mapping[str, Attr]) -> list[NDArray]:
     x = xs[0]
+    if x.ndim == 0:
+        return [x.copy()]
     pads = ints(attrs, "pads")
     widths = [(pads[i], pads[i + x.ndim]) for i in range(x.ndim)]
     value = x.dtype.type(number(attrs, "value"))

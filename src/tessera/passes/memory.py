@@ -129,7 +129,7 @@ def _pack(constants: Sequence[Value], alignment: int) -> tuple[NDArray, dict[int
     blob = np.zeros(size, np.uint8)
     for v in constants:
         assert v.data is not None
-        raw = np.ascontiguousarray(v.data).reshape(-1).view(np.uint8)
+        raw = np.asarray(v.data, order="C").reshape(-1).view(np.uint8)
         blob[offsets[id(v)] : offsets[id(v)] + raw.size] = raw
     return blob, offsets
 

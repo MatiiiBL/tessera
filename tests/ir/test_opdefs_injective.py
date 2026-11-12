@@ -151,3 +151,8 @@ def test_pad_integers() -> None:
     x = np.arange(6, dtype=I64).reshape(2, 3)
     y = run_op("Pad", [x], {"pads": (1, 0, 0, 1), "value": 7})
     np.testing.assert_array_equal(y, np.pad(x, ((1, 0), (0, 1)), constant_values=7))
+
+
+def test_pad_of_a_scalar_is_the_scalar() -> None:
+    x = np.array(2.5, np.float32)
+    assert run_op("Pad", [x], {"pads": ()}) == x
