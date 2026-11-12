@@ -281,47 +281,98 @@ runner survives crashes, hangs and unimportable tasks
 through the C backend, and `tests/tune/test_measured.py` tunes one end to
 end with real measurements.
 
+## Tuning the four models
+
+The committed logs (`results/tuning/c-sme.jsonl` and `metal.jsonl`) were
+made with the final templates of both backends on a machine with nothing
+else running, with one command per target:
+
+```sh
+uv run tessera tune data/models/{resnet50,mobilenet_v2,bert,gpt2}.onnx -t c:sme --time-budget 2700
+# Metal in runs of at most 28 minutes; each run resumes the log
+uv run tessera tune data/models/{resnet50,mobilenet_v2,bert,gpt2}.onnx -t metal --time-budget 1680
+```
+
+The four models have 78 tasks on each target (355 kernels); the spaces of
+the final templates hold 3.1 million configurations on `c:sme` and 420
+million on Metal, so the logs come from search, not enumeration.
+
+| | `c:sme` | Metal |
+|---|---|---|
+| machine time | 47 min | 141 min |
+| measurements | 9,321 | 16,330 |
+| failed | 1 (a 60 s timeout) | 340 (299 rejected by a template, 41 build errors and killed processes) |
+| busiest task's share of the search | 13.7% | 8.5% |
+| tasks where the in-model pass kept the default | 16 of 67, then 4 of 51 more | 16 of 67 |
+
+`c:sme` was tuned from scratch in one 46-minute run (45 minutes of search,
+then both validation passes), after the C backend's timing harness changed
+to prepare constant inputs the way a loaded model does; its in-model pass
+was run once more, a minute long, after a runtime fix, and kept the default
+for 4 more of the 51 tasks still using a tuned configuration. Metal's 141
+minutes, more than the two hours planned, are three runs: 114 minutes in
+four chunks over all tasks, 20 minutes for the 8 matmul tasks a fix in the
+Metal backend changed (`--new-only`, after the key migration described in
+Tuning logs), and 7 minutes validating all 78 tasks alone and in the
+models. On both targets the in-model pass found about a quarter of the
+tuned configurations slower inside the model than the defaults; in the
+first tuning run, before this pass existed, the tuned GPT-2 was slower on
+`c:sme` than the untuned one.
+
+Tuned against untuned, the median model latency
+([results/models.md](../results/models.md), CPU runs pooled from fresh
+processes):
+
+| model | c:sme, ms | Metal, ms |
+|---|---|---|
+| ResNet-50 | 12.02 to 11.52 (1.04 times) | 16.92 to 10.71 (1.58 times) |
+| MobileNetV2 | 3.15 to 2.15 (1.47 times) | 1.95 to 1.74 (1.12 times) |
+| BERT-base | 21.98 to 18.06 (1.22 times) | 10.54 to 10.31 (1.02 times) |
+| GPT-2 | 32.36 to 32.68 (0.99 times) | 14.65 to 14.18 (1.03 times) |
+
 ## Results: random against model-guided search
 
-`tessera bench tuning` runs each strategy from scratch with 5 seeds and
-reports, after each number of measurements, the best throughput found so
-far relative to a reference ([results/tuning.md](../results/tuning.md)).
-Both strategies start with the same round (the default and 15 random
-points: the model has nothing to learn from yet), so they differ from the
-second round on.
+`tessera bench tuning` runs each strategy from scratch with several seeds
+and reports, after each number of measurements, the best throughput found
+so far relative to a reference ([results/tuning.md](../results/tuning.md),
+measured 2026-11-12 with nothing else running). Both strategies start with
+the same round (the default and 15 random points: the model has nothing to
+learn from yet), so they differ from the second round on.
 
-**Synthetic tasks** (the reference is the exhaustive optimum; deterministic,
-so not affected by machine load), mean over seeds:
+**Synthetic tasks** (the reference is the exhaustive optimum; the costs are
+analytic, so the results do not depend on the machine), mean over 5 seeds:
 
 | task (M×N×K, space size) | trials | random | model-guided |
 |---|---|---|---|
 | 64×64×64 (43,904) | 64 / 256 | 0.73 / 0.83 | 0.92 / 0.99 |
 | 256×128×192 (181,440) | 64 / 256 | 0.81 / 0.88 | 0.88 / 0.98 |
-| 32×512×64 (64,680) | 64 / 256 | 0.72 / 0.84 | 0.88 / 0.98 |
+| 32×512×64 (64,680) | 64 / 256 | 0.72 / 0.84 | 0.88 / 0.97 |
 
-**Real tasks** (provisional: measured 2026-11-12 on a busy machine, with
-the C templates' loop path, before the NEON and SME microkernels). The
-heaviest two tasks of ResNet-50 and of BERT on `c:sme` have small spaces
-(120 to 384 configurations), so each space was measured exhaustively once
-and the searches replay those measurements: every strategy and seed sees
-the same timings, noise included, and the reference is the true optimum of
-the measured space. Exhaustively measuring the four spaces took under
-5 minutes.
+**Real tasks:** the two heaviest tasks of ResNet-50 and of BERT on `c:sme`,
+3 seeds of 96 measurements each. A task whose space has at most 2,048
+configurations is measured exhaustively once and every search replays
+those measurements, which makes the reference the true optimum and gives
+every strategy the same noise. The final templates' spaces are far larger
+(6,480 to 368,640 configurations), so here every search measured its own
+candidates, and the reference is the best time any run found:
 
 | task (groups sharing it, space size) | trials | random | model-guided |
 |---|---|---|---|
-| ResNet-50 3×3 conv, 14×14×256 → 256 (5, 120) | 32 / 64 | 0.86 / 0.90 | 0.96 / 1.00 |
-| ResNet-50 1×1 conv, 14×14×256 → 1024 (6, 120) | 32 / 64 | 0.89 / 0.92 | 0.98 / 1.00 |
-| BERT matmul 128×768×3072, M×N×K (12, 384) | 32 / 64 / 96 | 0.63 / 0.76 / 0.88 | 0.87 / 0.97 / 1.00 |
-| BERT matmul 128×3072×768 (12, 384) | 32 / 64 | 0.95 / 0.96 | 1.00 / 1.00 |
+| ResNet-50 3×3 conv, 56×56×64 → 64 (3, 8,400) | 32 / 96 | 0.92 / 0.98 | 0.92 / 0.92 |
+| ResNet-50 3×3 conv, 14×14×256 → 256 (5, 6,480) | 32 / 96 | 0.93 / 0.97 | 0.99 / 0.99 |
+| BERT matmul 128×768×3072, M×N×K (12, 350,208) | 32 / 96 | 0.69 / 0.79 | 0.75 / 0.84 |
+| BERT matmul 128×3072×768 (12, 368,640) | 32 / 96 | 0.87 / 0.88 | 0.96 / 0.98 |
 
-On the real tasks the model-guided search reached the measured optimum by
-64 trials for both convolutions and by 96 for the larger matmul in every
-seed, while random search was still 4 to 12% short at 96 trials. The
-spaces are small enough here that exhaustive search is affordable, which
-is also why the comparison could use exact optima; the evolutionary search
-matters more for the larger spaces of the microkernel templates and on
-Metal.
+These live measurements are noisy on `c:sme`: the thread placement of each
+measurement process varies (docs/cpu.md, Limitations), and the two
+strategies' curves already differ by up to 16% at 8 trials, where both have
+measured the same configurations. With that in mind, the model-guided
+search ends clearly ahead on one task (the second matmul: 0.98 against
+0.88), ahead within the noise on two, and behind on one convolution, where
+it stopped improving after 32 trials while random search kept finding
+better points. The synthetic comparison, which has no measurement noise,
+shows the difference the method makes; on the real tasks, with 96
+measurements per search and this much noise, it is smaller.
 
 ## Limitations
 
