@@ -34,7 +34,13 @@ A task (`tessera/tune/task.py`) is one lowered group, the template for its
 pattern and the target. Its key is `<pattern>:<structural hash>`, where the
 hash of the unscheduled `PrimFunc` ignores every name, so the identical
 3×3 convolutions repeated through a ResNet stage are one task. `extract_tasks` merges
-groups with equal keys and counts them in `weight`. The target is part of
+groups with equal keys and counts them in `weight`. The key covers the
+loop nest but not which inputs are constants, and the backends treat
+constants differently (the C backend packs weights once, at load), so two
+groups with the same loop nest whose constant inputs differ, such as a
+matmul by a weight and a matmul of two activations of the same shapes,
+are refused as one task with an error instead of being tuned for each
+other; none of the benchmark models has such a pair. The target is part of
 each log record (`Target.key` includes the ISA, the thread count and the
 CPU name), so a log tuned on one machine is never applied to another.
 
@@ -63,7 +69,20 @@ alive between batches and receive each task once, so a task with large
 constants is not sent again for every candidate. `multiprocessing`'s
 `spawn` was the first implementation; it re-runs the caller's main script
 in every child, which breaks any script without a `__main__` guard, so the
-workers now start their own interpreter.
+workers now start their own interpreter. A job's timeout starts only once
+its process reports that it has started: importing NumPy and the compiler
+can take seconds on a busy machine, and counting that against the first
+job turned healthy candidates into timeouts.
+
+The build processes also score candidates for the search. Scoring a
+candidate means applying the template and extracting the features of the
+result, which takes 3 to 9 ms in Python (Metal's templates are the slow
+ones), and an evolutionary round scores a few hundred new candidates. In
+the first 28-minute Metal run, scoring in the tuner's own process, 70% of
+the time went to the search rather than to building and measuring, and it
+made 2,546 measurements; with scoring sent in batches of 32 to the three
+build processes, which are idle while the search runs, the next two runs
+of the same length made 4,000 and 3,840.
 
 ## Tuning logs
 
@@ -107,10 +126,46 @@ the idea of Ansor. Each round:
    evolution, plus random unmeasured ones for a fifth of the batch (3 of
    16). The random share keeps the
    model learning about regions it currently scores low.
-4. Retrain the cost model on every measurement so far.
+4. Retrain the cost model on every measurement so far, once they have
+   grown by 10% since the last fit (or by 16, early on): with thousands of
+   measurements one round adds little, and a fit takes about a second.
 
 Until the model has 8 measurements with different times it cannot rank
 anything, and the search proposes random points.
+
+**Validation.** The search measures each candidate once, and measurements
+taken far apart in time are not comparable: noise only ever slows a
+measurement, and a machine that warms up during a long run slows
+everything. In the first `c:sme` run, one task's default measured 744 µs
+in its first round and 1,067 to 1,103 µs at the end, so the fastest record
+overall compared configurations measured at different temperatures. After
+the search, `tessera tune` therefore runs two validation passes, and
+`compile` decides each task by its latest pass alone; its records carry
+the pass's name in an optional `validation` field (`BestConfigs`, with the
+plain minimum over all records for a task that was never validated).
+
+1. *Measured alone:* each task's three fastest configurations and its
+   default, three times, interleaved round-robin across tasks. Within a
+   pass the contenders are measured side by side, so the minimum over a
+   pass compares like with like, and a configuration that is really slower
+   than the default loses to it (`tests/tune/test_tuner.py`).
+2. *In the model* (`tessera/tune/inmodel.py`): each model is compiled with
+   the logs and with the defaults, the two are profiled in alternation, and
+   for every task whose tuned configuration differs from its default the
+   two in-model times per kernel are logged. This pass exists because a
+   kernel alone is not always the kernel in its model. In the timing
+   harness a kernel's weight is one buffer, used call after call and
+   received like any other input; in a model each kernel has its own
+   weight, prepared once when the model is loaded, and twelve layers'
+   weights stream through the caches in turn. In GPT-2, a matmul shared by
+   twelve kernels took 1,065 µs alone with its default configuration (which
+   packs the weight) and 640 µs with the tuned one (which does not), while
+   in the model the default took 0.72 ms and the tuned configuration
+   1.12 ms. Before this pass existed, the tuned GPT-2 took 56.6 ms on
+   `c:sme` against 47.4 ms untuned. The in-model pass keeps the default for
+   every such task, whatever the harness gets wrong; the C backend's
+   `measure` is also being changed to prepare constant inputs the way a
+   loaded model does.
 
 ## The cost model
 
@@ -165,14 +220,35 @@ before its rankings became useful.
 
 ## Spending the budget across tasks
 
-`tune` (`tessera/tune/tuner.py`) works on all of a model's tasks with one
-budget. Each round of 16 measurements goes to the task with the largest
-expected saving of model time, `weight × best_seconds × rate`, where
-`rate` is the task's relative improvement per round over its last two
-rounds (0.5 until it has had two rounds, at least 0.005). Tasks that have
-not been measured go first; tasks whose space is exhausted, or where
-nothing has run successfully, go last. The budget includes what the log
-already holds, which is what makes a rerun resume instead of start over.
+`tune` (`tessera/tune/tuner.py`) works on all the tasks of several models
+with one budget; tasks the models share are tuned once, weighted by the
+number of kernels that use them. Each round of 16 measurements goes to the
+task with the largest expected saving of model time,
+`weight × best_seconds × rate`, where `rate` is the task's expected
+relative improvement per round: the larger of what its last two rounds
+achieved and an optimistic `0.5 / rounds`, with `rounds` counted from the
+measurements the task already has (log included), and at least 0.005.
+Tasks that have not been measured go first; tasks whose space is
+exhausted, or where nothing has run successfully, go last. The budget
+includes what the log already holds, which is what makes a rerun resume
+instead of start over.
+
+The optimistic term came from a flaw the first full tuning run exposed.
+The scheduler then used only the last two rounds' improvement (0.5 before
+a task had two rounds), so a task whose second round found nothing fell
+to the 0.005 floor at once, while the slow 128×50257×768 matmul of GPT-2's
+vocabulary projection, the largest single kernel, kept improving a little
+each round and took the budget. Of that run's 4,476 measurements on
+`c:sme`, this one task got 1,404 (31%); the median task got 41 (12 of them
+from validation) and none fewer than 21, so most tasks shared by twelve
+kernels had two rounds. Two rounds without progress say little about a
+space of thousands of configurations. With `0.5 / rounds`, a task stays in
+the running for a number of rounds roughly proportional to its share of
+the model's time. Resuming `c:sme` with the fix, 7,349 more measurements
+went first to the matmuls that BERT's and GPT-2's twelve layers share (the
+six busiest tasks got 1,132, 1,116, 700, 684, 588 and 508), and the busiest
+task's share fell to 15%; the Metal run, made with the fix from the start,
+gave its busiest task 9.2% of 14,294 measurements and the median task 44.
 
 ## Testing
 
@@ -245,8 +321,18 @@ Metal.
 - Footprints are upper bounds for strided and non-affine accesses, and
   they ignore cache-line granularity, so the model learns cache effects
   only as far as tile sizes reveal them.
-- The model is retrained from scratch each round and does not carry
+- The model is retrained from scratch when it refits and carries no
   knowledge between tuning runs except through the log.
-- Measurements are wall-clock medians on a shared machine; the tuner does
-  not detect interference, so logs from a busy machine favour whatever ran
-  in quiet moments.
+- Measurements are wall-clock medians; the tuner does not detect
+  interference. The committed logs were measured on a machine with nothing
+  else running, and the validation pass guards the final choice, but a log
+  measured on a busy machine favours whatever ran in quiet moments.
+- The budget covers a tiny part of the spaces of the final templates
+  (3.1 million configurations on `c:sme` and 420 million on Metal, against
+  11,825 and 14,294 measurements), so the logs hold good configurations,
+  not optimal ones.
+- Even with scoring in the build processes, about half of the Metal
+  tuning time went to the search rather than to measurements.
+- Metal's templates reject some points of their own spaces when a schedule
+  primitive cannot apply (2.4% of the candidates tried); these are recorded
+  as failed builds and cost a template application each.
