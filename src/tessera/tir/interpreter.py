@@ -55,6 +55,7 @@ from tessera.tir.expr import (
     Var,
 )
 from tessera.tir.functor import StmtVisitor, walk_stmts
+from tessera.tir.primitives.tensorize import EXTENTS, TENSORIZE
 from tessera.tir.stmt import (
     TRUE,
     Block,
@@ -558,8 +559,29 @@ class _Gen:
             ]
             self.emit(f"if {' and '.join(conds)}:")
             self.nested(b.init)
-        self.stmt(b.body)
+        intrinsic = dict(b.annotations).get(TENSORIZE)
+        if isinstance(intrinsic, str):
+            self.tensorized(b, intrinsic)
+        else:
+            self.stmt(b.body)
         del self.live[len(self.live) - pushed :]
+
+    def tensorized(self, b: Block, intrinsic: str) -> None:
+        """A tensorized block runs its intrinsic's reference on views of its regions."""
+        ref = intrin.get(intrinsic).reference
+        key = "_I_" + re.sub(r"\W", "_", intrinsic)
+        self.globals[key] = ref
+        args: list[str] = []
+        for region in b.reads:
+            buf = region.buffer
+            mins = tuple(r.min for r in region.region)
+            shape = tuple(_const(r.extent) for r in region.region)
+            args.append(
+                f"_Ptr({self.view(buf)}, {self.flat(buf, mins)}).view({shape}, {buf.strides})"
+            )
+        extents = str(dict(b.annotations).get(EXTENTS, ""))
+        args += [e for e in extents.split(",") if e]
+        self.emit(f"{key}({', '.join(args)})")
 
     def make_view(self, buf: Buffer, storage: str) -> int:
         view = self.name(buf, "np_")
@@ -602,9 +624,23 @@ def _narrower(dst: DType, src: DType) -> bool:
     return dst.itemsize < src.itemsize or (dst == DType.uint8 and src != DType.uint8)
 
 
+def _const(e: Expr) -> int:
+    if not isinstance(e, IntImm):
+        raise ValueError("a tensorized region has a non-constant extent")
+    return e.value
+
+
 class _Addressed(StmtVisitor):
+    """Buffers the generated code needs NumPy views of: pointer arguments and the
+    regions of tensorized blocks."""
+
     def __init__(self) -> None:
         self.found: set[Buffer] = set()
+
+    def visit_block(self, s: Block) -> None:
+        if TENSORIZE in dict(s.annotations):
+            self.found.update(r.buffer for r in s.reads + s.writes)
+        super().visit_block(s)
 
     def visit_address_of(self, e: AddressOf) -> None:
         self.found.add(e.buffer)

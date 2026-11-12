@@ -131,14 +131,17 @@ def _accesses(stmt: Stmt, buf: Buffer) -> list[tuple[Path, tuple[Expr, ...]]]:
 
 def footprints(func: PrimFunc) -> list[Footprint]:
     """The allocation point and touched region of every local and shared buffer of a
-    function whose blocks are opaque (see ``lower_blocks``)."""
+    function whose blocks are opaque (see ``lower_blocks``). Buffers passed to an
+    intrinsic by address are left out: their strides are part of the call."""
     out: list[Footprint] = []
+    escaped = {e.buffer for e in walk_exprs(func.body) if isinstance(e, AddressOf)}
     for path in iter_paths(func.body):
         node = path[-1]
         if not isinstance(node, Block):
             continue
         for buf in node.alloc_buffers:
-            if buf.scope == "global":
+            # Intrinsic calls take pointers and strides fixed at tensorize time.
+            if buf.scope == "global" or buf in escaped:
                 continue
             fp = _footprint(path, buf)
             if fp is not None:

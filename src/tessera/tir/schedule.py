@@ -19,6 +19,7 @@ from tessera.tir.expr import Var
 from tessera.tir.primitives import blocks as _blocks
 from tessera.tir.primitives import cache as _cache
 from tessera.tir.primitives import loops as _loops
+from tessera.tir.primitives import tensorize as _tensorize
 from tessera.tir.primitives.common import (
     ScheduleError,
     block_paths,
@@ -154,7 +155,8 @@ class Schedule:
         """Replace the nest rooted at ``loop`` with a registered intrinsic
         (see ``tessera.tir.intrin``), after checking the nest computes what
         the intrinsic's description computes."""
-        raise NotImplementedError
+        func = _tensorize.tensorize(self._func, loop, intrinsic)
+        self._apply(func, f"tensorize({loop.name}, {intrinsic!r})")
 
 
 def _names(loops: Sequence[Var]) -> str:

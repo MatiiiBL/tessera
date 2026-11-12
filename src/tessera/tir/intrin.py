@@ -2,19 +2,29 @@
 
 An intrinsic has a name ``<backend>.<name>`` (``c.sgemm_8x8``), a Python
 ``reference`` the interpreter calls in its place, and, for tensorize, a
-description ``desc`` (a small PrimFunc of what it computes) and an ``impl``
-that builds the call replacing a matched loop nest.
+description ``desc`` and an ``impl``.
 
-The reference receives the evaluated call arguments: a ``Pointer`` for each
-``AddressOf`` argument and Python numbers for the others. Pointers give NumPy
-views into the interpreter's buffers, so a reference writes its results in
-place::
+``desc`` is a small PrimFunc computing what the intrinsic computes: a perfect
+loop nest around one block (``C[i, j] = C[i, j] + A[i, k] * B[k, j]``). Its
+loop extents may be variables (a ``K`` left open); its buffers' shapes are
+not used. ``Schedule.tensorize`` matches a loop nest against it and calls
+``impl(match)`` with an ``IntrinMatch``: for each desc parameter the matched
+buffer, the address of the first element of the matched region and the
+buffer's strides, plus the matched loop extents. ``impl`` returns the
+statement that replaces the nest, normally ``Evaluate(Call("c.sgemm_8x8",
+...))``.
 
-    def sgemm_ref(c, a, b, lda, ldb, ldc):
-        A = a.view((8, 8), (lda, 1))
-        B = b.view((8, 8), (ldb, 1))
-        C = c.view((8, 8), (ldc, 1))
-        C += A @ B
+A tensorized block keeps the matched regions (``reads``: every desc
+parameter in order; ``writes``: the ones the desc stores to), and the
+interpreter runs it as ``reference(*views, *extents)`` with NumPy views of
+those regions (writes go to the views)::
+
+    def sgemm_ref(a, b, c, m, n, k):
+        c += a @ b
+
+A registered call that appears outside a tensorized block (written by hand)
+is run as ``reference(*args)`` with the evaluated arguments: a ``Pointer``
+for each ``AddressOf`` and Python numbers for the rest.
 """
 
 from __future__ import annotations
@@ -26,12 +36,43 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 
-from tessera.tir.stmt import BufferRegion, PrimFunc, Stmt
+from tessera.dtype import DType
+from tessera.tir.expr import AddressOf, IntImm, Var
+from tessera.tir.stmt import (
+    TRUE,
+    Block,
+    BlockRealize,
+    Buffer,
+    BufferRegion,
+    BufferStore,
+    For,
+    ForKind,
+    IterKind,
+    IterVar,
+    PrimFunc,
+    Range,
+    Stmt,
+)
 
 type NDArray = npt.NDArray[Any]
 
 type Reference = Callable[..., Any]
-type Impl = Callable[[Sequence[BufferRegion]], Stmt]
+
+
+@dataclass(frozen=True)
+class IntrinMatch:
+    """A loop nest matched against an intrinsic's description, one entry per desc
+    parameter (inputs first, then outputs)."""
+
+    buffers: tuple[Buffer, ...]  # the matched buffer of each desc parameter
+    pointers: tuple[AddressOf, ...]  # the first element of each matched region
+    strides: tuple[tuple[int, ...], ...]  # each matched buffer's strides, in elements
+    regions: tuple[BufferRegion, ...]  # the matched region of each parameter
+    extents: tuple[int, ...]  # the matched loops' trip counts, outermost first
+    sizes: dict[str, int]  # the values of the desc's variable extents, by name
+
+
+type Impl = Callable[[IntrinMatch], Stmt]
 
 
 class Pointer:
@@ -106,3 +147,31 @@ def get(name: str) -> Intrinsic:
 
 def registered() -> list[str]:
     return sorted(_REGISTRY)
+
+
+def matmul_desc(m: int, n: int, dtype: DType = DType.float32) -> PrimFunc:
+    """The description of an ``m x n`` GEMM microkernel accumulating over any ``K``:
+    ``c[i, j] = c[i, j] + a[i, k] * b[k, j]`` with parameters ``(a, b, c)`` and the
+    extent of ``k`` left as the variable ``K`` (``IntrinMatch.sizes["K"]``). It
+    matches the update block of a decomposed matmul reduction."""
+    k_extent = Var("K")
+    a, b, c = Buffer("a", (m, 1), dtype), Buffer("b", (1, n), dtype), Buffer("c", (m, n), dtype)
+    i, j, k = Var("i"), Var("j"), Var("k")
+    vi, vj, vk = Var("vi"), Var("vj"), Var("vk")
+    block = Block(
+        "gemm",
+        (
+            IterVar(vi, Range.of(m)),
+            IterVar(vj, Range.of(n)),
+            IterVar(vk, Range(IntImm(0), k_extent), IterKind.REDUCE),
+        ),
+        (),
+        (),
+        BufferStore(c, c[vi, vj] + a[vi, vk] * b[vk, vj], (vi, vj)),
+    )
+    body: Stmt = BlockRealize((i, j, k), TRUE, block)
+    body = For(k, IntImm(0), k_extent, ForKind.SERIAL, body)
+    body = For(j, IntImm(0), IntImm(n), ForKind.SERIAL, body)
+    body = For(i, IntImm(0), IntImm(m), ForKind.SERIAL, body)
+    root = BlockRealize((), TRUE, Block("root", (), (), (), body))
+    return PrimFunc(f"matmul_{m}x{n}", (a, b, c), root)
