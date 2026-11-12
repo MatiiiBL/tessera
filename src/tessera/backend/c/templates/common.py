@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from math import prod
 
 from tessera.backend.c.alloc import children, sub_exprs
 from tessera.target import Target
@@ -137,11 +138,35 @@ def try_apply(fn: object, *args: object) -> bool:
 
 def place_epilogue(sch: Schedule, epilogue: str | None, loop: Var | None) -> None:
     """Inline the epilogue into the block that produces its input; if that is
-    not possible, compute it under ``loop`` (on the tile just produced)."""
+    not possible, compute it under ``loop`` (on the tile just produced); if
+    neither is, give it a loop nest of its own."""
     if epilogue is None or try_apply(sch.reverse_compute_inline, epilogue):
         return
-    if loop is not None:
-        sch.reverse_compute_at(epilogue, loop)
+    if loop is not None and try_apply(sch.reverse_compute_at, epilogue, loop):
+        return
+    schedule_alone(sch, epilogue)
+
+
+def schedule_alone(sch: Schedule, block: str) -> None:
+    """A fixed schedule (no knobs, so the space does not depend on whether
+    fusion succeeded) for a block left in its own nest: the innermost loop
+    vectorized, the others fused and parallel when there is enough work."""
+    loops = sch.get_loops(block)
+    if not loops:
+        return
+    work = prod(sch.extent(v) for v in loops)
+    inner = loops[-1]
+    lanes = [v for v in vector_options(sch.extent(inner)) if v <= 16][-1]
+    outer = list(loops[:-1])
+    if lanes == sch.extent(inner):
+        sch.vectorize(inner)
+    elif lanes > 1:
+        head, tail = sch.split(inner, [None, lanes])
+        sch.vectorize(tail)
+        outer.append(head)
+    else:
+        outer.append(inner)
+    parallelize(sch, outer, work >= PARALLEL_WORK)
 
 
 def parallel_knob(cfg: Config, work: int, name: str = "parallel") -> bool:

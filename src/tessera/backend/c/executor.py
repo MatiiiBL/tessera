@@ -183,6 +183,11 @@ class CModel:
         return list(self._plan.outputs)
 
     @property
+    def plan(self) -> ExecutionPlan:
+        """The plan this model runs."""
+        return self._plan
+
+    @property
     def library(self) -> Path:
         """The shared library this model runs."""
         return self._library

@@ -6,10 +6,10 @@ from __future__ import annotations
 import random
 from collections.abc import Callable
 
+import c_workloads as W
 import numpy as np
 import pytest
-from c_workloads import Workload, elementwise, injective, layernorm, matmul, pool, reduce, softmax
-from c_workloads import conv2d as conv2d_workload
+from c_workloads import Workload
 
 from tessera import tir
 from tessera.backend.base import Template, get_backend
@@ -20,25 +20,29 @@ from tessera.tir.schedule import Schedule
 from tessera.tune.space import ApplyConfig, ConfigSpace, DefineConfig, KnobValue
 
 WORKLOADS: dict[str, Callable[[], Workload]] = {
-    "matmul": lambda: matmul(12, 32, 20),
-    "matmul_batched": lambda: matmul(6, 16, 9, batch=3, epilogue=False),
-    "matmul_odd": lambda: matmul(7, 10, 5),
-    "conv2d_3x3": lambda: conv2d_workload(1, 6, 8, 4, 16),
-    "conv2d_strided": lambda: conv2d_workload(2, 9, 9, 3, 8, (7, 7), (2, 2), (3, 3, 3, 3)),
-    "conv2d_1x1": lambda: conv2d_workload(1, 4, 4, 8, 32, (1, 1), (1, 1), (0, 0, 0, 0)),
-    "conv2d_dilated": lambda: conv2d_workload(
+    "matmul": lambda: W.matmul(12, 32, 20),
+    "matmul_batched": lambda: W.matmul(6, 16, 9, batch=3, epilogue=False),
+    "matmul_odd": lambda: W.matmul(7, 10, 5),
+    "attention_scores": lambda: W.attention_scores(2, 8, 16),
+    "conv2d_3x3": lambda: W.conv2d(1, 6, 8, 4, 16),
+    "conv2d_strided": lambda: W.conv2d(2, 9, 9, 3, 8, (7, 7), (2, 2), (3, 3, 3, 3)),
+    "conv2d_1x1": lambda: W.conv2d(1, 4, 4, 8, 32, (1, 1), (1, 1), (0, 0, 0, 0)),
+    "conv2d_dilated": lambda: W.conv2d(
         1, 8, 7, 5, 12, (3, 3), (1, 2), (2, 1, 0, 2), (2, 1), epilogue=False
     ),
-    "depthwise": lambda: conv2d_workload(1, 8, 8, 16, 16, strides=(2, 2), depthwise=True),
-    "maxpool": lambda: pool("max", 1, 9, 9, 8),
-    "avgpool": lambda: pool("avg", 2, 8, 8, 4, (2, 2), (2, 2), (0, 0, 0, 0)),
-    "reduce_last": lambda: reduce("sum", (6, 40), (1,)),
-    "reduce_middle": lambda: reduce("mean", (2, 5, 6, 16), (1, 2)),
-    "reduce_max": lambda: reduce("max", (3, 4, 7), (2,)),
-    "softmax": lambda: softmax(5, 48, scale=True),
-    "layernorm": lambda: layernorm(4, 64),
-    "transpose": lambda: injective(2, 3, 5, 8),
-    "gelu": lambda: elementwise((4, 32)),
+    "depthwise": lambda: W.conv2d(1, 8, 8, 16, 16, strides=(2, 2), depthwise=True),
+    "maxpool": lambda: W.pool("max", 1, 9, 9, 8),
+    "avgpool": lambda: W.pool("avg", 2, 8, 8, 4, (2, 2), (2, 2), (0, 0, 0, 0)),
+    "reduce_last": lambda: W.reduce("sum", (6, 40), (1,)),
+    "reduce_middle": lambda: W.reduce("mean", (2, 5, 6, 16), (1, 2)),
+    "reduce_keepdims": lambda: W.reduce("max", (3, 4, 7), (2,), keepdims=1),
+    "softmax": lambda: W.softmax(5, 48, scale=True),
+    "layernorm": lambda: W.layernorm(4, 64),
+    "transpose": lambda: W.transpose(2, 3, 5, 8),
+    "gelu": lambda: W.gelu((4, 32)),
+    "gelu_tanh": lambda: W.gelu((3, 20), "tanh"),
+    "gather": lambda: W.gather_rows(10, 16, 6),
+    "concat_slice": lambda: W.concat_slice(3, 8),
 }
 
 
@@ -60,7 +64,7 @@ def _scheduled(w: Workload, target: Target, values: dict[str, KnobValue]) -> Sch
 
 
 def _check(w: Workload, sch: Schedule, target: Target, *, interpret: bool) -> None:
-    expected = w.expected()
+    expected = w.expected
     if interpret:
         out = w.output()
         tir.interpret(sch.func, [*w.inputs, out])
