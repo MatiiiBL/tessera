@@ -11,8 +11,10 @@ threads with ``bind``; the code generator turns the result into MSL.
   thread a register tile of it (``registers``), with the accumulators in
   local memory and the epilogue applied as they are stored. Tiles of A and B
   can be staged in threadgroup memory (``shared``) every ``tile_k`` steps of
-  the reduction. A convolution is the same computation over its implicit GEMM:
-  output pixels as rows, ``(kh, kw, c)`` as the reduction.
+  the reduction. A convolution is the same computation for each output row:
+  the row's pixels as rows, output channels as columns, ``(kh, kw, c)`` as the
+  reduction. A matrix-vector product (few rows) runs one thread per output
+  element instead (``strategy``).
 - **reduce**, **softmax**, **layernorm**: either one threadgroup per row with
   its threads splitting each reduction (combined with SIMD-group functions
   and threadgroup memory), or one thread per row when the rows are the
@@ -242,9 +244,11 @@ def _gemm(
     rows: Sequence[Var],
     cols: Sequence[Var],
     reduction: Sequence[Var],
+    staged: Sequence[int] = (),
 ) -> None:
     """Tile an output of ``rows x cols`` (each a list of loops to fuse) reduced
-    over ``reduction``, as described in the module docstring."""
+    over ``reduction``, as described in the module docstring; ``staged`` are the
+    main block's reads that may be copied to threadgroup memory."""
     main = lowered.main_block
     assert main is not None
     if knobs.strategy == "elements":
@@ -276,7 +280,7 @@ def _gemm(
     _tile_threads(sch, sch.get_loops(store)[-2:], threads, regs)
 
     if knobs.shared:
-        for index in (0, 1):
+        for index in staged:
             attempt(sch, partial(_stage, block=main, index=index, at=ko, threads=threads))
     init = sch.decompose_reduction(main, ko)
     # The init's loops mirror the update's below ko: threads, then registers.
@@ -298,24 +302,55 @@ def schedule_matmul(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
     assert main is not None
     spatial, reduction = split_loops(sch, main)
     *batch, rows, cols = spatial
-    can_stage = len(find_block(sch.func, main).block.reads) == 2
+    staged = _affine_reads(find_block(sch.func, main).block)
     m, n, k = sch.extent(rows), sch.extent(cols), _extent(sch, reduction)
-    knobs = gemm_knobs(cfg, m, n, k, _extent(sch, spatial), can_stage)
-    _gemm(sch, lowered, knobs, batch=batch, rows=[rows], cols=[cols], reduction=reduction)
+    knobs = gemm_knobs(cfg, m, n, k, _extent(sch, spatial), bool(staged))
+    _gemm(
+        sch,
+        lowered,
+        knobs,
+        batch=batch,
+        rows=[rows],
+        cols=[cols],
+        reduction=reduction,
+        staged=staged,
+    )
+
+
+def _affine_reads(block: Block) -> list[int]:
+    """The reads of ``block`` that touch one element per iteration at an affine
+    index: their tile at one step of the reduction is a box, which threadgroup
+    memory can hold compactly. A prologue that reshapes (``k // 64``, ``k % 64``)
+    makes its read a gather, and two reads of one buffer (Q and K sliced from one
+    projection) merge into a wide region."""
+    from tessera.backend.metal.lower import affine
+    from tessera.tir.expr import IntImm
+
+    return [
+        i
+        for i, region in enumerate(block.reads)
+        if all(
+            affine(r.min) is not None and isinstance(r.extent, IntImm) and r.extent.value == 1
+            for r in region.region
+        )
+    ]
 
 
 def schedule_conv2d(sch: Schedule, lowered: LoweredGroup, cfg: Config) -> None:
-    """Conv2d over NHWC/HWIO as an implicit GEMM: rows are output pixels
-    ``(n, oh, ow)``, columns output channels, the reduction ``(kh, kw, c)``."""
+    """Conv2d over NHWC/HWIO as a GEMM per output row: each ``(n, oh)`` is a batch,
+    its output pixels ``ow`` the rows, output channels the columns and
+    ``(kh, kw, c)`` the reduction. Tiling ``ow`` rather than the fused pixel index
+    keeps every index affine, so a thread's accumulators stay a small register
+    tile and the store reads the same elements the thread computed."""
     main = lowered.main_block
     assert main is not None
     spatial, reduction = split_loops(sch, main)
-    *pixels, channels = spatial
-    m, n, k = _extent(sch, pixels), sch.extent(channels), _extent(sch, reduction)
-    # The input tile of a block of output pixels is not a box (it is gathered
-    # through the window), so only direct loads are scheduled.
-    knobs = gemm_knobs(cfg, m, n, k, m * n, can_stage=False)
-    _gemm(sch, lowered, knobs, batch=[], rows=pixels, cols=[channels], reduction=reduction)
+    *batch, pixels, channels = spatial
+    m, n, k = sch.extent(pixels), sch.extent(channels), _extent(sch, reduction)
+    # The input tile of a block of output pixels is gathered through the window,
+    # not a box, so only direct loads are scheduled.
+    knobs = gemm_knobs(cfg, m, n, k, _extent(sch, spatial), can_stage=False)
+    _gemm(sch, lowered, knobs, batch=batch, rows=[pixels], cols=[channels], reduction=reduction)
 
 
 # -- reductions ----------------------------------------------------------------------------

@@ -1,11 +1,6 @@
 """Every GPU template, on groups lowered from small graphs: the scheduled
 function verifies, interprets to the graph interpreter's output, and computes
-it on the GPU.
-
-The shapes are ones the default tiles divide: the schedule cannot yet bind a
-fused loop that a tile splits imperfectly (a known limit of its injectivity
-test, being lifted).
-"""
+it on the GPU."""
 
 from __future__ import annotations
 
@@ -38,44 +33,32 @@ from tessera.tune.space import ApplyConfig, KnobValue
 TEMPLATES = backend().templates()
 
 # Shapes whose default tiles divide them evenly (see the module docstring).
-# A thread-private accumulator used by several thread loops (matmul, conv), or
-# given its buffer before it moves under the thread loop (pool, mean), is refused
-# by the schedule's per-primitive check; so is binding a mixed-radix split it
-# cannot yet prove one-to-one (depthwise). Both are being lifted in the tir package.
-WAITING = pytest.mark.xfail(
-    raises=ScheduleError, strict=True, reason="schedule check being relaxed in tir"
-)
-
 WORKLOADS = [
     pytest.param("injective", injective, id="injective"),
-    pytest.param("matmul", lambda: matmul(128, 96, 64), id="matmul", marks=WAITING),
-    pytest.param(
-        "matmul", lambda: matmul(64, 64, 32, epilogue=False), id="matmul-bare", marks=WAITING
-    ),
-    pytest.param("matmul", lambda: matmul(32, 32, 64, batch=2), id="matmul-batched", marks=WAITING),
-    pytest.param("matmul", lambda: matmul(1, 256, 128), id="gemv", marks=WAITING),
-    pytest.param("conv", lambda: conv2d((1, 8, 8, 16), 32, 3, pad=1), id="conv3x3", marks=WAITING),
-    pytest.param(
-        "conv",
-        lambda: conv2d((1, 16, 16, 8), 32, 3, stride=2, pad=1),
-        id="conv3x3-s2",
-        marks=WAITING,
-    ),
-    pytest.param("conv", lambda: conv2d((1, 8, 8, 32), 64, 1), id="conv1x1", marks=WAITING),
-    pytest.param("depthwise", lambda: depthwise((1, 16, 16, 32)), id="depthwise", marks=WAITING),
-    pytest.param(
-        "depthwise", lambda: depthwise((1, 16, 16, 32), stride=2), id="depthwise-s2", marks=WAITING
-    ),
+    pytest.param("matmul", lambda: matmul(128, 96, 64), id="matmul"),
+    pytest.param("matmul", lambda: matmul(33, 70, 19), id="matmul-odd"),
+    pytest.param("matmul", lambda: matmul(64, 64, 32, epilogue=False), id="matmul-bare"),
+    pytest.param("matmul", lambda: matmul(17, 40, 24, batch=3), id="matmul-batched"),
+    pytest.param("matmul", lambda: matmul(1, 1000, 96), id="gemv"),
+    pytest.param("conv", lambda: conv2d((1, 8, 8, 16), 32, 3, pad=1), id="conv3x3"),
+    pytest.param("conv", lambda: conv2d((1, 7, 7, 24), 40, 3, pad=1), id="conv3x3-7x7"),
+    pytest.param("conv", lambda: conv2d((2, 15, 15, 8), 24, 3, stride=2, pad=1), id="conv3x3-s2"),
+    pytest.param("conv", lambda: conv2d((1, 14, 14, 32), 48, 1), id="conv1x1"),
+    pytest.param("conv", lambda: conv2d((1, 23, 23, 3), 16, 7, stride=2, pad=3), id="conv7x7-stem"),
+    pytest.param("depthwise", lambda: depthwise((1, 16, 16, 32)), id="depthwise"),
+    pytest.param("depthwise", lambda: depthwise((1, 15, 15, 24), stride=2), id="depthwise-s2"),
     pytest.param("maxpool", lambda: pool("MaxPool2d", (1, 16, 16, 8)), id="maxpool"),
-    pytest.param("avgpool", lambda: pool("AvgPool2d", (1, 16, 16, 8)), id="avgpool", marks=WAITING),
+    pytest.param("maxpool", lambda: pool("MaxPool2d", (1, 13, 13, 5)), id="maxpool-odd"),
+    pytest.param("avgpool", lambda: pool("AvgPool2d", (1, 11, 11, 6)), id="avgpool"),
     pytest.param("sum", lambda: reduce("ReduceSum", (8, 256), (1,)), id="sum"),
-    pytest.param(
-        "mean", lambda: reduce("ReduceMean", (2, 8, 8, 64), (1, 2)), id="mean", marks=WAITING
-    ),
-    pytest.param("max", lambda: reduce("ReduceMax", (4, 512), (1,), keepdims=0), id="max"),
+    pytest.param("sum", lambda: reduce("ReduceSum", (6, 200), (1,)), id="sum-odd"),
+    pytest.param("mean", lambda: reduce("ReduceMean", (2, 7, 7, 64), (1, 2)), id="mean"),
+    pytest.param("max", lambda: reduce("ReduceMax", (5, 37, 3), (1,), keepdims=0), id="max-middle"),
     pytest.param("softmax", lambda: softmax(12, 128), id="softmax"),
-    pytest.param("softmax", lambda: softmax(4, 1024), id="softmax-wide"),
+    pytest.param("softmax", lambda: softmax(7, 100), id="softmax-odd"),
+    pytest.param("softmax", lambda: softmax(3, 1000), id="softmax-wide"),
     pytest.param("layernorm", lambda: layernorm(8, 256), id="layernorm"),
+    pytest.param("layernorm", lambda: layernorm(5, 768), id="layernorm-bert"),
 ]
 
 

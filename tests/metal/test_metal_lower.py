@@ -15,7 +15,7 @@ from tessera.tir.stmt import Buffer, BufferStore, seq
 
 
 def shapes(func: object) -> dict[str, tuple[int, ...]]:
-    plan, _ = plan_compaction(func, intrinsic_extents)  # type: ignore[arg-type]
+    plan, _, _ = plan_compaction(func, intrinsic_extents)  # type: ignore[arg-type]
     return {c.old.name: c.new.shape for c in plan.values()}
 
 
@@ -133,3 +133,15 @@ def test_compaction_respects_the_threadgroup_memory_limit() -> None:
     generate(case.func)  # fits once compacted
     with pytest.raises(CodegenError, match="threadgroup memory"):
         generate(case.func, max_threadgroup_memory=1000)
+
+
+def test_a_gathered_per_thread_element_compacts_to_one() -> None:
+    from metal_workloads import depthwise
+
+    from tessera.backend.metal.bench import schedule_default
+
+    # One thread per output element: the element's coordinates come from the
+    # thread's fused position through // and %, the same in every access.
+    func, _ = schedule_default(depthwise((1, 28, 28, 48), stride=2).lowered)
+    assert shapes(func) == {"conv2d_local": (1, 1, 1, 1)}
+    assert "float conv2d_local;" in generate(func).source

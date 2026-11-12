@@ -136,6 +136,24 @@ def _axis_form(loop: _Loop, axes: _Axes) -> Affine:
     return {axes[loop.tag]: 1, None: loop.lo or 0}
 
 
+class _Symbols:
+    """One variable for each non-affine term of fixed variables (``t // 3136``), so
+    that such a term can be part of an offset: accesses that all use the same
+    term touch the same element, whatever it is."""
+
+    def __init__(self) -> None:
+        self.vars: dict[Expr, Var] = {}
+
+    def of(self, term: Expr) -> Var:
+        if term not in self.vars:
+            self.vars[term] = Var(f"term{len(self.vars)}")
+        return self.vars[term]
+
+
+def _canonical_exprs(canonical: dict[Var, Affine]) -> dict[Var, Expr]:
+    return {v: affine_expr(form) for v, form in canonical.items()}
+
+
 @dataclass
 class _Use:
     path: Path
@@ -292,28 +310,30 @@ class Compaction:
 
 def plan_compaction(
     func: PrimFunc, extents_of: Callable[[Call, int], tuple[int, ...] | None]
-) -> tuple[dict[Buffer, Compaction], _Axes]:
-    """The compacted shape of every local and shared buffer ``func`` allocates, and
-    the variable that stands for each grid axis in the offsets."""
+) -> tuple[dict[Buffer, Compaction], _Axes, _Symbols]:
+    """The compacted shape of every local and shared buffer ``func`` allocates, the
+    variable that stands for each grid axis in the offsets, and the variables that
+    stand for non-affine terms."""
     collector = _Collector(extents_of)
     collector.walk(func.body, (), (), None, {})
+    symbols = _Symbols()
     out: dict[Buffer, Compaction] = {}
     for buf in collector.out.allocated:
         uses = collector.out.uses.get(buf)
         if buf.scope not in ("local", "shared") or not uses:
             continue
-        compaction = _compact(buf, uses, collector.axes)
+        compaction = _compact(buf, uses, collector.axes, symbols)
         if compaction.new.shape != buf.shape:
             out[buf] = compaction
-    return out, collector.axes
+    return out, collector.axes, symbols
 
 
-def _compact(buf: Buffer, uses: list[_Use], axes: _Axes) -> Compaction:
+def _compact(buf: Buffer, uses: list[_Use], axes: _Axes, symbols: _Symbols) -> Compaction:
     lca = _common_prefix([u.path for u in uses])
     shape: list[int] = []
     offsets: list[Affine] = []
     for dim, size in enumerate(buf.shape):
-        regions = [_dim_region(buf, u, dim, lca, axes) for u in uses]
+        regions = [_dim_region(buf, u, dim, lca, axes, symbols) for u in uses]
         known = [r for r in regions if r is not None]
         if len(known) != len(regions) or any(r[0] != known[0][0] for r in known):
             shape.append(size)
@@ -335,7 +355,7 @@ def _compact(buf: Buffer, uses: list[_Use], axes: _Axes) -> Compaction:
 
 
 def _dim_region(
-    buf: Buffer, use: _Use, dim: int, lca: Path, axes: _Axes
+    buf: Buffer, use: _Use, dim: int, lca: Path, axes: _Axes, symbols: _Symbols
 ) -> tuple[Affine, int, int] | None:
     """(fixed part, lowest, highest) of the elements a use touches in ``dim``."""
     extent = use.extents[dim]
@@ -376,10 +396,15 @@ def _dim_region(
                     rest[var] = rest.get(var, 0) + coef
             continue
         bounds = interval(term, ranges) if _vars(term) <= set(ranges) else None
-        if bounds is None:
+        if bounds is not None:
+            a, b = sign * bounds[0], sign * bounds[1]
+            lo, hi = lo + min(a, b), hi + max(a, b)
+            continue
+        fixed_term = substitute(term, _canonical_exprs(canonical))
+        if not _vars(fixed_term) <= fixed:
             return None
-        a, b = sign * bounds[0], sign * bounds[1]
-        lo, hi = lo + min(a, b), hi + max(a, b)
+        symbol = symbols.of(fixed_term)
+        rest[symbol] = rest.get(symbol, 0) + sign
     return _clean(rest), lo, hi + extent - 1
 
 
@@ -454,15 +479,21 @@ def interval(expr: Expr, ranges: dict[Var, tuple[int, int]]) -> tuple[int, int] 
     return None
 
 
-def _subtract(index: Expr, offset: Affine, canonical: dict[Var, Affine]) -> Expr | None:
+def _subtract(
+    index: Expr, offset: Affine, canonical: dict[Var, Affine], symbols: _Symbols
+) -> Expr | None:
     """``index - offset``, cancelling the terms of ``index`` that the offset covers;
     None if ``index`` does not contain the offset's terms."""
     fixed = {v for v in offset if v is not None}
     expand = _expander(canonical)
+    exprs = _canonical_exprs(canonical)
     kept: list[tuple[int, Expr]] = []
     covered: Affine = {None: 0}
     for sign, term in terms(index):
         form = affine(term, expand)
+        if form is None:
+            symbol = symbols.vars.get(substitute(term, exprs))
+            form = {symbol: 1} if symbol is not None else None
         if form is not None and all(v is None or v in fixed for v in form):
             for var, coef in form.items():
                 covered[var] = covered.get(var, 0) + sign * coef
@@ -487,16 +518,18 @@ def compact_buffers(
 ) -> PrimFunc:
     """``func`` with every local and shared buffer shrunk to the region one thread
     or one threadgroup touches (see the module docstring)."""
-    plan, axes = plan_compaction(func, extents_of)
+    plan, axes, symbols = plan_compaction(func, extents_of)
     if not plan:
         return func
-    return PrimFunc(func.name, func.params, _Rewriter(plan, axes).stmt(func.body), func.attrs)
+    rewriter = _Rewriter(plan, axes, symbols)
+    return PrimFunc(func.name, func.params, rewriter.stmt(func.body), func.attrs)
 
 
 class _Rewriter:
-    def __init__(self, plan: dict[Buffer, Compaction], axes: _Axes) -> None:
+    def __init__(self, plan: dict[Buffer, Compaction], axes: _Axes, symbols: _Symbols) -> None:
         self.plan = plan
         self.axes = axes
+        self.symbols = symbols
         self.bindings: dict[Var, Expr] = {}  # block and let variables -> loop expressions
         self.canonical: dict[Var, Affine] = {}  # thread-bound loop variable -> axis form
 
@@ -513,7 +546,7 @@ class _Rewriter:
             # The offset is in loop variables, so the index is too: `by * 16 + ty`
             # minus `by * 16` reads as `ty`.
             index = substitute(index, self.bindings)
-            shifted = _subtract(index, offset, self.canonical)
+            shifted = _subtract(index, offset, self.canonical, self.symbols)
             if shifted is None:
                 # The region analysis only compacts a dimension whose accesses all
                 # have the offset's fixed part, so this means the analyses disagree.
@@ -553,7 +586,11 @@ class _Rewriter:
         ranges: list[Range] = []
         for x, offset, size in zip(r.region, c.offsets, c.new.shape, strict=True):
             start = substitute(self.expr(x.min), self.bindings)
-            shifted = _subtract(start, offset, self.canonical) if offset != {None: 0} else start
+            shifted = (
+                _subtract(start, offset, self.canonical, self.symbols)
+                if offset != {None: 0}
+                else start
+            )
             fits = isinstance(x.extent, IntImm) and x.extent.value <= size
             if shifted is None or not fits:
                 ranges.append(Range.of(size))

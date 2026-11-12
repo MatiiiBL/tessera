@@ -220,8 +220,17 @@ def test_launch_limits_are_checked() -> None:
     with pytest.raises(CodegenError, match="threads per threadgroup"):
         generate(prim_func("big", [out], body))
     sh = Buffer("sh", (16384,), scope="shared")
+    # The 64 KB shared buffer is written by one loop and read by another, so
+    # every element is live at once and it cannot shrink.
+    u = Var("u")
+    body = seq(
+        [
+            loop(t, 16384, BufferStore(sh, FloatImm(1.0), (t,))),
+            loop(u, 2048, BufferStore(out, sh[u * 8], (u,))),
+        ]
+    )
     with pytest.raises(CodegenError, match="threadgroup memory"):
-        generate(prim_func("shared", [out], loop(t, 1, BufferStore(sh, out[0], (0,))), alloc=[sh]))
+        generate(prim_func("shared", [out], body, alloc=[sh]))
     with pytest.raises(CodegenError, match="unknown axis"):
         generate(
             prim_func(
