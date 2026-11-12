@@ -118,8 +118,9 @@ The printer follows the loop IR without restructuring it:
   the parallel loop, so each thread has its own. A buffer written by a
   reduction is placed above the reduction's outermost loop, since its value
   lives across that loop. Index terms built only from loops outside the
-  allocation (`m_0_n_0_fused >> 3`) are constant while the buffer lives and
-  drop out of the shrunk index. Buffers above 64 KiB go on the heap (the
+  allocation (such as `t >> 3` when the tile loops are fused into `t`) are
+  constant while the buffer lives and drop out of the shrunk index. Buffers
+  above 64 KiB live in storage each thread allocates once and reuses (the
   calling thread runs the first chunk of every parallel loop, and Python
   threads other than the main one have 512 KiB stacks).
 - **Global intermediates** (a main block's result that an epilogue could not
@@ -198,8 +199,8 @@ cases are computed and the result picked with selects.
 
 The rational forms of `tanh` and `erf` are the ones Eigen uses; they trade
 a few ulp near ±1 (absolute error stays below 4e-7, which is what GELU
-sees) for a dozen FMAs and one division: `erf` costs 0.44 ns per element
-against 2.3 ns for the exp-based version it replaced. 2^n is applied by an
+sees) for a dozen FMAs and one division instead of an exponential. 2^n is
+applied by an
 integer add rather than by multiplying by 2^n1·2^n2, because
 `-fassociative-math` may regroup that product into an overflowing 2^128.
 
