@@ -36,7 +36,10 @@ class FusedGroup:
 
     Invariants (checked by ``passes.verify_groups``): ``nodes`` are in
     topological order; the group has exactly one output; no value defined
-    inside the group other than ``output`` is read outside it; at most one node
+    inside the group other than ``output`` is read outside it, except by
+    another group that also contains (duplicates) its producer: a cheap
+    producer read by several kernels is recomputed in each, and the same
+    ``Node`` object then appears in several groups; at most one node
     is of kind REDUCTION or ANCHOR (``anchor``), and nodes before it in the
     group are at most INJECTIVE (prologue), nodes after it at most BROADCAST
     (epilogue).
