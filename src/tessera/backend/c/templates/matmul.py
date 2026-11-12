@@ -54,18 +54,19 @@ def tile_loops(
     epilogue: str | None,
     tile: Var,
     first_reduce: Var,
-    rows: Var,
+    rows: Var | None,
     lanes: Var,
 ) -> str:
     """Accumulate the tile under ``tile`` in a local buffer: initialize it
     before ``first_reduce``, copy it out (through the epilogue) after the
-    reduction, unroll ``rows`` and vectorize ``lanes``. Returns the copy-out
-    block."""
+    reduction, unroll ``rows`` (if any) and vectorize ``lanes``. Returns the
+    copy-out block."""
     copy = sch.cache_write(main, 0, "local")
     sch.reverse_compute_at(copy, tile)
     sch.decompose_reduction(main, first_reduce)
     place_epilogue(sch, epilogue, tile)
-    sch.unroll(rows)
+    if rows is not None:
+        sch.unroll(rows)
     sch.vectorize(lanes)
     copy_loops = sch.get_loops(copy)
     inside = copy_loops[copy_loops.index(tile) + 1 :]

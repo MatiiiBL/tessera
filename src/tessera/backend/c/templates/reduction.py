@@ -8,6 +8,7 @@ from math import prod
 from tessera.backend.c.templates.common import (
     CpuTarget,
     choose_int,
+    divisors,
     loop_kinds,
     nearest,
     output_block,
@@ -16,6 +17,7 @@ from tessera.backend.c.templates.common import (
     place_epilogue,
     vector_options,
 )
+from tessera.backend.c.templates.matmul import tile_loops
 from tessera.plan import LoweredGroup
 from tessera.tir.expr import Var
 from tessera.tir.schedule import Schedule
@@ -24,9 +26,10 @@ from tessera.tune.space import Config
 
 def schedule_reduce(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: CpuTarget) -> None:
     """A reduction over the last axes (INNER == 1) keeps its accumulator in a
-    local buffer and lets clang vectorize the contiguous reduction loop;
-    otherwise the reduction loops move outside the inner output axes, whose
-    innermost loop is vectorized (``vector``). Outer output loops run in
+    local buffer and lets clang vectorize the contiguous reduction loop.
+    Otherwise a ``tile`` of the innermost output axis is accumulated in a
+    local buffer, vectorized, with the reduction loops outside it, so the
+    input is read in contiguous runs. Outer loops (and tiles) run in
     parallel."""
     main = group.main_block
     assert main is not None
@@ -37,8 +40,16 @@ def schedule_reduce(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: 
     work = prod(sch.extent(v) for v in loops)
     inner = _inner_loops(sch, spatial, group.dims.get("INNER", 1))
     outer = spatial[: len(spatial) - len(inner)]
-    options = vector_options(sch.extent(inner[-1])) if inner else [1]
-    vector = choose_int(cfg, "vector", options, nearest(options, 16))
+    if inner:
+        extent = sch.extent(inner[-1])
+        tiles = [d for d in divisors(extent) if d % 4 == 0] or [extent]
+        # The whole axis per iteration, unless the outer axes are too few to
+        # give every thread work: then one tile per thread.
+        outer_rows = prod(sch.extent(v) for v in [*outer, *inner[:-1]])
+        want = extent if outer_rows >= target.threads else extent // target.threads
+        tile = choose_int(cfg, "tile", tiles, nearest(tiles, max(want, 16)))
+    else:
+        tile = choose_int(cfg, "tile", [1], 1)
     enabled = parallel_knob(cfg, work)
     epilogue = group.epilogue_block
 
@@ -53,18 +64,22 @@ def schedule_reduce(sch: Schedule, group: LoweredGroup, cfg: Config, *, target: 
         parallelize(sch, outer, enabled)
         return
 
+    # Inner output axes: a contiguous tile of the innermost one is accumulated
+    # in a local buffer while the reduction loops stream over the input rows.
     lanes = inner[-1]
     rest: list[Var] = list(inner[:-1])
-    if 1 < vector < sch.extent(lanes):
-        head, lanes = sch.split(lanes, [None, vector])
+    if tile < sch.extent(lanes):
+        head, lanes = sch.split(lanes, [None, tile])
         rest.append(head)
     sch.reorder(*rest, *reduce, lanes)
-    if vector > 1:
-        sch.vectorize(lanes)
-    sch.decompose_reduction(main, reduce[0])
     around = [*outer, *rest]
-    place_epilogue(sch, epilogue, around[-1] if around else None)
-    parallelize(sch, [*outer, *rest], enabled)
+    if around:
+        tile_loops(sch, main, epilogue, around[-1], reduce[0], None, lanes)
+    else:
+        sch.decompose_reduction(main, reduce[0])
+        sch.vectorize(lanes)
+        place_epilogue(sch, epilogue, None)
+    parallelize(sch, around, enabled)
 
 
 def _inner_loops(sch: Schedule, spatial: list[Var], inner: int) -> list[Var]:
