@@ -133,8 +133,13 @@ def _micro_knobs(cfg: Config, channels: int, target: CpuTarget) -> MicroKnobs:
     an image for a strip of ``micro_c`` output channels; strips run in
     parallel on ``micro_threads`` threads (all of them by default, as for
     matmul). The default strip gives every thread a whole number of strips
-    at most 256 channels wide."""
-    enabled = choose(cfg, "kernel", ["micro", "loops"], "micro") == "micro"
+    at most 256 channels wide. On NEON the loops stay the default when the
+    strips would be narrower than two of the microkernel's 12-wide panels."""
+    # NEON's panels are 12 channels wide: below two panels per thread's strip
+    # (64-channel layers on four threads) the generated loops are faster.
+    narrow = target.isa == "neon" and channels // target.threads < 24
+    default = "loops" if narrow else "micro"
+    enabled = choose(cfg, "kernel", ["micro", "loops"], default) == "micro"
     counts = sorted({c for c in (1, 2, target.threads) if c <= target.threads})
     threads = choose_int(cfg, "micro_threads", counts, target.threads)
     strips = tile_options(channels, 1024)

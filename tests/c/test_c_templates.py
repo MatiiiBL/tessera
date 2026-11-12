@@ -31,6 +31,7 @@ WORKLOADS: dict[str, Callable[[], Workload]] = {
     "conv2d_3x3": lambda: W.conv2d(1, 6, 8, 4, 16),
     "conv2d_strided": lambda: W.conv2d(2, 9, 9, 3, 8, (7, 7), (2, 2), (3, 3, 3, 3)),
     "conv2d_1x1": lambda: W.conv2d(1, 4, 4, 8, 32, (1, 1), (1, 1), (0, 0, 0, 0)),
+    "conv2d_wide": lambda: W.conv2d(1, 5, 5, 8, 96),
     "conv2d_dilated": lambda: W.conv2d(
         1, 8, 7, 5, 12, (3, 3), (1, 2), (2, 1, 0, 2), (2, 1), epilogue=False
     ),
@@ -112,12 +113,26 @@ def test_random_schedules(name: str, isa: CpuIsa) -> None:
         _check(w, _scheduled(w, target, space.get(index)), target, interpret=False)
 
 
-MICRO = ["matmul", "matmul_batched", "attention_scores", "shared_operands", "conv2d_3x3",
-         "conv2d_strided", "conv2d_1x1", "conv2d_dilated"]  # fmt: skip
+GEMMS = ["matmul", "matmul_batched", "attention_scores", "shared_operands"]
+CONVS = ["conv2d_3x3", "conv2d_strided", "conv2d_1x1", "conv2d_dilated", "conv2d_wide"]
 
 
-@pytest.mark.parametrize("isa", ISAS[1:])
-@pytest.mark.parametrize("name", MICRO)
+# On NEON, convolutions whose strips would be narrower than two 12-wide panels
+# per thread default to the generated loops.
+def _case(name: str, isa: CpuIsa) -> Any:
+    marks = [pytest.mark.sme] if isa == "sme" else []
+    skip = pytest.mark.skipif(not host_supports(isa), reason=f"this CPU has no {isa}")
+    return pytest.param(name, isa, marks=[*marks, skip])
+
+
+MICRO = [
+    *(_case(name, isa) for isa in ("neon", "sme") for name in GEMMS),
+    *(_case(name, "sme") for name in CONVS),
+    _case("conv2d_wide", "neon"),
+]
+
+
+@pytest.mark.parametrize(("name", "isa"), MICRO)
 def test_microkernels_are_used_by_default(name: str, isa: CpuIsa) -> None:
     w = WORKLOADS[name]()
     target = Target(isa=isa, num_threads=4)
@@ -128,8 +143,12 @@ def test_microkernels_are_used_by_default(name: str, isa: CpuIsa) -> None:
 
 EDGE_TILES = {
     "matmul": (lambda: W.matmul(37, 50, 20), {"micro_m": 16, "micro_n": 32}),
+    "conv2d_dilated": (
+        lambda: W.conv2d(1, 8, 7, 5, 40, (3, 3), (1, 2), (2, 1, 0, 2), (2, 1)),
+        {"kernel": "micro", "micro_c": 16},
+    ),
     "attention": (lambda: W.attention_scores(2, 40, 16), {"micro_m": 16, "micro_n": 32}),
-    "conv2d": (lambda: W.conv2d(1, 6, 6, 8, 40), {"micro_c": 16}),
+    "conv2d": (lambda: W.conv2d(1, 6, 6, 8, 40), {"kernel": "micro", "micro_c": 16}),
 }
 
 
