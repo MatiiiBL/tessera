@@ -5,6 +5,13 @@
  * Every generated translation unit (a model, or a kernel's timing harness)
  * includes this header once, after defining TSR_NUM_THREADS. Everything is
  * static, so each loaded model has its own pool sized for its target.
+ *
+ * Nothing here or in the code generated around it is _Thread_local: on macOS
+ * every loaded image with thread-local variables takes one of the process's
+ * 512 pthread keys, and loaded libraries are never unloaded, so a process
+ * that loads a few hundred models (a test run, a tuning run) would run out.
+ * What a thread keeps between calls is indexed by its slot in the pool
+ * instead (tsr_thread_slot).
  */
 #ifndef TESSERA_RUNTIME_H
 #define TESSERA_RUNTIME_H
@@ -262,7 +269,7 @@ typedef struct {
   bool forked;
   pthread_mutex_t mutex;
   pthread_cond_t wake;
-  pthread_mutex_t owner; /* held while a loop runs; a second caller runs serially */
+  pthread_mutex_t owner; /* held while a loop runs; a nested or second loop runs serially */
 } tsr_pool_t;
 
 static tsr_pool_t tsr_pool = {
@@ -271,7 +278,21 @@ static tsr_pool_t tsr_pool = {
     .owner = PTHREAD_MUTEX_INITIALIZER,
 };
 static pthread_once_t tsr_pool_once = PTHREAD_ONCE_INIT;
-static _Thread_local bool tsr_in_parallel = false;
+
+/* pthread_self() of each worker, by slot (1 to TSR_NUM_THREADS - 1). */
+static _Atomic(uintptr_t) tsr_worker_ids[TSR_MAX_THREADS];
+
+/* The calling thread's slot in the pool: its worker number for a worker, 0
+ * for any other thread. Storage a kernel keeps per thread is indexed by
+ * slot. Slot 0 belongs to the thread that called into the library: entry
+ * points hold tsr_entry_mutex, so only one such thread runs at a time. */
+static int tsr_thread_slot(void) {
+  uintptr_t self = (uintptr_t)pthread_self();
+  for (int i = 1; i < TSR_NUM_THREADS && i < TSR_MAX_THREADS; ++i) {
+    if (atomic_load_explicit(&tsr_worker_ids[i], memory_order_relaxed) == self) return i;
+  }
+  return 0;
+}
 
 /* On Apple silicon the efficiency cores are the first hw.perflevel1.logicalcpu
  * logical CPUs; 0 elsewhere (no core is treated as one). Set at pool start. */
@@ -343,7 +364,7 @@ static void* tsr_worker(void* arg) {
   int id = (int)(intptr_t)arg;
   uint64_t seen = 0;
   bool poll = true;
-  tsr_in_parallel = true;
+  atomic_store_explicit(&tsr_worker_ids[id], (uintptr_t)pthread_self(), memory_order_relaxed);
   for (;;) {
     seen = tsr_wait_for_job(seen, poll);
     poll = !tsr_on_efficiency_core();
@@ -361,14 +382,12 @@ static void tsr_after_fork(void) {
 
 /* Ask the scheduler to keep the calling thread on the performance cores
  * (macOS places threads by QoS class). Every entry point of a generated
- * library calls it, once per thread: the caller runs the serial parts of a
- * model and works on every parallel loop. */
+ * library calls it: the caller runs the serial parts of a model and works on
+ * every parallel loop. Reading the class is cheap; it is set only once. */
 static void tsr_prefer_performance_cores(void) {
 #if defined(__APPLE__)
-  static _Thread_local bool done = false;
-  if (!done) {
+  if (qos_class_self() != QOS_CLASS_USER_INTERACTIVE) {
     pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
-    done = true;
   }
 #endif
 }
@@ -402,7 +421,9 @@ static void tsr_parallel_for_n(int64_t begin, int64_t end, int threads, tsr_task
                                void* args) {
   int64_t n = end - begin;
   if (n <= 0) return;
-  if (TSR_NUM_THREADS <= 1 || threads <= 1 || n == 1 || tsr_in_parallel || tsr_pool.forked ||
+  /* A loop started inside another (by a worker or by the caller, while the
+   * outer loop holds `owner`) runs serially on the thread that starts it. */
+  if (TSR_NUM_THREADS <= 1 || threads <= 1 || n == 1 || tsr_pool.forked ||
       pthread_mutex_trylock(&tsr_pool.owner) != 0) {
     task(args, begin, end);
     return;
@@ -428,9 +449,7 @@ static void tsr_parallel_for_n(int64_t begin, int64_t end, int threads, tsr_task
     pthread_cond_broadcast(&tsr_pool.wake);
     pthread_mutex_unlock(&tsr_pool.mutex);
   }
-  tsr_in_parallel = true;
   tsr_work();
-  tsr_in_parallel = false;
   while (atomic_load_explicit(&tsr_pool.pending, memory_order_acquire) > 0) tsr_pause();
   pthread_mutex_unlock(&tsr_pool.owner);
 }
@@ -439,5 +458,26 @@ static void tsr_parallel_for_n(int64_t begin, int64_t end, int threads, tsr_task
 static void tsr_parallel_for(int64_t begin, int64_t end, tsr_task task, void* args) {
   tsr_parallel_for_n(begin, end, TSR_NUM_THREADS, task, args);
 }
+
+/* ---- entry points -------------------------------------------------------- */
+
+/* Held by every exported entry point of a generated library while it runs,
+ * so that the storage kernels keep for the calling thread (slot 0, and
+ * buffers outside parallel loops) has one user at a time. */
+static pthread_mutex_t tsr_entry_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_once_t tsr_entry_once = PTHREAD_ONCE_INIT;
+
+/* A fork() child has only the forking thread: the lock is free there. */
+static void tsr_entry_after_fork(void) { pthread_mutex_init(&tsr_entry_mutex, NULL); }
+
+static void tsr_entry_start(void) { pthread_atfork(NULL, NULL, tsr_entry_after_fork); }
+
+static void tsr_enter(void) {
+  pthread_once(&tsr_entry_once, tsr_entry_start);
+  pthread_mutex_lock(&tsr_entry_mutex);
+  tsr_prefer_performance_cores();
+}
+
+static void tsr_leave(void) { pthread_mutex_unlock(&tsr_entry_mutex); }
 
 #endif /* TESSERA_RUNTIME_H */

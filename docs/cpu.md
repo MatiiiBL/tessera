@@ -123,10 +123,23 @@ The printer follows the loop IR without restructuring it:
   constant while the buffer lives and drop out of the shrunk index. Buffers
   above 64 KiB live in storage each thread allocates once and reuses (the
   calling thread works on every parallel loop, and Python
-  threads other than the main one have 512 KiB stacks).
+  threads other than the main one have 512 KiB stacks): inside a parallel
+  body a `static` array of pointers indexed by the thread's slot in the
+  pool (`tsr_thread_slot`: 0 for the caller, 1 and up for the workers),
+  outside one a `static` pointer.
 - **Global intermediates** (a main block's result that an epilogue could not
-  be fused into) live in storage each calling thread allocates once and
-  keeps; allocating megabytes per call costs page faults every run.
+  be fused into) live in storage allocated once and kept; allocating
+  megabytes per call costs page faults every run.
+- **No thread-local variables.** On macOS every loaded image with
+  `_Thread_local` variables takes one of the process's 512 pthread keys,
+  and a process never unloads the libraries it loaded: a test session that
+  loaded a few hundred models ran out of keys and aborted in whatever
+  created the next one (`OMP: Error #179`). Storage kept per thread is
+  therefore indexed by slot, and every exported entry point holds a
+  library-wide mutex while it runs, so the caller's storage (slot 0 and the
+  `static` pointers) has one user at a time; a second thread calling into
+  the same library waits (`test_c_libraries.py` checks that loading
+  libraries takes no pthread key).
 - **Parallel loops** are outlined: the body becomes `<kernel>_parallelN_body`
   with `restrict` parameters for everything it uses from outside, a
   trampoline unpacks an argument struct, and the kernel hands
@@ -177,7 +190,7 @@ worker may still read them. `tsr_parallel_for_n` limits a loop to fewer
 threads (the others acknowledge and stay idle). On macOS the workers ask for
 `QOS_CLASS_USER_INTERACTIVE`, which keeps them on the performance cores (the
 default thread count is the number of performance cores), and so does every
-exported entry point for its calling thread, once: the caller runs the
+exported entry point for its calling thread when its class differs: the caller runs the
 serial parts and works on every loop, and a kernel that never starts the
 pool (single-threaded SME) otherwise ran at the caller's default class,
 which macOS may move to an efficiency core. A worker that wakes up on an
@@ -496,7 +509,7 @@ static void matmul_parallel0_body(float* restrict x, float* restrict w, float* r
 }
 
 static void matmul(float* restrict x, float* restrict w, float* restrict b, float* restrict relu) {
-  static _Thread_local float* matmul_1_storage;
+  static float* matmul_1_storage;
   if (!matmul_1_storage) matmul_1_storage = (float*)tsr_alloc(32768);
   float* restrict matmul_1 = matmul_1_storage;
   {

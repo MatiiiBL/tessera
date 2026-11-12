@@ -131,7 +131,32 @@ def test_global_intermediate_between_two_nests() -> None:
         run_kernel(func, [xs, ys], Target(num_threads=4))
         np.testing.assert_array_equal(ys, np.maximum(xs * 2, 0))
     text = generate_kernel(func).text
-    assert "static _Thread_local float* T_storage;" in text
+    assert "static float* T_storage;" in text
+    assert "_Thread_local" not in text
+
+
+def test_large_local_buffer_of_a_parallel_loop_is_per_thread() -> None:
+    """T[i, :] = X[i, :] * 2, then Y[i, :] = T[i, :] + 1, rows in parallel. A row
+    of T is too big for the stack, so it lives in storage kept per thread of
+    the pool (by slot): rows on different threads must not share it."""
+    rows, cols = 16, 20000
+    x, y = Buffer("X", (rows, cols)), Buffer("Y", (rows, cols))
+    t = Buffer("T", (rows, cols), scope="local")
+    i, k, k2 = Var("i"), Var("k"), Var("k2")
+    vi, vk, wi, wk = Var("vi"), Var("vk"), Var("vi"), Var("vk")
+    twice = BufferStore(t, x[vi, vk] * 2.0, (vi, vk))
+    plus_one = BufferStore(y, t[wi, wk] + 1.0, (wi, wk))
+    first = loop(k, cols, realize("T", [(vi, rows, S, i), (vk, cols, S, k)], twice))
+    second = loop(k2, cols, realize("Y", [(wi, rows, S, i), (wk, cols, S, k2)], plus_one))
+    func = PrimFunc(
+        "twice_plus_one", (x, y), root(loop(i, rows, seq([first, second]), ForKind.PARALLEL), [t])
+    )
+    text = generate_kernel(func).text
+    assert "static float* T_storage[TSR_MAX_THREADS];" in text
+    for _ in range(2):  # the second call reuses each thread's storage
+        xs, ys = _rand(rows, cols), np.zeros((rows, cols), np.float32)
+        run_kernel(func, [xs, ys], Target(num_threads=4))
+        np.testing.assert_array_equal(ys, xs * 2 + 1)
 
 
 def test_select_guards_out_of_bounds_loads() -> None:

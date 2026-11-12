@@ -23,16 +23,18 @@
 
 #include "tessera_runtime.h"
 
-/* Per-thread packing buffers, grown on demand and kept for the next call. */
+/* Packing buffers for each thread of the pool (by tsr_thread_slot), grown on
+ * demand and kept for the next call. */
 static float* tsr_pack_buffer(int which, size_t floats) {
-  static _Thread_local float* buffers[2];
-  static _Thread_local size_t sizes[2];
-  if (sizes[which] < floats) {
-    tsr_free(buffers[which]);
-    buffers[which] = (float*)tsr_alloc(floats * sizeof(float));
-    sizes[which] = floats;
+  static float* buffers[TSR_MAX_THREADS][2];
+  static size_t sizes[TSR_MAX_THREADS][2];
+  int slot = tsr_thread_slot();
+  if (sizes[slot][which] < floats) {
+    tsr_free(buffers[slot][which]);
+    buffers[slot][which] = (float*)tsr_alloc(floats * sizeof(float));
+    sizes[slot][which] = floats;
   }
-  return buffers[which];
+  return buffers[slot][which];
 }
 
 /* out[q*4 + j] (j < 4, q < 4) = rows[j][q]: a 4 x 4 transpose into a panel of

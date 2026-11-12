@@ -362,11 +362,21 @@ class _Emitter:
     def persistent(self, name: str, ctype: str, nbytes: int) -> None:
         """Declare ``name`` as storage the running thread allocates once and keeps
         across iterations and calls: allocating megabytes each time costs page
-        faults, and freeing them, unmapping."""
+        faults, and freeing them, unmapping. Inside a parallel body each thread
+        of the pool has its own (by ``tsr_thread_slot``); outside, the one
+        calling thread does (entry points hold ``tsr_entry_mutex``). Never
+        ``_Thread_local``, see tessera_runtime.h."""
         storage = self.names.fresh(f"{name}_storage")
-        self.line(f"static _Thread_local {ctype}* {storage};")
-        self.line(f"if (!{storage}) {storage} = ({ctype}*)tsr_alloc({nbytes});")
-        self.line(f"{ctype}* restrict {name} = {storage};")
+        if self.in_parallel:
+            slot = self.names.fresh(f"{name}_slot")
+            self.line(f"static {ctype}* {storage}[TSR_MAX_THREADS];")
+            self.line(f"{ctype}** {slot} = &{storage}[tsr_thread_slot()];")
+            self.line(f"if (!*{slot}) *{slot} = ({ctype}*)tsr_alloc({nbytes});")
+            self.line(f"{ctype}* restrict {name} = *{slot};")
+        else:
+            self.line(f"static {ctype}* {storage};")
+            self.line(f"if (!{storage}) {storage} = ({ctype}*)tsr_alloc({nbytes});")
+            self.line(f"{ctype}* restrict {name} = {storage};")
 
     def line(self, text: str) -> None:
         self.lines.append("  " * self.depth + text)

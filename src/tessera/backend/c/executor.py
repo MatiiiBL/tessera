@@ -95,27 +95,31 @@ def model_sources(plan: ExecutionPlan, target: Target) -> ModelSource:
     out.append(f"TSR_EXPORT int32_t tessera_abi(void) {{ return {ABI_VERSION}; }}")
     out.append("")
     out += _forget_constants(headers)
-    out.append(f"TSR_EXPORT void tessera_run({_RUN_PARAMS}) {{")
-    out.append("  tsr_prefer_performance_cores();")
+    out.append(f"static void tsr_run_plan({_RUN_PARAMS}) {{")
     out += [f"  {c}" for c in calls]
     out.append("}")
     out.append("")
+    out.append(f"TSR_EXPORT void tessera_run({_RUN_PARAMS}) {{")
+    out += ["  tsr_enter();", f"  tsr_run_plan({_RUN_ARGS});", "  tsr_leave();", "}", ""]
     out.append(f"TSR_EXPORT void tessera_profile({_RUN_PARAMS}, double* seconds) {{")
-    out.append("  tsr_prefer_performance_cores();")
+    out.append("  tsr_enter();")
     out.append("  double start;")
     for i, c in enumerate(calls):
         out += ["  start = tsr_now();", f"  {c}", f"  seconds[{i}] = tsr_now() - start;"]
+    out.append("  tsr_leave();")
     out.append("}")
     out.append("")
     out += [
         f"TSR_EXPORT void tessera_benchmark({_RUN_PARAMS}, int32_t warmup, int32_t repeat,",
         "                                  double* seconds) {",
-        f"  for (int32_t i = 0; i < warmup; ++i) tessera_run({_RUN_ARGS});",
+        "  tsr_enter();",
+        f"  for (int32_t i = 0; i < warmup; ++i) tsr_run_plan({_RUN_ARGS});",
         "  for (int32_t i = 0; i < repeat; ++i) {",
         "    double start = tsr_now();",
-        f"    tessera_run({_RUN_ARGS});",
+        f"    tsr_run_plan({_RUN_ARGS});",
         "    seconds[i] = tsr_now() - start;",
         "  }",
+        "  tsr_leave();",
         "}",
         "",
     ]
@@ -128,8 +132,8 @@ def _forget_constants(headers: list[str]) -> list[str]:
     constant operands, so that none is reused for other data later placed at
     the same address."""
     packs = any(h != "tessera_runtime.h" for h in headers)
-    body = "  tsr_forget_panels();" if packs else ""
-    return ["TSR_EXPORT void tessera_forget_constants(void) {", *([body] if body else []), "}", ""]
+    body = ["  tsr_enter();", "  tsr_forget_panels();", "  tsr_leave();"] if packs else []
+    return ["TSR_EXPORT void tessera_forget_constants(void) {", *body, "}", ""]
 
 
 def _pointer(ref: BufferRef, ctype: str) -> str:
@@ -306,8 +310,9 @@ def kernel_sources(func: PrimFunc, target: Target) -> dict[str, str]:
             "",
             *_forget_constants(list(code.headers)),
             "TSR_EXPORT void tessera_kernel(void* const* args) {",
-            "  tsr_prefer_performance_cores();",
+            "  tsr_enter();",
             f"  {code.name}({casts});",
+            "  tsr_leave();",
             "}",
             "",
         ]
