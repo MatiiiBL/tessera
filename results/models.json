@@ -1,19 +1,19 @@
 {
   "environment": {
-    "commit": "b61e64e",
+    "commit": "beb8516",
     "cores": 10,
-    "date": "2026-11-12T06:36:08Z",
+    "date": "2026-11-12T11:00:56Z",
     "load_average": [
-      7.64,
-      6.65,
-      6.2
+      2.33,
+      2.44,
+      2.62
     ],
     "machine": "Apple M4",
     "memory_gb": 16,
     "numpy": "2.5.4",
     "os": "Darwin 27.0.0",
     "performance_cores": 4,
-    "provisional": true,
+    "provisional": false,
     "python": "3.13.7"
   },
   "models": [
@@ -33,12 +33,12 @@
             "intermediate_bytes": 45266944,
             "kernels": 56,
             "latency": {
-              "median": 0.057745875003092806,
-              "p10": 0.05760427083441755,
-              "p90": 0.057972762501594846,
+              "median": 0.024777291666396195,
+              "p10": 0.019276654168061215,
+              "p90": 0.025384183328424115,
               "runs": 50
             },
-            "measured": "2026-11-12T06:33:13Z",
+            "measured": "2026-11-12T10:56:21Z",
             "system": "full",
             "threads": 4,
             "tuned_kernels": 0
@@ -56,12 +56,12 @@
             "intermediate_bytes": 106385312,
             "kernels": 123,
             "latency": {
-              "median": 0.06428887500078417,
-              "p10": 0.0588236625007994,
-              "p90": 0.06980194166644652,
+              "median": 0.019963749997259583,
+              "p10": 0.018793866669147972,
+              "p90": 0.025764333335973787,
               "runs": 50
             },
-            "measured": "2026-11-12T06:33:13Z",
+            "measured": "2026-11-12T10:56:21Z",
             "system": "fusion off",
             "threads": 4,
             "tuned_kernels": 0
@@ -79,12 +79,12 @@
             "intermediate_bytes": 45266944,
             "kernels": 56,
             "latency": {
-              "median": 0.05775643749984738,
-              "p10": 0.05762377499850117,
-              "p90": 0.0643164416684158,
+              "median": 0.0243280208305805,
+              "p10": 0.018104104165831813,
+              "p90": 0.024796699998842087,
               "runs": 50
             },
-            "measured": "2026-11-12T06:33:13Z",
+            "measured": "2026-11-12T10:56:21Z",
             "system": "graph rewrites off",
             "threads": 4,
             "tuned_kernels": 0
@@ -102,11 +102,12 @@
             "intermediate_bytes": 45266944,
             "kernels": 56,
             "latency": {
-              "median": 4.7192773958322505,
-              "p10": 3.9988376791654447,
-              "p90": 5.2819957041665475,
-              "runs": 12
+              "median": 2.9469355625005846,
+              "p10": 2.9298642458328685,
+              "p90": 2.966523579168279,
+              "runs": 20
             },
+            "measured": "2026-11-12T10:56:21Z",
             "system": "no schedule",
             "threads": 4,
             "tuned_kernels": 0
@@ -126,12 +127,12 @@
             "intermediate_bytes": 45266944,
             "kernels": 56,
             "latency": {
-              "median": 0.0645075624997844,
-              "p10": 0.06049313749936118,
-              "p90": 0.06564691249732277,
+              "median": 0.016952750000200467,
+              "p10": 0.016849787497631042,
+              "p90": 0.017061312497389736,
               "runs": 50
             },
-            "measured": "2026-11-12T06:33:13Z",
+            "measured": "2026-11-12T10:56:21Z",
             "system": "full",
             "threads": null,
             "tuned_kernels": 0
@@ -149,12 +150,12 @@
             "intermediate_bytes": 106385312,
             "kernels": 123,
             "latency": {
-              "median": 0.06525064583365747,
-              "p10": 0.05739076249737991,
-              "p90": 0.06654240416501125,
+              "median": 0.01746089583321009,
+              "p10": 0.017364629171061095,
+              "p90": 0.01753610000014305,
               "runs": 50
             },
-            "measured": "2026-11-12T06:33:13Z",
+            "measured": "2026-11-12T10:56:21Z",
             "system": "fusion off",
             "threads": null,
             "tuned_kernels": 0
@@ -172,69 +173,57 @@
             "intermediate_bytes": 45266944,
             "kernels": 56,
             "latency": {
-              "median": 0.06378131249948638,
-              "p10": 0.05662810416361026,
-              "p90": 0.0646234583324258,
+              "median": 0.016903333333175397,
+              "p10": 0.01680637916579144,
+              "p90": 0.016995541670621606,
               "runs": 50
             },
-            "measured": "2026-11-12T06:33:13Z",
+            "measured": "2026-11-12T10:56:21Z",
             "system": "graph rewrites off",
             "threads": null,
             "tuned_kernels": 0
+          },
+          "no schedule": {
+            "measured": "2026-11-12T10:56:21Z",
+            "skipped": "not measured: unscheduled Metal kernels run on one GPU thread",
+            "system": "no schedule"
           }
         }
       },
       "environment": {
-        "commit": "6e6e424",
+        "commit": "beb8516",
         "cores": 10,
-        "date": "2026-11-12T06:33:13Z",
+        "date": "2026-11-12T10:56:21Z",
         "load_average": [
-          5.77,
-          5.71,
-          5.83
+          2.28,
+          2.67,
+          2.76
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
         "numpy": "2.5.4",
         "os": "Darwin 27.0.0",
         "performance_cores": 4,
-        "provisional": true,
+        "provisional": false,
         "python": "3.13.7"
       },
       "model": "resnet50",
       "runs": [
         {
-          "commit": "bad21ec",
+          "commit": "beb8516",
           "cores": 10,
-          "date": "2026-11-12T06:06:02Z",
+          "date": "2026-11-12T10:56:21Z",
           "load_average": [
-            5.44,
-            4.68,
-            5.32
+            2.28,
+            2.67,
+            2.76
           ],
           "machine": "Apple M4",
           "memory_gb": 16,
           "numpy": "2.5.4",
           "os": "Darwin 27.0.0",
           "performance_cores": 4,
-          "provisional": true,
-          "python": "3.13.7"
-        },
-        {
-          "commit": "6e6e424",
-          "cores": 10,
-          "date": "2026-11-12T06:33:13Z",
-          "load_average": [
-            5.77,
-            5.71,
-            5.83
-          ],
-          "machine": "Apple M4",
-          "memory_gb": 16,
-          "numpy": "2.5.4",
-          "os": "Darwin 27.0.0",
-          "performance_cores": 4,
-          "provisional": true,
+          "provisional": false,
           "python": "3.13.7"
         }
       ],
@@ -247,12 +236,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.023028604498904315,
-            "p10": 0.02215030829938769,
-            "p90": 0.023695720500836615,
+            "median": 0.011272353498497978,
+            "p10": 0.011191412801417755,
+            "p90": 0.011347670794202713,
             "runs": 50
           },
-          "measured": "2026-11-12T06:33:13Z",
+          "measured": "2026-11-12T10:56:21Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -264,12 +253,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.024071478999758256,
-            "p10": 0.02131803310185205,
-            "p90": 0.026277179499447814,
+            "median": 0.013124833501933608,
+            "p10": 0.013008162498590537,
+            "p90": 0.013346796102268854,
             "runs": 50
           },
-          "measured": "2026-11-12T06:33:13Z",
+          "measured": "2026-11-12T10:56:21Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -281,14 +270,37 @@
           },
           "error": null,
           "latency": {
-            "median": 0.02320604150008876,
-            "p10": 0.02095397080120165,
-            "p90": 0.024705324701426435,
+            "median": 0.012292958002944943,
+            "p10": 0.012184453605732415,
+            "p90": 0.012856379798176932,
             "runs": 50
           },
-          "measured": "2026-11-12T06:33:13Z",
+          "measured": "2026-11-12T10:56:21Z",
           "system": "pytorch-mps",
           "threads": 4
+        },
+        {
+          "agreement": {
+            "max_abs": 3.0994415283203125e-06,
+            "max_rel": 6.057130858255061e-07,
+            "top1": 1.0
+          },
+          "arena_bytes": 10436608,
+          "bytes_moved": 215740736,
+          "constant_bytes": 102121984,
+          "error": null,
+          "intermediate_bytes": 45266944,
+          "kernels": 56,
+          "latency": {
+            "median": 0.012516562503151363,
+            "p10": 0.01233687083076802,
+            "p90": 0.01259537083824398,
+            "runs": 50
+          },
+          "measured": "2026-11-12T10:56:21Z",
+          "system": "tessera-c:sme",
+          "threads": 4,
+          "tuned_kernels": 56
         },
         {
           "agreement": {
@@ -303,13 +315,36 @@
           "intermediate_bytes": 45266944,
           "kernels": 56,
           "latency": {
-            "median": 0.07617872916671331,
-            "p10": 0.07418115833315823,
-            "p90": 0.07738719166773081,
+            "median": 0.02023195833680802,
+            "p10": 0.017962200000329175,
+            "p90": 0.024711425002169562,
             "runs": 50
           },
-          "measured": "2026-11-12T06:33:13Z",
+          "measured": "2026-11-12T10:56:21Z",
           "system": "tessera-c:sme-untuned",
+          "threads": 4,
+          "tuned_kernels": 0
+        },
+        {
+          "agreement": {
+            "max_abs": 3.2782554626464844e-06,
+            "max_rel": 6.532199945177028e-07,
+            "top1": 1.0
+          },
+          "arena_bytes": 10436608,
+          "bytes_moved": 215740736,
+          "constant_bytes": 102121984,
+          "error": null,
+          "intermediate_bytes": 45266944,
+          "kernels": 56,
+          "latency": {
+            "median": 0.02611131250523613,
+            "p10": 0.025756337498751235,
+            "p90": 0.026937524993263653,
+            "runs": 50
+          },
+          "measured": "2026-11-12T10:56:21Z",
+          "system": "tessera-c:neon-untuned",
           "threads": 4,
           "tuned_kernels": 0
         },
@@ -326,12 +361,35 @@
           "intermediate_bytes": 45266944,
           "kernels": 56,
           "latency": {
-            "median": 0.06451739583462768,
-            "p10": 0.062356904167972974,
-            "p90": 0.06584052083489951,
+            "median": 0.01073952083606855,
+            "p10": 0.01064510000651353,
+            "p90": 0.010884129165060586,
             "runs": 50
           },
-          "measured": "2026-11-12T06:33:13Z",
+          "measured": "2026-11-12T10:56:21Z",
+          "system": "tessera-metal",
+          "threads": null,
+          "tuned_kernels": 56
+        },
+        {
+          "agreement": {
+            "max_abs": 3.069639205932617e-06,
+            "max_rel": 6.057130858255061e-07,
+            "top1": 1.0
+          },
+          "arena_bytes": 10436608,
+          "bytes_moved": 215740736,
+          "constant_bytes": 102121984,
+          "error": null,
+          "intermediate_bytes": 45266944,
+          "kernels": 56,
+          "latency": {
+            "median": 0.016935041665419703,
+            "p10": 0.016828283333597937,
+            "p90": 0.01710594166870578,
+            "runs": 50
+          },
+          "measured": "2026-11-12T10:56:21Z",
           "system": "tessera-metal-untuned",
           "threads": null,
           "tuned_kernels": 0
@@ -354,12 +412,12 @@
             "intermediate_bytes": 26717568,
             "kernels": 54,
             "latency": {
-              "median": 0.0076451041641121265,
-              "p10": 0.0068222458321542945,
-              "p90": 0.010559312500117813,
+              "median": 0.0033413541641493794,
+              "p10": 0.0032469666650285943,
+              "p90": 0.0034276083337317687,
               "runs": 50
             },
-            "measured": "2026-11-12T06:32:40Z",
+            "measured": "2026-11-12T10:58:17Z",
             "system": "full",
             "threads": 4,
             "tuned_kernels": 0
@@ -377,12 +435,12 @@
             "intermediate_bytes": 52612384,
             "kernels": 101,
             "latency": {
-              "median": 0.007396583332592854,
-              "p10": 0.006670920832038974,
-              "p90": 0.0078009249999013265,
+              "median": 0.0031655833372497,
+              "p10": 0.00312020833735005,
+              "p90": 0.0032466208322148304,
               "runs": 50
             },
-            "measured": "2026-11-12T06:32:40Z",
+            "measured": "2026-11-12T10:58:17Z",
             "system": "fusion off",
             "threads": 4,
             "tuned_kernels": 0
@@ -400,12 +458,12 @@
             "intermediate_bytes": 26717568,
             "kernels": 54,
             "latency": {
-              "median": 0.005354208333301358,
-              "p10": 0.004647987502539763,
-              "p90": 0.005637120837127441,
+              "median": 0.0033345625015499536,
+              "p10": 0.003250662502250634,
+              "p90": 0.0034092499998223504,
               "runs": 50
             },
-            "measured": "2026-11-12T06:32:40Z",
+            "measured": "2026-11-12T10:58:17Z",
             "system": "graph rewrites off",
             "threads": 4,
             "tuned_kernels": 0
@@ -423,11 +481,12 @@
             "intermediate_bytes": 26717568,
             "kernels": 54,
             "latency": {
-              "median": 0.18310243749874644,
-              "p10": 0.15319421250205778,
-              "p90": 0.21908198333512705,
+              "median": 0.08848385416422389,
+              "p10": 0.08825601250355249,
+              "p90": 0.09005457083694637,
               "runs": 50
             },
+            "measured": "2026-11-12T10:58:17Z",
             "system": "no schedule",
             "threads": 4,
             "tuned_kernels": 0
@@ -447,12 +506,12 @@
             "intermediate_bytes": 26717568,
             "kernels": 54,
             "latency": {
-              "median": 0.005819604164571501,
-              "p10": 0.005564033333939733,
-              "p90": 0.005980829164764145,
+              "median": 0.0019509375015331898,
+              "p10": 0.0019150666637870017,
+              "p90": 0.002010391670046374,
               "runs": 50
             },
-            "measured": "2026-11-12T06:32:40Z",
+            "measured": "2026-11-12T10:58:17Z",
             "system": "full",
             "threads": null,
             "tuned_kernels": 0
@@ -470,12 +529,12 @@
             "intermediate_bytes": 52612384,
             "kernels": 101,
             "latency": {
-              "median": 0.006131875001301523,
-              "p10": 0.005928874999153777,
-              "p90": 0.006321349998688675,
+              "median": 0.002312645836354932,
+              "p10": 0.0022606166632613165,
+              "p90": 0.0023606833317899147,
               "runs": 50
             },
-            "measured": "2026-11-12T06:32:40Z",
+            "measured": "2026-11-12T10:58:17Z",
             "system": "fusion off",
             "threads": null,
             "tuned_kernels": 0
@@ -493,69 +552,57 @@
             "intermediate_bytes": 26717568,
             "kernels": 54,
             "latency": {
-              "median": 0.00576970833390078,
-              "p10": 0.005633762498837314,
-              "p90": 0.0060263124985795,
+              "median": 0.0019410208296903875,
+              "p10": 0.0018817625008523465,
+              "p90": 0.00199762916599866,
               "runs": 50
             },
-            "measured": "2026-11-12T06:32:40Z",
+            "measured": "2026-11-12T10:58:17Z",
             "system": "graph rewrites off",
             "threads": null,
             "tuned_kernels": 0
+          },
+          "no schedule": {
+            "measured": "2026-11-12T10:58:17Z",
+            "skipped": "not measured: unscheduled Metal kernels run on one GPU thread",
+            "system": "no schedule"
           }
         }
       },
       "environment": {
-        "commit": "6e6e424",
+        "commit": "beb8516",
         "cores": 10,
-        "date": "2026-11-12T06:32:40Z",
+        "date": "2026-11-12T10:58:17Z",
         "load_average": [
-          5.46,
-          5.65,
-          5.81
+          1.91,
+          2.44,
+          2.66
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
         "numpy": "2.5.4",
         "os": "Darwin 27.0.0",
         "performance_cores": 4,
-        "provisional": true,
+        "provisional": false,
         "python": "3.13.7"
       },
       "model": "mobilenet_v2",
       "runs": [
         {
-          "commit": "bad21ec",
+          "commit": "beb8516",
           "cores": 10,
-          "date": "2026-11-12T06:05:35Z",
+          "date": "2026-11-12T10:58:17Z",
           "load_average": [
-            4.18,
-            4.4,
-            5.24
+            1.91,
+            2.44,
+            2.66
           ],
           "machine": "Apple M4",
           "memory_gb": 16,
           "numpy": "2.5.4",
           "os": "Darwin 27.0.0",
           "performance_cores": 4,
-          "provisional": true,
-          "python": "3.13.7"
-        },
-        {
-          "commit": "6e6e424",
-          "cores": 10,
-          "date": "2026-11-12T06:32:40Z",
-          "load_average": [
-            5.46,
-            5.65,
-            5.81
-          ],
-          "machine": "Apple M4",
-          "memory_gb": 16,
-          "numpy": "2.5.4",
-          "os": "Darwin 27.0.0",
-          "performance_cores": 4,
-          "provisional": true,
+          "provisional": false,
           "python": "3.13.7"
         }
       ],
@@ -568,12 +615,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.004055270997923799,
-            "p10": 0.0031630125005904118,
-            "p90": 0.004369358999610995,
+            "median": 0.0023849999997764826,
+            "p10": 0.0023303707988816314,
+            "p90": 0.0025163375001284296,
             "runs": 50
           },
-          "measured": "2026-11-12T06:32:40Z",
+          "measured": "2026-11-12T10:58:17Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -585,12 +632,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.0381271869991906,
-            "p10": 0.033444308400066805,
-            "p90": 0.043511537500671695,
+            "median": 0.01515083400227013,
+            "p10": 0.014804770795308286,
+            "p90": 0.015530103896890069,
             "runs": 50
           },
-          "measured": "2026-11-12T06:32:40Z",
+          "measured": "2026-11-12T10:58:17Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -602,14 +649,37 @@
           },
           "error": null,
           "latency": {
-            "median": 0.013491812000211212,
-            "p10": 0.013117558401063434,
-            "p90": 0.013883808297396171,
+            "median": 0.006655082997895079,
+            "p10": 0.0064237496990244836,
+            "p90": 0.006865049703628756,
             "runs": 50
           },
-          "measured": "2026-11-12T06:32:40Z",
+          "measured": "2026-11-12T10:58:17Z",
           "system": "pytorch-mps",
           "threads": 4
+        },
+        {
+          "agreement": {
+            "max_abs": 7.3909759521484375e-06,
+            "max_rel": 1.9255843954315104e-06,
+            "top1": 1.0
+          },
+          "arena_bytes": 6823936,
+          "bytes_moved": 68858048,
+          "constant_bytes": 13955072,
+          "error": null,
+          "intermediate_bytes": 26717568,
+          "kernels": 54,
+          "latency": {
+            "median": 0.0019013124983757734,
+            "p10": 0.0018906375022197607,
+            "p90": 0.0020289499989303295,
+            "runs": 50
+          },
+          "measured": "2026-11-12T10:58:17Z",
+          "system": "tessera-c:sme",
+          "threads": 4,
+          "tuned_kernels": 54
         },
         {
           "agreement": {
@@ -624,13 +694,36 @@
           "intermediate_bytes": 26717568,
           "kernels": 54,
           "latency": {
-            "median": 0.005919916666243807,
-            "p10": 0.00571430416603107,
-            "p90": 0.006389808331368841,
+            "median": 0.003345916666148696,
+            "p10": 0.0032496541694854385,
+            "p90": 0.00344168332812842,
             "runs": 50
           },
-          "measured": "2026-11-12T06:32:40Z",
+          "measured": "2026-11-12T10:58:17Z",
           "system": "tessera-c:sme-untuned",
+          "threads": 4,
+          "tuned_kernels": 0
+        },
+        {
+          "agreement": {
+            "max_abs": 9.059906005859375e-06,
+            "max_rel": 2.5058572765248454e-06,
+            "top1": 1.0
+          },
+          "arena_bytes": 6823936,
+          "bytes_moved": 68858048,
+          "constant_bytes": 13955072,
+          "error": null,
+          "intermediate_bytes": 26717568,
+          "kernels": 54,
+          "latency": {
+            "median": 0.0028930625012435485,
+            "p10": 0.0028431874961825088,
+            "p90": 0.0029721124992647674,
+            "runs": 50
+          },
+          "measured": "2026-11-12T10:58:17Z",
+          "system": "tessera-c:neon-untuned",
           "threads": 4,
           "tuned_kernels": 0
         },
@@ -647,12 +740,35 @@
           "intermediate_bytes": 26717568,
           "kernels": 54,
           "latency": {
-            "median": 0.006356874999255524,
-            "p10": 0.006198095833315165,
-            "p90": 0.00673497500247322,
+            "median": 0.00175760416459525,
+            "p10": 0.0017279499988944735,
+            "p90": 0.0018191583360021469,
             "runs": 50
           },
-          "measured": "2026-11-12T06:32:40Z",
+          "measured": "2026-11-12T10:58:17Z",
+          "system": "tessera-metal",
+          "threads": null,
+          "tuned_kernels": 54
+        },
+        {
+          "agreement": {
+            "max_abs": 8.106231689453125e-06,
+            "max_rel": 2.2420828263643354e-06,
+            "top1": 1.0
+          },
+          "arena_bytes": 6823936,
+          "bytes_moved": 68858048,
+          "constant_bytes": 13955072,
+          "error": null,
+          "intermediate_bytes": 26717568,
+          "kernels": 54,
+          "latency": {
+            "median": 0.001955250001628883,
+            "p10": 0.0019193583313608543,
+            "p90": 0.002022637506161118,
+            "runs": 50
+          },
+          "measured": "2026-11-12T10:58:17Z",
           "system": "tessera-metal-untuned",
           "threads": null,
           "tuned_kernels": 0
@@ -675,12 +791,12 @@
             "intermediate_bytes": 75563008,
             "kernels": 134,
             "latency": {
-              "median": 0.1591002083332569,
-              "p10": 0.1506507166654046,
-              "p90": 0.17898769583298418,
+              "median": 0.027956645830272464,
+              "p10": 0.027350529167597414,
+              "p90": 0.028295658333809114,
               "runs": 50
             },
-            "measured": "2026-11-12T06:34:10Z",
+            "measured": "2026-11-12T10:58:45Z",
             "system": "full",
             "threads": 4,
             "tuned_kernels": 0
@@ -698,12 +814,12 @@
             "intermediate_bytes": 185286912,
             "kernels": 320,
             "latency": {
-              "median": 0.15042608333351382,
-              "p10": 0.1443622000006144,
-              "p90": 0.17412292916596925,
+              "median": 0.0232106041694351,
+              "p10": 0.022522987503180047,
+              "p90": 0.023637833326210965,
               "runs": 50
             },
-            "measured": "2026-11-12T06:34:10Z",
+            "measured": "2026-11-12T10:58:45Z",
             "system": "fusion off",
             "threads": 4,
             "tuned_kernels": 0
@@ -721,20 +837,20 @@
             "intermediate_bytes": 94437376,
             "kernels": 146,
             "latency": {
-              "median": 0.16576979166529782,
-              "p10": 0.16168072916516393,
-              "p90": 0.18898096666489436,
+              "median": 0.060412062499381136,
+              "p10": 0.059622241662145824,
+              "p90": 0.06304947916796663,
               "runs": 50
             },
-            "measured": "2026-11-12T06:34:10Z",
+            "measured": "2026-11-12T10:58:45Z",
             "system": "graph rewrites off",
             "threads": 4,
             "tuned_kernels": 0
           },
           "no schedule": {
             "agreement": {
-              "max_abs": 1.2151896953582764e-05,
-              "max_rel": 1.3989289271782683e-06,
+              "max_abs": 1.043081283569336e-05,
+              "max_rel": 1.2007973623847797e-06,
               "top1": null
             },
             "arena_bytes": 2424832,
@@ -744,11 +860,12 @@
             "intermediate_bytes": 75563008,
             "kernels": 134,
             "latency": {
-              "median": 17.13038404166946,
-              "p10": 16.912957674999053,
-              "p90": 17.213293775002967,
-              "runs": 3
+              "median": 8.927494770836347,
+              "p10": 8.920700062502874,
+              "p90": 8.969207854166598,
+              "runs": 6
             },
+            "measured": "2026-11-12T10:58:45Z",
             "system": "no schedule",
             "threads": 4,
             "tuned_kernels": 0
@@ -768,12 +885,12 @@
             "intermediate_bytes": 75563008,
             "kernels": 134,
             "latency": {
-              "median": 0.048930020831903676,
-              "p10": 0.04113817916368134,
-              "p90": 0.05020864166799584,
+              "median": 0.012292145835090196,
+              "p10": 0.012181641661300091,
+              "p90": 0.012388491668389179,
               "runs": 50
             },
-            "measured": "2026-11-12T06:34:10Z",
+            "measured": "2026-11-12T10:58:45Z",
             "system": "full",
             "threads": null,
             "tuned_kernels": 0
@@ -791,12 +908,12 @@
             "intermediate_bytes": 185286912,
             "kernels": 320,
             "latency": {
-              "median": 0.0522613333305344,
-              "p10": 0.047763275000761496,
-              "p90": 0.08779140416554583,
+              "median": 0.011087645834777504,
+              "p10": 0.010885304166004061,
+              "p90": 0.01134079583644052,
               "runs": 50
             },
-            "measured": "2026-11-12T06:34:10Z",
+            "measured": "2026-11-12T10:58:45Z",
             "system": "fusion off",
             "threads": null,
             "tuned_kernels": 0
@@ -814,69 +931,57 @@
             "intermediate_bytes": 94437376,
             "kernels": 146,
             "latency": {
-              "median": 0.053867729167905054,
-              "p10": 0.04417710833331512,
-              "p90": 0.05634224999921571,
+              "median": 0.02161829167016549,
+              "p10": 0.021500345835374902,
+              "p90": 0.021850800001993777,
               "runs": 50
             },
-            "measured": "2026-11-12T06:34:10Z",
+            "measured": "2026-11-12T10:58:45Z",
             "system": "graph rewrites off",
             "threads": null,
             "tuned_kernels": 0
+          },
+          "no schedule": {
+            "measured": "2026-11-12T10:58:45Z",
+            "skipped": "not measured: unscheduled Metal kernels run on one GPU thread",
+            "system": "no schedule"
           }
         }
       },
       "environment": {
-        "commit": "b61e64e",
+        "commit": "beb8516",
         "cores": 10,
-        "date": "2026-11-12T06:34:10Z",
+        "date": "2026-11-12T10:58:45Z",
         "load_average": [
-          6.57,
-          6.01,
-          5.94
+          1.94,
+          2.4,
+          2.64
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
         "numpy": "2.5.4",
         "os": "Darwin 27.0.0",
         "performance_cores": 4,
-        "provisional": true,
+        "provisional": false,
         "python": "3.13.7"
       },
       "model": "bert",
       "runs": [
         {
-          "commit": "bad21ec",
+          "commit": "beb8516",
           "cores": 10,
-          "date": "2026-11-12T06:07:37Z",
+          "date": "2026-11-12T10:58:45Z",
           "load_average": [
-            6.43,
-            5.45,
-            5.56
+            1.94,
+            2.4,
+            2.64
           ],
           "machine": "Apple M4",
           "memory_gb": 16,
           "numpy": "2.5.4",
           "os": "Darwin 27.0.0",
           "performance_cores": 4,
-          "provisional": true,
-          "python": "3.13.7"
-        },
-        {
-          "commit": "b61e64e",
-          "cores": 10,
-          "date": "2026-11-12T06:34:10Z",
-          "load_average": [
-            6.57,
-            6.01,
-            5.94
-          ],
-          "machine": "Apple M4",
-          "memory_gb": 16,
-          "numpy": "2.5.4",
-          "os": "Darwin 27.0.0",
-          "performance_cores": 4,
-          "provisional": true,
+          "provisional": false,
           "python": "3.13.7"
         }
       ],
@@ -889,12 +994,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.03686904200185381,
-            "p10": 0.03385690479917684,
-            "p90": 0.03929725419911847,
+            "median": 0.020683228998677805,
+            "p10": 0.020315812797343825,
+            "p90": 0.02096517499667243,
             "runs": 50
           },
-          "measured": "2026-11-12T06:34:10Z",
+          "measured": "2026-11-12T10:58:45Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -906,12 +1011,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.05484791649905674,
-            "p10": 0.049422317001517516,
-            "p90": 0.056335886899614704,
+            "median": 0.026527104499109555,
+            "p10": 0.026360408404434564,
+            "p90": 0.02701137530602864,
             "runs": 50
           },
-          "measured": "2026-11-12T06:34:10Z",
+          "measured": "2026-11-12T10:58:45Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -923,12 +1028,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.022436187498897198,
-            "p10": 0.021000870801435666,
-            "p90": 0.023997479500030748,
+            "median": 0.014853729000606108,
+            "p10": 0.014613804399414222,
+            "p90": 0.015021266396070132,
             "runs": 50
           },
-          "measured": "2026-11-12T06:34:10Z",
+          "measured": "2026-11-12T10:58:45Z",
           "system": "pytorch-mps",
           "threads": 4
         },
@@ -945,15 +1050,84 @@
           "intermediate_bytes": 75563008,
           "kernels": 134,
           "latency": {
-            "median": 0.14425375000064378,
-            "p10": 0.14033053333187126,
-            "p90": 0.15442364166556216,
+            "median": 0.027846229164424585,
+            "p10": 0.027728016667242627,
+            "p90": 0.02843570833429112,
             "runs": 50
           },
-          "measured": "2026-11-12T06:34:10Z",
+          "measured": "2026-11-12T10:58:45Z",
+          "system": "tessera-c:sme",
+          "threads": 4,
+          "tuned_kernels": 134
+        },
+        {
+          "agreement": {
+            "max_abs": 1.537799835205078e-05,
+            "max_rel": 1.7703183971158467e-06,
+            "top1": null
+          },
+          "arena_bytes": 2424832,
+          "bytes_moved": 605891769,
+          "constant_bytes": 434776320,
+          "error": null,
+          "intermediate_bytes": 75563008,
+          "kernels": 134,
+          "latency": {
+            "median": 0.027567437500692904,
+            "p10": 0.02716246250201948,
+            "p90": 0.02783320416783681,
+            "runs": 50
+          },
+          "measured": "2026-11-12T10:58:45Z",
           "system": "tessera-c:sme-untuned",
           "threads": 4,
           "tuned_kernels": 0
+        },
+        {
+          "agreement": {
+            "max_abs": 1.537799835205078e-05,
+            "max_rel": 1.7703183971158467e-06,
+            "top1": null
+          },
+          "arena_bytes": 2424832,
+          "bytes_moved": 605891769,
+          "constant_bytes": 434776320,
+          "error": null,
+          "intermediate_bytes": 75563008,
+          "kernels": 134,
+          "latency": {
+            "median": 0.06422335416573333,
+            "p10": 0.06305004583482514,
+            "p90": 0.0646620250059641,
+            "runs": 50
+          },
+          "measured": "2026-11-12T10:58:45Z",
+          "system": "tessera-c:neon-untuned",
+          "threads": 4,
+          "tuned_kernels": 0
+        },
+        {
+          "agreement": {
+            "max_abs": 1.4066696166992188e-05,
+            "max_rel": 1.6193610144160458e-06,
+            "top1": null
+          },
+          "arena_bytes": 2424832,
+          "bytes_moved": 605891769,
+          "constant_bytes": 434776320,
+          "error": null,
+          "intermediate_bytes": 75563008,
+          "kernels": 134,
+          "latency": {
+            "median": 0.011784770831582136,
+            "p10": 0.01163917083395063,
+            "p90": 0.011884887504129438,
+            "runs": 50
+          },
+          "measured": "2026-11-12T10:58:45Z",
+          "system": "tessera-metal",
+          "threads": null,
+          "tuned_kernels": 134
         },
         {
           "agreement": {
@@ -968,12 +1142,12 @@
           "intermediate_bytes": 75563008,
           "kernels": 134,
           "latency": {
-            "median": 0.04876510416579549,
-            "p10": 0.04679466250127007,
-            "p90": 0.05019332083465997,
+            "median": 0.012500895834818948,
+            "p10": 0.012351033333106897,
+            "p90": 0.012598462501046015,
             "runs": 50
           },
-          "measured": "2026-11-12T06:34:10Z",
+          "measured": "2026-11-12T10:58:45Z",
           "system": "tessera-metal-untuned",
           "threads": null,
           "tuned_kernels": 0
@@ -985,8 +1159,8 @@
         "c:sme": {
           "full": {
             "agreement": {
-              "max_abs": 0.0003204345703125,
-              "max_rel": 1.1912783449082098e-06,
+              "max_abs": 0.000274658203125,
+              "max_rel": 1.0210957242070369e-06,
               "top1": null
             },
             "arena_bytes": 3538944,
@@ -996,12 +1170,12 @@
             "intermediate_bytes": 76283904,
             "kernels": 111,
             "latency": {
-              "median": 0.40784383333084406,
-              "p10": 0.3548266624999087,
-              "p90": 0.5647181916654518,
+              "median": 0.047275749999244,
+              "p10": 0.04607715833553812,
+              "p90": 0.04832978333361097,
               "runs": 50
             },
-            "measured": "2026-11-12T06:36:08Z",
+            "measured": "2026-11-12T11:00:56Z",
             "system": "full",
             "threads": 4,
             "tuned_kernels": 0
@@ -1019,12 +1193,12 @@
             "intermediate_bytes": 199360512,
             "kernels": 304,
             "latency": {
-              "median": 0.355444812499627,
-              "p10": 0.3285345166666957,
-              "p90": 0.5675702791671938,
+              "median": 0.03415283333379193,
+              "p10": 0.033628016665170436,
+              "p90": 0.03785270000662422,
               "runs": 50
             },
-            "measured": "2026-11-12T06:36:08Z",
+            "measured": "2026-11-12T11:00:56Z",
             "system": "fusion off",
             "threads": 4,
             "tuned_kernels": 0
@@ -1042,20 +1216,20 @@
             "intermediate_bytes": 99483648,
             "kernels": 134,
             "latency": {
-              "median": 0.385539979166424,
-              "p10": 0.3575462291657459,
-              "p90": 0.4005951791656116,
+              "median": 0.0784022499974526,
+              "p10": 0.07655727499804925,
+              "p90": 0.07984119583416031,
               "runs": 50
             },
-            "measured": "2026-11-12T06:36:08Z",
+            "measured": "2026-11-12T11:00:56Z",
             "system": "graph rewrites off",
             "threads": 4,
             "tuned_kernels": 0
           },
           "no schedule": {
             "agreement": {
-              "max_abs": 0.0005645751953125,
-              "max_rel": 2.0989189886477983e-06,
+              "max_abs": 0.000457763671875,
+              "max_rel": 1.7018262070117283e-06,
               "top1": null
             },
             "arena_bytes": 3538944,
@@ -1065,11 +1239,12 @@
             "intermediate_bytes": 76283904,
             "kernels": 111,
             "latency": {
-              "median": 23.166592083332944,
-              "p10": 22.3303751166648,
-              "p90": 23.613372650000382,
-              "runs": 3
+              "median": 11.058092624996789,
+              "p10": 10.996061633330829,
+              "p90": 11.268992358331161,
+              "runs": 5
             },
+            "measured": "2026-11-12T11:00:56Z",
             "system": "no schedule",
             "threads": 4,
             "tuned_kernels": 0
@@ -1089,12 +1264,12 @@
             "intermediate_bytes": 76283904,
             "kernels": 111,
             "latency": {
-              "median": 0.10085070833156351,
-              "p10": 0.09598506666407047,
-              "p90": 0.11437631250046251,
+              "median": 0.016624500003672438,
+              "p10": 0.016393658331799087,
+              "p90": 0.016845533333253115,
               "runs": 50
             },
-            "measured": "2026-11-12T06:36:08Z",
+            "measured": "2026-11-12T11:00:56Z",
             "system": "full",
             "threads": null,
             "tuned_kernels": 0
@@ -1112,12 +1287,12 @@
             "intermediate_bytes": 199360512,
             "kernels": 304,
             "latency": {
-              "median": 0.09956522916581889,
-              "p10": 0.09785294166722451,
-              "p90": 0.115151991667517,
+              "median": 0.015371854173281463,
+              "p10": 0.015115950004837942,
+              "p90": 0.015622845834877807,
               "runs": 50
             },
-            "measured": "2026-11-12T06:36:08Z",
+            "measured": "2026-11-12T11:00:56Z",
             "system": "fusion off",
             "threads": null,
             "tuned_kernels": 0
@@ -1135,69 +1310,57 @@
             "intermediate_bytes": 99483648,
             "kernels": 134,
             "latency": {
-              "median": 0.08705691666546045,
-              "p10": 0.08438081250133109,
-              "p90": 0.0935761166674638,
+              "median": 0.021640354167175246,
+              "p10": 0.021413654163916364,
+              "p90": 0.021844870827771957,
               "runs": 50
             },
-            "measured": "2026-11-12T06:36:08Z",
+            "measured": "2026-11-12T11:00:56Z",
             "system": "graph rewrites off",
             "threads": null,
             "tuned_kernels": 0
+          },
+          "no schedule": {
+            "measured": "2026-11-12T11:00:56Z",
+            "skipped": "not measured: unscheduled Metal kernels run on one GPU thread",
+            "system": "no schedule"
           }
         }
       },
       "environment": {
-        "commit": "b61e64e",
+        "commit": "beb8516",
         "cores": 10,
-        "date": "2026-11-12T06:36:08Z",
+        "date": "2026-11-12T11:00:56Z",
         "load_average": [
-          7.64,
-          6.65,
-          6.2
+          2.33,
+          2.44,
+          2.62
         ],
         "machine": "Apple M4",
         "memory_gb": 16,
         "numpy": "2.5.4",
         "os": "Darwin 27.0.0",
         "performance_cores": 4,
-        "provisional": true,
+        "provisional": false,
         "python": "3.13.7"
       },
       "model": "gpt2",
       "runs": [
         {
-          "commit": "bad21ec",
+          "commit": "beb8516",
           "cores": 10,
-          "date": "2026-11-12T06:09:19Z",
+          "date": "2026-11-12T11:00:56Z",
           "load_average": [
-            5.99,
-            5.67,
-            5.64
+            2.33,
+            2.44,
+            2.62
           ],
           "machine": "Apple M4",
           "memory_gb": 16,
           "numpy": "2.5.4",
           "os": "Darwin 27.0.0",
           "performance_cores": 4,
-          "provisional": true,
-          "python": "3.13.7"
-        },
-        {
-          "commit": "b61e64e",
-          "cores": 10,
-          "date": "2026-11-12T06:36:08Z",
-          "load_average": [
-            7.64,
-            6.65,
-            6.2
-          ],
-          "machine": "Apple M4",
-          "memory_gb": 16,
-          "numpy": "2.5.4",
-          "os": "Darwin 27.0.0",
-          "performance_cores": 4,
-          "provisional": true,
+          "provisional": false,
           "python": "3.13.7"
         }
       ],
@@ -1210,12 +1373,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.0501830625016737,
-            "p10": 0.04761632880108664,
-            "p90": 0.05980963749971125,
+            "median": 0.029680291499971645,
+            "p10": 0.028652604395028904,
+            "p90": 0.030124816398165423,
             "runs": 50
           },
-          "measured": "2026-11-12T06:36:08Z",
+          "measured": "2026-11-12T11:00:56Z",
           "system": "onnxruntime-cpu",
           "threads": null
         },
@@ -1227,12 +1390,12 @@
           },
           "error": null,
           "latency": {
-            "median": 0.07097252100174956,
-            "p10": 0.061954463100482825,
-            "p90": 0.0742733714003407,
+            "median": 0.039113020997319836,
+            "p10": 0.03888038369768765,
+            "p90": 0.04096145890071057,
             "runs": 50
           },
-          "measured": "2026-11-12T06:36:08Z",
+          "measured": "2026-11-12T11:00:56Z",
           "system": "pytorch-cpu",
           "threads": 4
         },
@@ -1244,19 +1407,19 @@
           },
           "error": null,
           "latency": {
-            "median": 0.03910385400013183,
-            "p10": 0.030623079502765906,
-            "p90": 0.046015770802841874,
+            "median": 0.02227070799926878,
+            "p10": 0.021957490997738204,
+            "p90": 0.023070499995810678,
             "runs": 50
           },
-          "measured": "2026-11-12T06:36:08Z",
+          "measured": "2026-11-12T11:00:56Z",
           "system": "pytorch-mps",
           "threads": 4
         },
         {
           "agreement": {
-            "max_abs": 0.0003204345703125,
-            "max_rel": 1.1912783449082098e-06,
+            "max_abs": 0.000274658203125,
+            "max_rel": 1.0210957242070369e-06,
             "top1": null
           },
           "arena_bytes": 3538944,
@@ -1266,15 +1429,84 @@
           "intermediate_bytes": 76283904,
           "kernels": 111,
           "latency": {
-            "median": 0.32491083333479764,
-            "p10": 0.3104045833330019,
-            "p90": 0.45298002916824776,
+            "median": 0.05663737500071875,
+            "p10": 0.05331888333457755,
+            "p90": 0.059053533335827524,
             "runs": 50
           },
-          "measured": "2026-11-12T06:36:08Z",
+          "measured": "2026-11-12T11:00:56Z",
+          "system": "tessera-c:sme",
+          "threads": 4,
+          "tuned_kernels": 111
+        },
+        {
+          "agreement": {
+            "max_abs": 0.000274658203125,
+            "max_rel": 1.0210957242070369e-06,
+            "top1": null
+          },
+          "arena_bytes": 3538944,
+          "bytes_moved": 852076080,
+          "constant_bytes": 649462016,
+          "error": null,
+          "intermediate_bytes": 76283904,
+          "kernels": 111,
+          "latency": {
+            "median": 0.04735560416884255,
+            "p10": 0.04712807083269581,
+            "p90": 0.04782117916693096,
+            "runs": 50
+          },
+          "measured": "2026-11-12T11:00:56Z",
           "system": "tessera-c:sme-untuned",
           "threads": 4,
           "tuned_kernels": 0
+        },
+        {
+          "agreement": {
+            "max_abs": 0.000274658203125,
+            "max_rel": 1.0210957242070369e-06,
+            "top1": null
+          },
+          "arena_bytes": 3538944,
+          "bytes_moved": 852076080,
+          "constant_bytes": 649462016,
+          "error": null,
+          "intermediate_bytes": 76283904,
+          "kernels": 111,
+          "latency": {
+            "median": 0.09537631249986589,
+            "p10": 0.09374041666887933,
+            "p90": 0.10326096666540252,
+            "runs": 50
+          },
+          "measured": "2026-11-12T11:00:56Z",
+          "system": "tessera-c:neon-untuned",
+          "threads": 4,
+          "tuned_kernels": 0
+        },
+        {
+          "agreement": {
+            "max_abs": 0.00025177001953125,
+            "max_rel": 9.360044138564505e-07,
+            "top1": null
+          },
+          "arena_bytes": 3538944,
+          "bytes_moved": 852076080,
+          "constant_bytes": 649462016,
+          "error": null,
+          "intermediate_bytes": 76283904,
+          "kernels": 111,
+          "latency": {
+            "median": 0.015775562504131813,
+            "p10": 0.015439241666172165,
+            "p90": 0.01627358332989388,
+            "runs": 50
+          },
+          "measured": "2026-11-12T11:00:56Z",
+          "system": "tessera-metal",
+          "threads": null,
+          "tuned_kernels": 111
         },
         {
           "agreement": {
@@ -1289,12 +1521,12 @@
           "intermediate_bytes": 76283904,
           "kernels": 111,
           "latency": {
-            "median": 0.12113308333391615,
-            "p10": 0.09955462916550459,
-            "p90": 0.14098959583097895,
+            "median": 0.016809999997349223,
+            "p10": 0.016640883329819188,
+            "p90": 0.01693789166456554,
             "runs": 50
           },
-          "measured": "2026-11-12T06:36:08Z",
+          "measured": "2026-11-12T11:00:56Z",
           "system": "tessera-metal-untuned",
           "threads": null,
           "tuned_kernels": 0
