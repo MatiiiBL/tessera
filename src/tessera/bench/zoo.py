@@ -11,6 +11,7 @@ here touches the network.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -86,45 +87,22 @@ class ModelSpec:
 
 
 def load_manifest(directory: Path | None = None) -> dict[str, ModelSpec]:
-    """Every model in ``manifest.json``, by name."""
+    """Every model in ``manifest.json`` (``{name: entry}``, paths relative to it)."""
     root = directory if directory is not None else models_dir()
     path = root / "manifest.json"
     if not path.exists():
         raise MissingModels(f"{path} is missing: run `make models` first")
-    raw = json.loads(path.read_text())
-    entries = raw["models"] if isinstance(raw, dict) and "models" in raw else raw
-    if isinstance(entries, dict):
-        entries = [{"name": k, **v} for k, v in entries.items()]
     specs: dict[str, ModelSpec] = {}
-    for e in entries:
-        specs[e["name"]] = ModelSpec(
-            name=e["name"],
-            onnx=_resolve(root, e["onnx"]),
-            npz=_resolve(root, e["npz"]),
-            inputs=tuple(_io(i) for i in e["inputs"]),
-            outputs=tuple(_io(o)[:2] for o in e["outputs"]),
+    for name, e in json.loads(path.read_text()).items():
+        specs[name] = ModelSpec(
+            name=name,
+            onnx=root / e["onnx"],
+            npz=root / e["npz"],
+            inputs=tuple((i["name"], tuple(i["shape"]), i["dtype"]) for i in e["inputs"]),
+            outputs=tuple((o["name"], tuple(o["shape"])) for o in e["outputs"]),
             torch=dict(e.get("torch", {})),
         )
     return specs
-
-
-def _resolve(root: Path, path: str) -> Path:
-    """Manifest paths are relative to the manifest or to the checkout."""
-    p = Path(path)
-    if p.is_absolute():
-        return p
-    for candidate in (root / p, repo_root() / p, root / p.name):
-        if candidate.exists():
-            return candidate
-    return root / p.name
-
-
-def _io(entry: Any) -> tuple[str, tuple[int, ...], str]:
-    """An input or output, as ``{"name", "shape", "dtype"}`` or ``[name, shape, dtype]``."""
-    if isinstance(entry, dict):
-        return str(entry["name"]), tuple(entry["shape"]), str(entry.get("dtype", "float32"))
-    name, shape, *rest = entry
-    return str(name), tuple(shape), str(rest[0]) if rest else "float32"
 
 
 def torch_module(spec: ModelSpec) -> Any:
@@ -157,9 +135,13 @@ def _torchvision(spec: ModelSpec) -> Any:
 def _transformers(spec: ModelSpec) -> Any:
     import transformers
 
+    # Quiet the unused-weight report of models loaded without their heads.
+    logging.getLogger("transformers").setLevel(logging.ERROR)
     cls = getattr(transformers, spec.torch.get("class", "AutoModel"))
     try:
         module = cls.from_pretrained(spec.torch["name"], local_files_only=True)
     except OSError as e:
         raise MissingModels(f"{spec.torch['name']} is not cached: run `make models` first") from e
+    if hasattr(module.config, "use_cache"):
+        module.config.use_cache = False  # the exported models return no key/value cache
     return module.eval()

@@ -44,25 +44,21 @@ def test_onnxruntime_runner(tmp_path: Path) -> None:
     assert time_runs(runner.prepare({"x": x}), warmup=1, runs=50).median > 0
 
 
-def test_manifest_forms_and_inputs(tmp_path: Path) -> None:
+def test_manifest_and_saved_arrays(tmp_path: Path) -> None:
     np.savez(tmp_path / "tiny.npz", x=np.ones((2, 4), np.float32), y=np.zeros((2, 3), np.float32))
     entry = {
-        "onnx": "data/models/tiny.onnx",
+        "onnx": "tiny.onnx",
         "npz": "tiny.npz",
-        "inputs": [["x", [2, 4], "float32"]],
+        "inputs": [{"name": "x", "shape": [2, 4], "dtype": "float32"}],
         "outputs": [{"name": "y", "shape": [2, 3]}],
-        "torch": {"library": "torchvision", "name": "resnet50", "weights": "IMAGENET1K_V1"},
+        "torch": {"library": "torchvision", "name": "resnet50", "weights": "IMAGENET1K_V2"},
     }
-    for form in (
-        {"tiny": entry},
-        [{"name": "tiny", **entry}],
-        {"models": [{"name": "tiny", **entry}]},
-    ):
-        write_manifest(tmp_path, form)
-        spec = load_manifest(tmp_path)["tiny"]
-        assert spec.inputs == (("x", (2, 4), "float32"),)
-        assert spec.outputs == (("y", (2, 3)),)
-        assert spec.onnx == tmp_path / "tiny.onnx"
+    write_manifest(tmp_path, {"tiny": entry})
+    spec = load_manifest(tmp_path)["tiny"]
+    assert spec.inputs == (("x", (2, 4), "float32"),)
+    assert spec.outputs == (("y", (2, 3)),)
+    assert spec.onnx == tmp_path / "tiny.onnx"
+    assert spec.input_shapes == {"x": (2, 4)}
     assert spec.sample_inputs()["x"].shape == (2, 4)
     assert set(spec.torch_outputs()) == {"y"}
     with pytest.raises(MissingModels, match="make models"):
