@@ -281,7 +281,9 @@ def profile_command(
 
 @app.command("tune")
 def tune_command(
-    model: ModelArg,
+    models: Annotated[
+        list[Path], typer.Argument(help="ONNX models; their tasks share the budget.", exists=True)
+    ],
     target: TargetOpt = "host",
     shape: ShapeOpt = None,
     trials: Annotated[
@@ -296,23 +298,37 @@ def tune_command(
     build_workers: Annotated[int, typer.Option(help="Parallel build processes.")] = 3,
     seed: Annotated[int, typer.Option(help="Seed of the search.")] = 0,
 ) -> None:
-    """Tune every kernel of MODEL on TARGET and append the measurements to a log."""
+    """Tune every kernel of the MODELS on TARGET and append the measurements to a log.
+
+    Tasks that several models share are tuned once, weighted by how many
+    kernels use them. The default log is results/tuning/<target>.jsonl, which
+    tessera.compile reads; running the same command again resumes it.
+    """
     from tessera.tune.log import TuningLog
     from tessera.tune.measure import LocalRunner
     from tessera.tune.search import EvolutionarySearch, RandomSearch
+    from tessera.tune.task import Task
     from tessera.tune.tuner import Round, tune
 
-    comp = _lower(model, target, shape, untuned=True)
-    tasks = list(comp.tasks.values())
+    by_key: dict[str, Task] = {}
+    kernels = 0
+    for model in models:
+        comp = _lower(model, target, shape, untuned=True)
+        kernels += len(comp.kernels)
+        for key, task in comp.tasks.items():
+            if key in by_key:
+                by_key[key].weight += task.weight
+                by_key[key].names += task.names
+            else:
+                by_key[key] = task
+    tasks = list(by_key.values())
     if not tasks:
-        console.print("nothing to tune: no kernel of this model has a template")
+        console.print("nothing to tune: no kernel of these models has a template")
         return
-    path = (
-        log
-        if log is not None
-        else driver.default_logs() / f"{model.stem}-{_target_slug(comp)}.jsonl"
+    path = log if log is not None else driver.default_logs() / f"{_target_slug(comp)}.jsonl"
+    console.print(
+        f"{len(tasks)} tasks for {kernels} kernels of {len(models)} models; logging to {path}"
     )
-    console.print(f"{len(tasks)} tasks for {len(comp.kernels)} kernels; logging to {path}")
     search = EvolutionarySearch() if strategy is Strategy.model else RandomSearch()
 
     def report(r: Round) -> None:

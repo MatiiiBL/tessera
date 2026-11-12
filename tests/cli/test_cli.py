@@ -128,3 +128,23 @@ def test_run_check_with_onnx_names(tmp_path: Path) -> None:
     out = invoke("run", str(path), "-t", "c:generic", "--check")
     assert "out.0" in out
     assert "match" in out
+
+
+def test_tune_shares_one_budget_across_models(tmp_path: Path) -> None:
+    from e2e.onnx_models import cnn, mlp
+    from tessera.tune.log import TuningLog
+
+    paths = []
+    for name, model in (("mlp", mlp()), ("cnn", cnn())):
+        paths.append(tmp_path / f"{name}.onnx")
+        onnx.save(model, paths[-1])
+    log = tmp_path / "c-generic.jsonl"
+    args = ["tune", *map(str, paths), "-t", "c:generic", "--trials", "24", "--batch", "8"]
+    out = invoke(*args, "--log", str(log), "--strategy", "random")
+    assert "of 2 models" in out
+    records = TuningLog(log).records()
+    assert len(records) == 24
+    assert {r.task.split(":")[0] for r in records} >= {"matmul"}
+    again = invoke(*args, "--log", str(log), "--strategy", "random")
+    assert "speedup" in again
+    assert len(TuningLog(log).records()) == 24  # resumed: the budget was already spent
