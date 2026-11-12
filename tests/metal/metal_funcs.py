@@ -457,3 +457,55 @@ def matmul_tiled(
         lambda xs: xs[0] @ xs[1],
         [rand(rng, m, k), rand(rng, k, n)],
     )
+
+
+REFERENCES: dict[str, Callable[[Array], Array]] = {
+    "add": lambda x: x.sum(axis=-1),
+    "max": lambda x: x.max(axis=-1),
+    "min": lambda x: x.min(axis=-1),
+}
+
+
+def row_reduce(
+    rows: int,
+    k: int,
+    rng: np.random.Generator,
+    *,
+    threads: int,
+    op: str = "add",
+    rows_per_group: int = 1,
+    lanes_outer: bool = False,
+    with_init: bool = True,
+) -> Case:
+    """``out[r] = op over k of x[r, k]`` with the reduction loop split and its inner
+    part bound to ``thread.x``, ``rows_per_group`` rows per threadgroup on thread.y."""
+    from tessera.tir.expr import Binary, logical_and
+
+    x, out = Buffer("x", (rows, k)), Buffer("out", (rows,))
+    g, ty, ko, tx = Var("g"), Var("ty"), Var("ko"), Var("tx")
+    vi, vk = Var("vi"), Var("vk")
+    steps = -(-k // threads)
+    row = g * rows_per_group + ty
+    kidx = ko * threads + tx
+    start = {"add": 0.0, "max": float("-inf"), "min": float("inf")}[op]
+    reduction = block(
+        "out",
+        [spatial(vi, rows, row), reduce(vk, k, kidx)],
+        BufferStore(out, Binary(op, out[vi], x[vi, vk]), (vi,)),  # type: ignore[arg-type]
+        init=BufferStore(out, FloatImm(start), (vi,)) if with_init else None,
+        predicate=logical_and(lt(row, rows), lt(kidx, k)),
+    )
+    serial = lambda body: loop(ko, steps, body)  # noqa: E731
+    lanes = lambda body: bound(tx, threads, "thread.x", body)  # noqa: E731
+    nest = serial(lanes(reduction)) if not lanes_outer else lanes(serial(reduction))
+    groups = -(-rows // rows_per_group)
+    body = bound(g, groups, "threadgroup.x", bound(ty, rows_per_group, "thread.y", nest))
+
+    def reference(xs: Sequence[Array]) -> Array:
+        total = REFERENCES[op](xs[0])
+        if with_init:
+            return total
+        # Without an init the reduction continues from the output's value (zeros).
+        return {"add": total, "max": np.maximum(total, 0), "min": np.minimum(total, 0)}[op]
+
+    return Case(prim_func(f"row_{op}", [x, out], body), reference, [rand(rng, rows, k)])

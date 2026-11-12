@@ -43,6 +43,7 @@ from tessera.tir.expr import (
     Var,
 )
 from tessera.tir.stmt import (
+    TRUE,
     Block,
     BlockRealize,
     Buffer,
@@ -53,6 +54,7 @@ from tessera.tir.stmt import (
     ForKind,
     IfThenElse,
     IterKind,
+    IterVar,
     LetStmt,
     PrimFunc,
     Range,
@@ -649,3 +651,305 @@ def substitute(expr: Expr, mapping: dict[Var, Expr]) -> Expr:
             return AddressOf(buf, tuple(substitute(i, mapping) for i in indices))
         case _:
             return expr
+
+
+# -- cross-thread reductions --------------------------------------------------------------
+
+ALLREDUCE = "metal.allreduce"
+# Operator codes of ``metal.allreduce`` (its third argument).
+REDUCE_OPS = ("add", "max", "min")
+SIMD_WIDTH = 32
+
+
+class ReductionError(Exception):
+    """A reduction bound to threads that the Metal backend cannot lower."""
+
+
+def lower_cross_thread_reductions(func: PrimFunc, launch: dict[str, int]) -> PrimFunc:
+    """Rewrite each block whose reduction runs over a ``thread.x`` loop.
+
+    ``launch`` gives the launch extent of each grid axis. The block's loop nest
+    accumulates into a per-thread partial (lanes beyond the loop's extent
+    contribute the identity), ``metal.allreduce`` combines the partials of the
+    threads that share the other axes, and one thread per row writes
+    ``init ⊕ total`` (or ``out ⊕ total`` without an init). Only sums, maxima
+    and minima are lowered; reduction loops must be the innermost loops around
+    the block.
+    """
+    lowering = _ReductionLowering(launch)
+    body = lowering.stmt(func.body, {})
+    if not lowering.allocated:
+        return func
+    if isinstance(body, BlockRealize):
+        root = body.block
+        block = Block(
+            root.name,
+            root.iter_vars,
+            root.reads,
+            root.writes,
+            root.body,
+            root.init,
+            (*root.alloc_buffers, *lowering.allocated),
+            root.annotations,
+        )
+        body = BlockRealize(body.iter_values, body.predicate, block)
+    else:
+        root = Block("root", (), (), (), body, None, tuple(lowering.allocated))
+        body = BlockRealize((), TRUE, root)
+    return PrimFunc(func.name, func.params, body, func.attrs)
+
+
+class _ReductionLowering:
+    def __init__(self, launch: dict[str, int]) -> None:
+        self.launch = launch
+        self.allocated: list[Buffer] = []
+        self.count = 0
+
+    def stmt(self, s: Stmt, loops: dict[Var, For]) -> Stmt:
+        match s:
+            case For():
+                nest = _perfect_nest(s)
+                if nest is not None and self.is_cross_thread(nest[1], loops | _loop_map(nest[0])):
+                    return self.lower(nest[0], nest[1], loops)
+                inner = loops | {s.loop_var: s}
+                return For(
+                    s.loop_var,
+                    s.min,
+                    s.extent,
+                    s.kind,
+                    self.stmt(s.body, inner),
+                    s.thread_tag,
+                    s.annotations,
+                )
+            case SeqStmt(seq):
+                return SeqStmt(tuple(self.stmt(x, loops) for x in seq))
+            case BlockRealize(values, predicate, block):
+                if self.is_cross_thread(s, loops):
+                    raise ReductionError(
+                        f"block {block.name}: the loops of a reduction bound to threads must be "
+                        "the innermost loops around the block, with nothing between them"
+                    )
+                new = Block(
+                    block.name,
+                    block.iter_vars,
+                    block.reads,
+                    block.writes,
+                    self.stmt(block.body, loops),
+                    None if block.init is None else self.stmt(block.init, loops),
+                    block.alloc_buffers,
+                    block.annotations,
+                )
+                return BlockRealize(values, predicate, new)
+            case IfThenElse(cond, then, other):
+                return IfThenElse(
+                    cond, self.stmt(then, loops), None if other is None else self.stmt(other, loops)
+                )
+            case LetStmt(var, value, body):
+                return LetStmt(var, value, self.stmt(body, loops))
+            case _:
+                return s
+
+    def is_cross_thread(self, realize: BlockRealize, loops: dict[Var, For]) -> bool:
+        for iv, value in zip(realize.block.iter_vars, realize.iter_values, strict=True):
+            if iv.kind is not IterKind.REDUCE:
+                continue
+            for var in _vars(value):
+                loop = loops.get(var)
+                if loop is not None and loop.kind is ForKind.THREAD_BINDING:
+                    if loop.thread_tag != "thread.x":
+                        raise ReductionError(
+                            f"block {realize.block.name}: reductions across threads run over "
+                            f"thread.x, not {loop.thread_tag}"
+                        )
+                    return True
+        return False
+
+    def lower(self, chain: list[For], realize: BlockRealize, outer: dict[Var, For]) -> Stmt:
+        block = realize.block
+        name = block.name
+        reduce_vars: set[Var] = set()
+        spatial_vars: set[Var] = set()
+        for iv, value in zip(block.iter_vars, realize.iter_values, strict=True):
+            (reduce_vars if iv.kind is IterKind.REDUCE else spatial_vars).update(_vars(value))
+        chain_vars = {f.loop_var for f in chain}
+        if not chain_vars <= reduce_vars or chain_vars & spatial_vars:
+            raise ReductionError(
+                f"block {name}: every loop between the reduction's outermost loop and the "
+                "block must drive only reduction variables"
+            )
+        if reduce_vars & set(outer):
+            raise ReductionError(
+                f"block {name}: a reduction loop encloses a spatial loop; the loops of a "
+                "reduction bound to threads must be the innermost"
+            )
+        store = block.body
+        op, out, indices, value = _combiner(name, store)
+        init_value = _init_value(name, block.init, out, indices)
+        dtype = out.dtype
+        width = self.launch.get("thread.x", 1)
+        if not (width <= SIMD_WIDTH and SIMD_WIDTH % width == 0) and width % SIMD_WIDTH:
+            raise ReductionError(
+                f"block {name}: a reduction over {width} threads needs a power of two up to "
+                f"{SIMD_WIDTH} or a multiple of {SIMD_WIDTH}"
+            )
+        self.count += 1
+        partial = Buffer(f"{out.name}_partial", (1,), dtype, "local")
+        self.allocated.append(partial)
+        scratch: Expr = IntImm(0)
+        if width > SIMD_WIDTH:
+            rows = self.launch.get("thread.y", 1) * self.launch.get("thread.z", 1)
+            red = Buffer(f"{out.name}_red", (rows * (width // SIMD_WIDTH),), dtype, "shared")
+            self.allocated.append(red)
+            scratch = AddressOf(red, (IntImm(0),))
+        zero = (IntImm(0),)
+
+        # Conditions on reduction loops guard the accumulation; the others also
+        # guard the write.
+        conds = _conjuncts(realize.predicate)
+        write_conds = [c for c in conds if not (_vars(c) & reduce_vars)]
+        mixed = [c for c in write_conds if _vars(c) & chain_vars]
+        if mixed:
+            raise ReductionError(f"block {name}: cannot split its predicate")
+
+        accumulate = Block(
+            name,
+            block.iter_vars,
+            block.reads,
+            ((BufferRegion.full(partial)),),
+            BufferStore(partial, Binary(op, partial[zero], value), zero),  # type: ignore[arg-type]
+            None,
+            block.alloc_buffers,
+            block.annotations,
+        )
+        nest: Stmt = BlockRealize(realize.iter_values, realize.predicate, accumulate)
+        for loop in reversed(chain):
+            nest = For(
+                loop.loop_var,
+                loop.min,
+                loop.extent,
+                loop.kind,
+                nest,
+                loop.thread_tag,
+                loop.annotations,
+            )
+
+        lane = Var(f"{name}_lane")
+        # The write is a block of its own, with its own spatial variables.
+        spatial = [
+            (iv, v)
+            for iv, v in zip(block.iter_vars, realize.iter_values, strict=True)
+            if iv.kind is not IterKind.REDUCE
+        ]
+        renamed = {iv.var: Var(iv.var.name, iv.var.dtype) for iv, _ in spatial}
+        fresh: dict[Var, Expr] = dict(renamed)
+        indices = tuple(substitute(i, fresh) for i in indices)
+        base = substitute(init_value, fresh) if init_value is not None else BufferLoad(out, indices)
+        # Every thread holds the total now. A local result is each thread's own copy,
+        # so all of them write it; a shared or global one gets a single writer.
+        write_pred: Expr = TRUE
+        if out.scope != "local":
+            write_pred = Compare("eq", lane, IntImm(0, lane.dtype))
+        for c in write_conds:
+            write_pred = c if write_pred is TRUE else Logical("and", write_pred, c)
+        write = Block(
+            f"{name}_write",
+            tuple(IterVar(renamed[iv.var], iv.dom, iv.kind) for iv, _ in spatial),
+            (BufferRegion.full(partial),),
+            (BufferRegion.full(out),),
+            BufferStore(out, Binary(op, base, partial[zero]), indices),  # type: ignore[arg-type]
+        )
+        combine = seq_of(
+            Evaluate(
+                Call(
+                    ALLREDUCE,
+                    (
+                        AddressOf(partial, zero),
+                        scratch,
+                        IntImm(REDUCE_OPS.index(op)),
+                        IntImm(width),
+                    ),
+                    dtype,
+                )
+            ),
+            BlockRealize(tuple(v for _, v in spatial), write_pred, write),
+        )
+        return seq_of(
+            BufferStore(partial, identity(op, dtype), zero),
+            nest,
+            For(lane, IntImm(0), IntImm(width), ForKind.THREAD_BINDING, combine, "thread.x"),
+        )
+
+
+def identity(op: str, dtype: DType) -> Expr:
+    """The neutral element of ``op`` (``add``, ``max``, ``min``) for ``dtype``."""
+    from tessera.tir.expr import FloatImm
+
+    if op == "add":
+        return FloatImm(0.0, dtype) if dtype.is_float else IntImm(0, dtype)
+    if dtype.is_float:
+        return FloatImm(float("-inf") if op == "max" else float("inf"), dtype)
+    bits = dtype.itemsize * 8
+    return IntImm(-(2 ** (bits - 1)) if op == "max" else 2 ** (bits - 1) - 1, dtype)
+
+
+def _combiner(name: str, store: Stmt) -> tuple[str, Buffer, tuple[Expr, ...], Expr]:
+    """(operator, output, indices, value) of ``out[i] = out[i] op value``."""
+    if isinstance(store, BufferStore) and isinstance(store.value, Binary):
+        v = store.value
+        if v.op in REDUCE_OPS:
+            here = BufferLoad(store.buffer, store.indices)
+            if v.a == here:
+                return v.op, store.buffer, store.indices, v.b
+            if v.b == here:
+                return v.op, store.buffer, store.indices, v.a
+    raise ReductionError(
+        f"block {name}: a reduction across threads must be a sum, a maximum or a minimum "
+        "(out[i] = out[i] + x, max(out[i], x) or min(out[i], x))"
+    )
+
+
+def _init_value(
+    name: str, init: Stmt | None, out: Buffer, indices: tuple[Expr, ...]
+) -> Expr | None:
+    if init is None:
+        return None
+    if isinstance(init, BufferStore) and init.buffer is out and init.indices == indices:
+        return init.value
+    raise ReductionError(f"block {name}: its init must store one value into the reduced element")
+
+
+def _perfect_nest(loop: For) -> tuple[list[For], BlockRealize] | None:
+    """The loops from ``loop`` down to a block, if each body is the next loop."""
+    chain = [loop]
+    node = loop.body
+    while isinstance(node, For):
+        chain.append(node)
+        node = node.body
+    if isinstance(node, BlockRealize):
+        reduce_vars: set[Var] = set()
+        for iv, value in zip(node.block.iter_vars, node.iter_values, strict=True):
+            if iv.kind is IterKind.REDUCE:
+                reduce_vars |= _vars(value)
+        if all(f.loop_var in reduce_vars for f in chain):
+            return chain, node
+    return None
+
+
+def _loop_map(chain: list[For]) -> dict[Var, For]:
+    return {f.loop_var: f for f in chain}
+
+
+def _conjuncts(expr: Expr) -> list[Expr]:
+    if isinstance(expr, Logical) and expr.op == "and":
+        return _conjuncts(expr.a) + _conjuncts(expr.b)
+    if isinstance(expr, IntImm) and expr.value == 1:
+        return []
+    return [expr]
+
+
+def seq_of(*stmts: Stmt) -> Stmt:
+    """A flat SeqStmt of ``stmts`` (one statement is returned as is)."""
+    flat: list[Stmt] = []
+    for s in stmts:
+        flat.extend(s.seq if isinstance(s, SeqStmt) else (s,))
+    return flat[0] if len(flat) == 1 else SeqStmt(tuple(flat))

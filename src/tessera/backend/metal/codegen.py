@@ -161,10 +161,28 @@ using namespace metal;
 
 def generate(func: PrimFunc, *, max_threadgroup_memory: int = 32768) -> Kernel:
     """Generate the MSL kernel of ``func`` and its launch configuration."""
-    from tessera.backend.metal.lower import compact_buffers
+    from tessera.backend.metal.lower import (
+        ReductionError,
+        compact_buffers,
+        lower_cross_thread_reductions,
+    )
 
+    try:
+        func = lower_cross_thread_reductions(func, launch_extents(func.body))
+    except ReductionError as error:
+        raise CodegenError(str(error)) from error
     func = compact_buffers(func, intrinsic_extents)
     return _KernelWriter(func, max_threadgroup_memory).write()
+
+
+def launch_extents(body: Stmt) -> dict[str, int]:
+    """The launch extent of each grid axis: the largest loop bound to it."""
+    out: dict[str, int] = {}
+    for s in _walk_stmt(body):
+        if isinstance(s, For) and s.kind is ForKind.THREAD_BINDING and s.thread_tag is not None:
+            extent = s.extent.value if isinstance(s.extent, IntImm) else 1
+            out[s.thread_tag] = max(out.get(s.thread_tag, 1), extent)
+    return out
 
 
 def module_source(kernels: Sequence[Kernel], *, header: str = "") -> str:
@@ -354,9 +372,10 @@ def _combine(parts: Sequence[_Summary]) -> _Summary:
 
 
 def _is_barrier(stmt: Stmt) -> bool:
-    return (
-        isinstance(stmt, Evaluate) and isinstance(stmt.value, Call) and (stmt.value.name == BARRIER)
-    )
+    if not isinstance(stmt, Evaluate) or not isinstance(stmt.value, Call):
+        return False
+    intrinsic = INTRINSICS.get(stmt.value.name)
+    return intrinsic is not None and intrinsic.barrier is not None and intrinsic.barrier(stmt.value)
 
 
 def _seq_of(*stmts: Stmt) -> Stmt:
@@ -399,6 +418,8 @@ class Intrinsic:
     writes: tuple[int, ...] = ()
     statement: bool = True  # used inside Evaluate (False: an expression)
     extents: tuple[tuple[int, tuple[int, ...]], ...] = ()  # (argument, extents)
+    collective: bool = False  # every thread of the group must reach it
+    barrier: Callable[[Call], bool] | None = None  # whether a call orders all memory
 
 
 INTRINSICS: dict[str, Intrinsic] = {}
@@ -411,10 +432,15 @@ def register_intrinsic(
     writes: Sequence[int] = (),
     statement: bool = True,
     extents: Mapping[int, tuple[int, ...]] | None = None,
+    collective: bool = False,
+    barrier: Callable[[Call], bool] | None = None,
 ) -> None:
-    """Teach the code generator a ``metal.<name>`` call."""
+    """Teach the code generator a ``metal.<name>`` call. A ``collective`` call is
+    made by every thread together (SIMD-group functions, barriers), so it cannot
+    sit in a branch that depends on the thread; ``barrier`` says whether a call
+    also orders every thread's memory accesses, like ``threadgroup_barrier``."""
     covered = tuple(sorted((extents or {}).items()))
-    INTRINSICS[name] = Intrinsic(emit, tuple(writes), statement, covered)
+    INTRINSICS[name] = Intrinsic(emit, tuple(writes), statement, covered, collective, barrier)
 
 
 def intrinsic_extents(call: Call, position: int) -> tuple[int, ...] | None:
@@ -443,7 +469,75 @@ def _emit_barrier(writer: _KernelWriter, call: Call) -> str:
     return f"threadgroup_barrier({' | '.join(names)});"
 
 
-register_intrinsic(BARRIER, _emit_barrier)
+register_intrinsic(BARRIER, _emit_barrier, collective=True, barrier=lambda call: True)
+
+
+def _emit_allreduce(writer: _KernelWriter, call: Call) -> str:
+    from tessera.backend.metal.lower import REDUCE_OPS, SIMD_WIDTH
+
+    partial, scratch, code, width_arg = call.args
+    assert isinstance(partial, AddressOf)
+    assert isinstance(code, IntImm)
+    assert isinstance(width_arg, IntImm)
+    op, width = REDUCE_OPS[code.value], width_arg.value
+    v = writer.access(partial.buffer, partial.indices)
+
+    def combine(a: str, b: str) -> str:
+        return f"{a} + {b}" if op == "add" else f"{op}({a}, {b})"
+
+    simd = {"add": "simd_sum", "max": "simd_max", "min": "simd_min"}[op]
+    lines = [f"// {op} across the {width} threads of thread.x"]
+    if width >= SIMD_WIDTH:
+        lines.append(f"{v} = {simd}({v});")
+    elif width > 1:
+        lines += [
+            f"for (ushort offset = {width // 2}; offset > 0; offset >>= 1) {{",
+            f"  {v} = {combine(v, f'simd_shuffle_xor({v}, offset)')};",
+            "}",
+        ]
+    if width > SIMD_WIDTH:
+        assert isinstance(scratch, AddressOf)
+        groups = width // SIMD_WIDTH
+        red = writer.namer(scratch.buffer)
+        writer.uses.add("thread_pos")
+        ys, zs = writer.bindings.get("thread.y", 1), writer.bindings.get("thread.z", 1)
+        row = "0"
+        if ys > 1 and zs > 1:
+            row = f"(thread_pos.y + {ys} * thread_pos.z)"
+        elif ys > 1:
+            row = "thread_pos.y"
+        elif zs > 1:
+            row = "thread_pos.z"
+        base = "" if row == "0" else f"{row} * {groups} + "
+        first = "0" if row == "0" else f"{row} * {groups}"
+        lines += [
+            "threadgroup_barrier(mem_flags::mem_threadgroup);",
+            f"if (thread_pos.x % {SIMD_WIDTH} == 0) {{",
+            f"  {red}[{base}thread_pos.x / {SIMD_WIDTH}] = {v};",
+            "}",
+            "threadgroup_barrier(mem_flags::mem_threadgroup);",
+            f"{v} = {red}[{first}];",
+            f"for (uint group = 1; group < {groups}; ++group) {{",
+            f"  {v} = {combine(v, f'{red}[{base}group]')};",
+            "}",
+        ]
+    return "\n".join(lines)
+
+
+def _allreduce_synchronizes(call: Call) -> bool:
+    from tessera.backend.metal.lower import SIMD_WIDTH
+
+    width = call.args[3]
+    return isinstance(width, IntImm) and width.value > SIMD_WIDTH
+
+
+register_intrinsic(
+    "metal.allreduce",
+    _emit_allreduce,
+    writes=(0, 1),
+    collective=True,
+    barrier=_allreduce_synchronizes,
+)
 
 
 # -- expressions ----------------------------------------------------------------------
@@ -1026,12 +1120,13 @@ class _KernelWriter:
         if not isinstance(value, Call):
             self.line(f"{self.expr_text(value)};")
             return
-        if value.name == BARRIER and scope.divergent:
+        intrinsic = INTRINSICS.get(value.name)
+        if intrinsic is not None and intrinsic.collective and scope.divergent:
+            what = "a barrier" if value.name == BARRIER else f"{value.name}, which all threads run,"
             raise CodegenError(
-                f"{self.func.name}: a barrier is needed inside a branch that depends on the "
+                f"{self.func.name}: {what} is needed inside a branch that depends on the "
                 "thread (a guarded thread loop, a predicate or a condition)"
             )
-        intrinsic = INTRINSICS.get(value.name)
         if intrinsic is None or not intrinsic.statement:
             self.line(f"{self.expr_text(value)};")
             return
