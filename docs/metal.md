@@ -248,6 +248,18 @@ memory. Rows past the image's edge (an output 7 pixels wide in 8-row tiles)
 read only threadgroup memory. A strided convolution uses a variant whose A
 rows are the stride apart in that tile.
 
+**Operands with a prologue.** A transformer's attention output projection
+reads its A through a transpose and reshape of the heads, `x[k // 64, m, k %
+64]`: not a matrix `simdgroup_load` can read. The backend lowers such an
+operand as a block of its own (`lower_group(operand_blocks=True)`), and the
+matmul template stages it the way the convolution stages its input: each SIMD
+group computes its tile for `simd_k` steps of the reduction into threadgroup
+memory, evaluating the prologue once per element, and the microkernel reads
+that tile. An operand block that is only a matrix of its source buffer (a
+slice of a fused QKV projection, a transpose of the leading axes) is inlined
+again and loaded in place, and the scalar schedules inline every operand
+block (`test_operands_with_a_prologue_are_staged_unless_loaded_in_place`).
+
 ## Templates
 
 Each template asks a `Config` for every decision; the defaults are what an
@@ -257,7 +269,7 @@ small graphs with uneven shapes, in `tir.interpret` and on the GPU.
 
 | Pattern | Schedule | Knobs (default) |
 |---|---|---|
-| `matmul` | `simdgroup`: SIMD groups of 8 x 8 tiles with the microkernel, when the rows divide into tiles, K is a multiple of 8 and the operands are plain loads; `tiles`: threadgroup tile over threads and per-thread register tiles, accumulators in registers, optional threadgroup staging of A and B every `tile_k` steps, the epilogue applied on the store; `elements`: one thread per output element (matrix-vector products) | `strategy`, `simd_groups` (1 x 2), `simd_tiles` (2 x 4), `threads` (8 x 8), `registers` (4 x 4), `tile_k` (8), `shared` (on), `element_threads` (128) |
+| `matmul` | `simdgroup`: SIMD groups of 8 x 8 tiles with the microkernel, when the rows divide into tiles, K is a multiple of 8 and the operands are plain loads or operand blocks (staged every `simd_k` steps); `tiles`: threadgroup tile over threads and per-thread register tiles, accumulators in registers, optional threadgroup staging of A and B every `tile_k` steps, the epilogue applied on the store; `elements`: one thread per output element (matrix-vector products) | `strategy`, `simd_groups` (1 x 2), `simd_tiles` (2 x 4), `threads` (8 x 8), `registers` (4 x 4), `tile_k` (8), `shared` (on), `element_threads` (128), `simd_k` (32, for staged operands) |
 | `conv2d` | the same strategies over each output row (pixels as rows, output channels as columns), `kh`, `kw` outside the tiled channel loop; scalar tiles stack `image_rows` output rows per threadgroup on `thread.z`, staging the weights | as `matmul`, plus `image_rows` (1; 2 or 4 for rows of 16 or 8 pixels), `simd_k` (32) |
 | `depthwise_conv2d`, `pool` | one thread per output element, the window loops unrolled, the result kept in a register for the epilogue | `threads` (128), `unroll_window` (on) |
 | `reduce`, `softmax`, `layernorm` | `rows`: a threadgroup per row, its threads splitting every reduction (SIMD-group functions, then threadgroup memory), the reduced values in threadgroup memory; `columns`: one thread per row when rows are the contiguous dimension | `strategy` (`columns` when INNER is at least 32), `threads` (256 or the row length), `rows_per_group` (1), `column_threads` (128) |

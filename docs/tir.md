@@ -206,7 +206,7 @@ Every block carries a `role` annotation:
 | group | blocks (role) | `dims` |
 |---|---|---|
 | Conv2d (NHWC, NCHW; strides, pads, dilations, groups, depthwise) | pad (with `pad_block`), main, epilogue | N H W C KH KW O OH OW SH SW DH DW G PT PL PB PR PAD_BLOCK |
-| MatMul (rank >= 2, broadcast batch) | main, epilogue | B M N K |
+| MatMul (rank >= 2, broadcast batch) | operands (with `operand_blocks`), main, epilogue | B M N K |
 | MaxPool2d, AvgPool2d | main, epilogue (AvgPool divides there) | N H W C KH KW OH OW SH SW |
 | ReduceSum, ReduceMax, ReduceMean | main, epilogue (ReduceMean divides there) | OUTER R INNER |
 | Softmax | `<main>_max` (max), `<main>_sum` (sum), main, epilogue | OUTER R INNER |
@@ -237,6 +237,19 @@ convolutions get none in either mode, and inlining the pad block
 examples; `test_padded_conv_staged_through_shared_memory` computes the pad
 block per tile of output rows, stages it in threadgroup memory and binds the
 threads).
+
+`lower_group(group, operand_blocks=True)` (the Metal backend asks for it too)
+does the same for a MatMul operand computed by prologue operators: the
+transposed and merged heads in front of a transformer's attention output
+projection would otherwise be read as `x[k // 64, m, k % 64]` inside the
+main block. The operand becomes a block of its own, `<main>_a` or `<main>_b`
+with role `operand`, holding `a[..., m, k]` (or `b[..., k, n]`), and the main
+block reads it with a plain load, so a template can compute it once per
+element into faster memory and a GEMM microkernel description matches the
+update. An operand that is a group input gets no block, the group's `dims`
+do not change, and inlining the operand blocks gives back the default
+function exactly (`test_matmul_operand_blocks`,
+`test_matmul_operand_blocks_leave_group_inputs_alone`).
 
 Each operator is tested by interpreting its lowered group against the
 operator references in float64 (`tests/compute/test_lower.py`), the

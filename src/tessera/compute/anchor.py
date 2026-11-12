@@ -46,6 +46,10 @@ class LoweringChoices:
     # instead of a select inside the main block, so the main block's update is a
     # plain multiply-accumulate that tensorize can match.
     pad_block: bool = False
+    # A MatMul operand computed by prologue operators (not a group input) is a
+    # block of its own (role "operand") that the main block reads with a plain
+    # load, so a backend can compute it once per element into faster memory.
+    operand_blocks: bool = False
 
 
 type AnchorDefinition = Callable[[Node, list[TensorLike], LoweringChoices], AnchorResult]
@@ -204,6 +208,10 @@ def matmul(node: Node, xs: list[TensorLike], choices: LoweringChoices) -> Anchor
     m, n = out_shape[-2:]
     k_n = a.shape[-1]
     k = te.reduce_axis(k_n, "k")
+    stages: list[te.Tensor] = []
+    if choices.operand_blocks:
+        a = _operand_stage(node, a, "a", ["m", "k"], stages)
+        b = _operand_stage(node, b, "b", ["k", "n"], stages)
 
     def body(*out: Var) -> te.Reduce:
         bi, i, j = out[:-2], out[-2], out[-1]
@@ -213,7 +221,26 @@ def matmul(node: Node, xs: list[TensorLike], choices: LoweringChoices) -> Anchor
 
     names = [f"b{d}" for d in range(len(batch))] + ["m", "n"]
     main = te.compute(out_shape, body, node.name, axis_names=names, annotations={ROLE: "main"})
-    return AnchorResult(main, main, {"B": prod(batch), "M": m, "N": n, "K": k_n})
+    return AnchorResult(main, main, {"B": prod(batch), "M": m, "N": n, "K": k_n}, stages)
+
+
+def _operand_stage(
+    node: Node, x: TensorLike, suffix: str, axes: list[str], stages: list[te.Tensor]
+) -> TensorLike:
+    """``x`` as a stage of its own (``<node>_<suffix>``, role ``operand``) when it is
+    computed by prologue operators; a group input is returned as is."""
+    if isinstance(x, te.Tensor):
+        return x
+    names = [f"b{d}" for d in range(len(x.shape) - 2)] + axes
+    stage = te.compute(
+        x.shape,
+        lambda *i: x[i],
+        f"{node.name}_{suffix}",
+        axis_names=names,
+        annotations={ROLE: "operand"},
+    )
+    stages.append(stage)
+    return stage
 
 
 # -- pooling -------------------------------------------------------------------------------

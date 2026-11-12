@@ -19,9 +19,10 @@ class MetalBackend:
     name = "metal"
 
     def lowering_options(self, target: Target) -> Mapping[str, object]:
-        """Lower convolutions with their padding as a block of its own, which the
-        SIMD-group convolution computes tile by tile in threadgroup memory."""
-        return {"pad_block": True}
+        """Lower convolutions with their padding, and matmuls with each operand a
+        prologue computes, as blocks of their own, which the SIMD-group schedules
+        compute tile by tile in threadgroup memory."""
+        return {"pad_block": True, "operand_blocks": True}
 
     def templates(self, target: Target | None = None) -> Mapping[str, Template]:
         """The GPU schedule template of every pattern (the same for every target)."""

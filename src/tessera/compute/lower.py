@@ -15,7 +15,9 @@ from tessera.tir.primitives.common import iter_paths, simplify_stmt, with_body
 from tessera.tir.stmt import Block, Buffer, PrimFunc
 
 
-def lower_group(group: FusedGroup, *, pad_block: bool = False) -> LoweredGroup:
+def lower_group(
+    group: FusedGroup, *, pad_block: bool = False, operand_blocks: bool = False
+) -> LoweredGroup:
     """The group as a PrimFunc: one parameter per group input (in order), then the
     output. Prologue operators are inlined into the loads of the main block (the
     anchor's), the epilogue operators form one block that reads the main block's
@@ -28,8 +30,14 @@ def lower_group(group: FusedGroup, *, pad_block: bool = False) -> LoweredGroup:
     it through a block of its own (role ``pad``, ``dims["PAD_BLOCK"] == 1``)
     covering the rows and columns the windows read, and the main block's
     update is a plain multiply-accumulate. Inlining that block
-    (``Schedule.compute_inline``) gives the default form back."""
-    choices = LoweringChoices(pad_block=pad_block)
+    (``Schedule.compute_inline``) gives the default form back.
+
+    With ``operand_blocks``, a MatMul operand computed by prologue operators
+    (a transpose and reshape in front of a projection, say) is a block of its
+    own (role ``operand``, ``<main>_a`` or ``<main>_b``) that the main block
+    reads with a plain load; an operand that is a group input stays as it is.
+    Inlining those blocks gives the default form back."""
+    choices = LoweringChoices(pad_block=pad_block, operand_blocks=operand_blocks)
     env: dict[int, TensorLike] = {}
     params: list[te.Tensor] = []
     for v in group.inputs:

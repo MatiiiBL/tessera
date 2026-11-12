@@ -232,6 +232,47 @@ def test_matmul_with_batch_broadcast(a: tuple[int, ...], b: tuple[int, ...]) -> 
     assert lowered.dims == {"B": batch, "M": a[-2], "N": b[-1], "K": a[-1]}
 
 
+def test_matmul_operand_blocks() -> None:
+    # An attention output projection: heads transposed back and merged, times a
+    # weight, plus a bias.
+    g, (x,) = graph_with([(1, 4, 6, 8)])
+    merged = g.op("Reshape", g.op("Transpose", x, perm=(0, 2, 1, 3)), shape=(1, 6, 32))
+    w = g.add_constant(np.random.default_rng(0).standard_normal((32, 5)).astype(np.float32))
+    b = g.add_constant(np.random.default_rng(1).standard_normal(5).astype(np.float32))
+    g.set_outputs([g.op("Add", g.op("MatMul", merged, w), b)])
+    (default,) = check_graph(g)
+    (staged,) = check_graph(g, operand_blocks=True)
+    assert staged.dims == default.dims
+    roles = _roles(staged.func)
+    assert staged.main_block is not None
+    operand = f"{staged.main_block}_a"
+    assert roles[operand] == "operand"
+    assert sorted(roles.values()) == ["epilogue", "main", "operand"]
+    # The main block reads the operand at (m, k): no reshape arithmetic left in it.
+    main = tir.script(_block(staged.func, staged.main_block).body)
+    assert "//" not in main
+    assert "%" not in main
+    sch = Schedule(staged.func)
+    sch.compute_inline(operand)
+    assert tir.structural_equal(sch.func, default.func)
+
+
+def test_matmul_operand_blocks_leave_group_inputs_alone() -> None:
+    g, (x, y) = graph_with([(2, 5, 3), (2, 3, 4)])
+    g.set_outputs([g.op("MatMul", x, y)])
+    (default,) = check_graph(g)
+    (staged,) = check_graph(g, operand_blocks=True)
+    assert tir.structural_equal(staged.func, default.func)
+    # Only the computed operand gets a block: here B, transposed in the prologue.
+    g, (x, y) = graph_with([(2, 5, 3), (2, 4, 3)])
+    g.set_outputs([g.op("MatMul", x, g.op("Transpose", y, perm=(0, 2, 1)))])
+    (staged,) = check_graph(g, operand_blocks=True)
+    assert staged.main_block is not None
+    assert {n for n, r in _roles(staged.func).items() if r == "operand"} == {
+        f"{staged.main_block}_b"
+    }
+
+
 @pytest.mark.parametrize("op", ["MaxPool2d", "AvgPool2d"])
 @pytest.mark.parametrize("include_pad", [0, 1])
 @pytest.mark.parametrize("layout", ["NHWC", "NCHW"])
