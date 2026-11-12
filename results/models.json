@@ -1,0 +1,405 @@
+{
+  "environment": {
+    "commit": "bad21ec",
+    "cores": 10,
+    "date": "2026-11-12T06:09:19Z",
+    "load_average": [
+      5.99,
+      5.67,
+      5.64
+    ],
+    "machine": "Apple M4",
+    "memory_gb": 16,
+    "numpy": "2.5.4",
+    "os": "Darwin 27.0.0",
+    "performance_cores": 4,
+    "provisional": true,
+    "python": "3.13.7"
+  },
+  "models": [
+    {
+      "ablations": {
+        "c:sme": {
+          "no schedule": {
+            "agreement": {
+              "max_abs": 2.7418136596679688e-06,
+              "max_rel": 5.919877393676685e-07,
+              "top1": 1.0
+            },
+            "arena_bytes": 10436608,
+            "bytes_moved": 215740736,
+            "constant_bytes": 102121984,
+            "error": null,
+            "intermediate_bytes": 45266944,
+            "kernels": 56,
+            "latency": {
+              "median": 4.7192773958322505,
+              "p10": 3.9988376791654447,
+              "p90": 5.2819957041665475,
+              "runs": 12
+            },
+            "system": "no schedule",
+            "threads": 4,
+            "tuned_kernels": 0
+          }
+        }
+      },
+      "environment": {
+        "commit": "bad21ec",
+        "cores": 10,
+        "date": "2026-11-12T06:06:02Z",
+        "load_average": [
+          5.44,
+          4.68,
+          5.32
+        ],
+        "machine": "Apple M4",
+        "memory_gb": 16,
+        "numpy": "2.5.4",
+        "os": "Darwin 27.0.0",
+        "performance_cores": 4,
+        "provisional": true,
+        "python": "3.13.7"
+      },
+      "model": "resnet50",
+      "systems": [
+        {
+          "agreement": {
+            "max_abs": 0.0,
+            "max_rel": 0.0,
+            "top1": 1.0
+          },
+          "error": null,
+          "latency": {
+            "median": 0.031904020499496255,
+            "p10": 0.028264584000135075,
+            "p90": 0.03762587980127137,
+            "runs": 50
+          },
+          "system": "onnxruntime-cpu",
+          "threads": null
+        },
+        {
+          "agreement": {
+            "max_abs": 4.76837158203125e-06,
+            "max_rel": 1.0295438945524671e-06,
+            "top1": 1.0
+          },
+          "error": null,
+          "latency": {
+            "median": 0.03816822949920606,
+            "p10": 0.03461382529858383,
+            "p90": 0.051588742000240016,
+            "runs": 50
+          },
+          "system": "pytorch-cpu",
+          "threads": 4
+        },
+        {
+          "agreement": {
+            "max_abs": 5.245208740234375e-06,
+            "max_rel": 1.020241877089235e-06,
+            "top1": 1.0
+          },
+          "error": null,
+          "latency": {
+            "median": 0.035801083000478684,
+            "p10": 0.02946478720077721,
+            "p90": 0.05075236639750074,
+            "runs": 50
+          },
+          "system": "pytorch-mps",
+          "threads": 4
+        }
+      ]
+    },
+    {
+      "ablations": {
+        "c:sme": {
+          "no schedule": {
+            "agreement": {
+              "max_abs": 5.364418029785156e-06,
+              "max_rel": 1.483731282152869e-06,
+              "top1": 1.0
+            },
+            "arena_bytes": 6823936,
+            "bytes_moved": 68858048,
+            "constant_bytes": 13955072,
+            "error": null,
+            "intermediate_bytes": 26717568,
+            "kernels": 54,
+            "latency": {
+              "median": 0.18310243749874644,
+              "p10": 0.15319421250205778,
+              "p90": 0.21908198333512705,
+              "runs": 50
+            },
+            "system": "no schedule",
+            "threads": 4,
+            "tuned_kernels": 0
+          }
+        }
+      },
+      "environment": {
+        "commit": "bad21ec",
+        "cores": 10,
+        "date": "2026-11-12T06:05:35Z",
+        "load_average": [
+          4.18,
+          4.4,
+          5.24
+        ],
+        "machine": "Apple M4",
+        "memory_gb": 16,
+        "numpy": "2.5.4",
+        "os": "Darwin 27.0.0",
+        "performance_cores": 4,
+        "provisional": true,
+        "python": "3.13.7"
+      },
+      "model": "mobilenet_v2",
+      "systems": [
+        {
+          "agreement": {
+            "max_abs": 0.0,
+            "max_rel": 0.0,
+            "top1": 1.0
+          },
+          "error": null,
+          "latency": {
+            "median": 0.004844104001676897,
+            "p10": 0.004186003600989352,
+            "p90": 0.00563306669901067,
+            "runs": 50
+          },
+          "system": "onnxruntime-cpu",
+          "threads": null
+        },
+        {
+          "agreement": {
+            "max_abs": 1.3828277587890625e-05,
+            "max_rel": 3.987864241550163e-06,
+            "top1": 1.0
+          },
+          "error": null,
+          "latency": {
+            "median": 0.03690931249911955,
+            "p10": 0.03472552889979852,
+            "p90": 0.039045725301184574,
+            "runs": 50
+          },
+          "system": "pytorch-cpu",
+          "threads": 4
+        },
+        {
+          "agreement": {
+            "max_abs": 1.0967254638671875e-05,
+            "max_rel": 2.826545901550841e-06,
+            "top1": 1.0
+          },
+          "error": null,
+          "latency": {
+            "median": 0.0235300210006244,
+            "p10": 0.016394208999190595,
+            "p90": 0.02878682080190629,
+            "runs": 50
+          },
+          "system": "pytorch-mps",
+          "threads": 4
+        }
+      ]
+    },
+    {
+      "ablations": {
+        "c:sme": {
+          "no schedule": {
+            "agreement": {
+              "max_abs": 1.2151896953582764e-05,
+              "max_rel": 1.3989289271782683e-06,
+              "top1": null
+            },
+            "arena_bytes": 2424832,
+            "bytes_moved": 605891769,
+            "constant_bytes": 434776320,
+            "error": null,
+            "intermediate_bytes": 75563008,
+            "kernels": 134,
+            "latency": {
+              "median": 17.13038404166946,
+              "p10": 16.912957674999053,
+              "p90": 17.213293775002967,
+              "runs": 3
+            },
+            "system": "no schedule",
+            "threads": 4,
+            "tuned_kernels": 0
+          }
+        }
+      },
+      "environment": {
+        "commit": "bad21ec",
+        "cores": 10,
+        "date": "2026-11-12T06:07:37Z",
+        "load_average": [
+          6.43,
+          5.45,
+          5.56
+        ],
+        "machine": "Apple M4",
+        "memory_gb": 16,
+        "numpy": "2.5.4",
+        "os": "Darwin 27.0.0",
+        "performance_cores": 4,
+        "provisional": true,
+        "python": "3.13.7"
+      },
+      "model": "bert",
+      "systems": [
+        {
+          "agreement": {
+            "max_abs": 0.0,
+            "max_rel": 0.0,
+            "top1": null
+          },
+          "error": null,
+          "latency": {
+            "median": 0.04705633300000045,
+            "p10": 0.043467904199133045,
+            "p90": 0.059627145799822756,
+            "runs": 50
+          },
+          "system": "onnxruntime-cpu",
+          "threads": null
+        },
+        {
+          "agreement": {
+            "max_abs": 2.1219253540039062e-05,
+            "max_rel": 2.4427649200513234e-06,
+            "top1": null
+          },
+          "error": null,
+          "latency": {
+            "median": 0.06342441650122055,
+            "p10": 0.05141057939981693,
+            "p90": 0.06908323370225844,
+            "runs": 50
+          },
+          "system": "pytorch-cpu",
+          "threads": 4
+        },
+        {
+          "agreement": {
+            "max_abs": 8.64267349243164e-06,
+            "max_rel": 9.949463859759603e-07,
+            "top1": null
+          },
+          "error": null,
+          "latency": {
+            "median": 0.02106172899766534,
+            "p10": 0.02041881659970386,
+            "p90": 0.021967358597976272,
+            "runs": 50
+          },
+          "system": "pytorch-mps",
+          "threads": 4
+        }
+      ]
+    },
+    {
+      "ablations": {
+        "c:sme": {
+          "no schedule": {
+            "agreement": {
+              "max_abs": 0.0005645751953125,
+              "max_rel": 2.0989189886477983e-06,
+              "top1": null
+            },
+            "arena_bytes": 3538944,
+            "bytes_moved": 852076080,
+            "constant_bytes": 649462016,
+            "error": null,
+            "intermediate_bytes": 76283904,
+            "kernels": 111,
+            "latency": {
+              "median": 23.166592083332944,
+              "p10": 22.3303751166648,
+              "p90": 23.613372650000382,
+              "runs": 3
+            },
+            "system": "no schedule",
+            "threads": 4,
+            "tuned_kernels": 0
+          }
+        }
+      },
+      "environment": {
+        "commit": "bad21ec",
+        "cores": 10,
+        "date": "2026-11-12T06:09:19Z",
+        "load_average": [
+          5.99,
+          5.67,
+          5.64
+        ],
+        "machine": "Apple M4",
+        "memory_gb": 16,
+        "numpy": "2.5.4",
+        "os": "Darwin 27.0.0",
+        "performance_cores": 4,
+        "provisional": true,
+        "python": "3.13.7"
+      },
+      "model": "gpt2",
+      "systems": [
+        {
+          "agreement": {
+            "max_abs": 0.0,
+            "max_rel": 0.0,
+            "top1": null
+          },
+          "error": null,
+          "latency": {
+            "median": 0.06574937550067261,
+            "p10": 0.06128500359991449,
+            "p90": 0.06855403360168566,
+            "runs": 50
+          },
+          "system": "onnxruntime-cpu",
+          "threads": null
+        },
+        {
+          "agreement": {
+            "max_abs": 0.0002593994140625,
+            "max_rel": 9.643681839733126e-07,
+            "top1": null
+          },
+          "error": null,
+          "latency": {
+            "median": 0.0854840210013208,
+            "p10": 0.08227440000082424,
+            "p90": 0.09460156689892756,
+            "runs": 50
+          },
+          "system": "pytorch-cpu",
+          "threads": 4
+        },
+        {
+          "agreement": {
+            "max_abs": 0.000244140625,
+            "max_rel": 9.076406437395883e-07,
+            "top1": null
+          },
+          "error": null,
+          "latency": {
+            "median": 0.04042116650089156,
+            "p10": 0.034709191698493666,
+            "p90": 0.04741985799992108,
+            "runs": 50
+          },
+          "system": "pytorch-mps",
+          "threads": 4
+        }
+      ]
+    }
+  ]
+}
