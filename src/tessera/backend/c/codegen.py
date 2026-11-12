@@ -76,8 +76,8 @@ from tessera.tir.stmt import (
 PARALLEL_THREADS = "parallel.threads"
 
 # Local buffers up to this size live on the stack. Python threads other than
-# the main one have 512 KiB stacks on macOS, and the calling thread runs the
-# first chunk of every parallel loop.
+# the main one have 512 KiB stacks on macOS, and the calling thread works on
+# every parallel loop.
 STACK_LIMIT = 64 * 1024
 
 _STORAGE = {

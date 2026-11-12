@@ -29,6 +29,7 @@
 #if defined(__APPLE__)
 #include <mach/mach_time.h>
 #include <pthread/qos.h>
+#include <sys/sysctl.h>
 #endif
 
 #ifndef TSR_NUM_THREADS
@@ -232,24 +233,31 @@ typedef void (*tsr_task)(void* args, int64_t begin, int64_t end);
 
 /*
  * One pool of TSR_NUM_THREADS - 1 workers; the thread that starts a parallel
- * loop runs the first chunk itself. The iteration range is split statically
- * into one contiguous chunk per thread, which suits the loops templates
- * parallelize (equal-cost tiles).
+ * loop works on it too. Threads claim iterations from a shared counter, a
+ * few at a time (an eighth of an even share), so a thread that runs slower
+ * than the others (an efficiency core, a preempted core) takes fewer.
  *
  * A loop is published by writing the job and bumping `generation`. Workers
  * poll `generation` for TSR_SPIN_SECONDS, then sleep on `wake`; the publisher
  * only takes the mutex when some worker sleeps. Every worker acknowledges
  * every job through `pending`, so the job fields are never rewritten while a
  * worker may still read them.
+ *
+ * A worker that finds itself on an efficiency core when a loop starts leaves
+ * the loop to the others and sleeps until the next one, so that its wakeup
+ * lets the scheduler place it again. macOS moves threads that keep a shared
+ * SME unit busy to the efficiency cluster; a worker kept there would run an
+ * SME tile three times slower than the others (docs/cpu.md).
  */
 typedef struct {
   _Atomic(uint64_t) generation;
   _Atomic(int) pending;
   _Atomic(int) sleepers;
+  _Atomic(int64_t) next; /* the first iteration nobody has claimed */
   tsr_task task;
   void* args;
-  int64_t begin, end;
-  int nchunks;
+  int64_t end, grain;
+  int nchunks; /* how many threads may work on the loop, the caller included */
   int nthreads;
   bool forked;
   pthread_mutex_t mutex;
@@ -265,6 +273,32 @@ static tsr_pool_t tsr_pool = {
 static pthread_once_t tsr_pool_once = PTHREAD_ONCE_INIT;
 static _Thread_local bool tsr_in_parallel = false;
 
+/* On Apple silicon the efficiency cores are the first hw.perflevel1.logicalcpu
+ * logical CPUs; 0 elsewhere (no core is treated as one). Set at pool start. */
+static int tsr_efficiency_cpus = 0;
+
+static void tsr_find_efficiency_cores(void) {
+#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
+  int levels = 0, count = 0;
+  size_t len = sizeof levels;
+  if (sysctlbyname("hw.nperflevels", &levels, &len, NULL, 0) != 0 || levels != 2) return;
+  len = sizeof count;
+  if (sysctlbyname("hw.perflevel1.logicalcpu", &count, &len, NULL, 0) == 0) {
+    tsr_efficiency_cpus = count;
+  }
+#endif
+}
+
+static bool tsr_on_efficiency_core(void) {
+#if defined(__APPLE__) && (defined(__aarch64__) || defined(__arm64__))
+  size_t cpu = 0;
+  return tsr_efficiency_cpus > 0 && pthread_cpu_number_np(&cpu) == 0 &&
+         cpu < (size_t)tsr_efficiency_cpus;
+#else
+  return false;
+#endif
+}
+
 static inline void tsr_pause(void) {
 #if defined(__aarch64__) || defined(__arm64__)
   __asm__ __volatile__("yield");
@@ -273,20 +307,25 @@ static inline void tsr_pause(void) {
 #endif
 }
 
-static void tsr_run_chunk(int chunk) {
-  int64_t n = tsr_pool.end - tsr_pool.begin;
-  int64_t lo = tsr_pool.begin + n * chunk / tsr_pool.nchunks;
-  int64_t hi = tsr_pool.begin + n * (chunk + 1) / tsr_pool.nchunks;
-  if (lo < hi) tsr_pool.task(tsr_pool.args, lo, hi);
+/* Claim and run iterations of the current loop until none is left. */
+static void tsr_work(void) {
+  for (;;) {
+    int64_t lo = atomic_fetch_add_explicit(&tsr_pool.next, tsr_pool.grain, memory_order_relaxed);
+    if (lo >= tsr_pool.end) return;
+    int64_t hi = tsr_pool.end - lo < tsr_pool.grain ? tsr_pool.end : lo + tsr_pool.grain;
+    tsr_pool.task(tsr_pool.args, lo, hi);
+  }
 }
 
-static uint64_t tsr_wait_for_job(uint64_t seen) {
+/* Wait for a job newer than `seen`, polling for TSR_SPIN_SECONDS first when
+ * `poll` is set, and return its generation. */
+static uint64_t tsr_wait_for_job(uint64_t seen, bool poll) {
   uint64_t gen;
   double start = tsr_now();
   unsigned spins = 0;
   while ((gen = atomic_load_explicit(&tsr_pool.generation, memory_order_acquire)) == seen) {
     tsr_pause();
-    if (++spins % 256 == 0 && tsr_now() - start > TSR_SPIN_SECONDS) {
+    if (!poll || (++spins % 256 == 0 && tsr_now() - start > TSR_SPIN_SECONDS)) {
       pthread_mutex_lock(&tsr_pool.mutex);
       atomic_fetch_add(&tsr_pool.sleepers, 1);
       while ((gen = atomic_load(&tsr_pool.generation)) == seen) {
@@ -303,10 +342,12 @@ static uint64_t tsr_wait_for_job(uint64_t seen) {
 static void* tsr_worker(void* arg) {
   int id = (int)(intptr_t)arg;
   uint64_t seen = 0;
+  bool poll = true;
   tsr_in_parallel = true;
   for (;;) {
-    seen = tsr_wait_for_job(seen);
-    if (id < tsr_pool.nchunks) tsr_run_chunk(id);
+    seen = tsr_wait_for_job(seen, poll);
+    poll = !tsr_on_efficiency_core();
+    if (poll && id < tsr_pool.nchunks) tsr_work();
     atomic_fetch_sub_explicit(&tsr_pool.pending, 1, memory_order_release);
   }
   return NULL;
@@ -321,7 +362,7 @@ static void tsr_after_fork(void) {
 /* Ask the scheduler to keep the calling thread on the performance cores
  * (macOS places threads by QoS class). Every entry point of a generated
  * library calls it, once per thread: the caller runs the serial parts of a
- * model and the first chunk of every parallel loop. */
+ * model and works on every parallel loop. */
 static void tsr_prefer_performance_cores(void) {
 #if defined(__APPLE__)
   static _Thread_local bool done = false;
@@ -342,6 +383,7 @@ static void tsr_pool_start(void) {
 #if defined(__APPLE__)
   pthread_attr_set_qos_class_np(&attr, QOS_CLASS_USER_INTERACTIVE, 0);
 #endif
+  tsr_find_efficiency_cores();
   int started = 1;
   for (int i = 1; i < n; ++i) {
     pthread_t thread;
@@ -373,10 +415,12 @@ static void tsr_parallel_for_n(int64_t begin, int64_t end, int threads, tsr_task
   }
   tsr_pool.task = task;
   tsr_pool.args = args;
-  tsr_pool.begin = begin;
   tsr_pool.end = end;
   int most = threads < tsr_pool.nthreads ? threads : tsr_pool.nthreads;
   tsr_pool.nchunks = n < most ? (int)n : most;
+  int64_t grain = n / (8 * (int64_t)tsr_pool.nchunks);
+  tsr_pool.grain = grain > 1 ? grain : 1;
+  atomic_store_explicit(&tsr_pool.next, begin, memory_order_relaxed);
   atomic_store_explicit(&tsr_pool.pending, tsr_pool.nthreads - 1, memory_order_relaxed);
   atomic_fetch_add(&tsr_pool.generation, 1);
   if (atomic_load(&tsr_pool.sleepers) > 0) {
@@ -385,7 +429,7 @@ static void tsr_parallel_for_n(int64_t begin, int64_t end, int threads, tsr_task
     pthread_mutex_unlock(&tsr_pool.mutex);
   }
   tsr_in_parallel = true;
-  tsr_run_chunk(0);
+  tsr_work();
   tsr_in_parallel = false;
   while (atomic_load_explicit(&tsr_pool.pending, memory_order_acquire) > 0) tsr_pause();
   pthread_mutex_unlock(&tsr_pool.owner);
