@@ -319,3 +319,36 @@ def test_negating_a_negative_literal_is_not_a_decrement() -> None:
     case = bound_unary(8, RNG, lambda v: call("sigmoid", FloatImm(-0.5)), np.abs)
     source = generate(case.func).source
     assert "exp(-(-0.5f))" in source
+
+
+def test_thread_loops_with_an_offset() -> None:
+    out = Buffer("out", (16,))
+    t, u = Var("t"), Var("u")
+    body = seq(
+        [
+            loop(
+                t, 8, BufferStore(out, FloatImm(1.0), (t,)), ForKind.THREAD_BINDING, "thread.x", 8
+            ),
+            bound(u, 8, "thread.x", BufferStore(out, FloatImm(2.0), (u,))),
+        ]
+    )
+    source = generate(prim_func("offset", [out], body)).source
+    assert "const int t = (int)thread_pos.x;" in source
+    assert "const int t_1 = 8 + t;" in source
+    assert "out[t_1] = 1.0f;" in source
+    assert "out[t] = 2.0f;" in source
+
+
+def test_condition_on_a_substituted_thread_variable_is_divergent() -> None:
+    sh = Buffer("sh", (8,), scope="shared")
+    out = Buffer("out", (8,))
+    t, u = Var("t"), Var("u")
+    inner = seq([BufferStore(sh, FloatImm(1.0), (u,)), BufferStore(out, sh[7 - u], (u,))])
+    body = seq(
+        [
+            bound(t, 8, "thread.x", BufferStore(out, FloatImm(0.0), (t,))),
+            bound(u, 8, "thread.x", IfThenElse(lt(u, 4), inner)),
+        ]
+    )
+    with pytest.raises(CodegenError, match="barrier is needed inside a branch"):
+        generate(prim_func("divergent2", [out], body, alloc=[sh]))

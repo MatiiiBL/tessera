@@ -676,12 +676,6 @@ def _float_literal(value: float, dtype: DType) -> tuple[str, int]:
 
 
 @dataclass
-class _Binding:
-    tag: str
-    extent: int
-
-
-@dataclass
 class _Scope:
     divergent: bool = False  # inside a branch that depends on the thread
 
@@ -749,7 +743,8 @@ class _KernelWriter:
                     raise CodegenError(f"loop bound to {tag} needs a constant range")
                 extent = stmt.extent.value
                 analysis.bindings[tag] = max(analysis.bindings.get(tag, 1), extent)
-                self.axis_vars.setdefault(tag, stmt.loop_var)
+                if tag not in self.axis_vars:
+                    self.axis_vars[tag] = Var(stmt.loop_var.name, stmt.loop_var.dtype)
                 inner = active | {tag}
             self.check_bindings(stmt.body, analysis, inner)
             return
@@ -761,8 +756,8 @@ class _KernelWriter:
     def write(self) -> Kernel:
         analysis = self.analyze()
         func = self.func
-        threads = tuple(analysis.bindings.get(f"thread.{a}", 1) for a in "xyz")
-        grid = tuple(analysis.bindings.get(f"threadgroup.{a}", 1) for a in "xyz")
+        threads = _xyz(analysis.bindings, "thread")
+        grid = _xyz(analysis.bindings, "threadgroup")
         num_threads = threads[0] * threads[1] * threads[2]
         if num_threads > 1024:
             raise CodegenError(f"{num_threads} threads per threadgroup (Metal allows 1024)")
@@ -849,8 +844,8 @@ class _KernelWriter:
             source=source + "\n",
             params=tuple(params),
             scratch=tuple(scratch_buffers),
-            grid=grid,  # type: ignore[arg-type]
-            threads=threads,  # type: ignore[arg-type]
+            grid=grid,
+            threads=threads,
             threadgroup_memory=threadgroup_memory,
             index_type=self.index_type,
             helpers=frozenset(self.helpers),
@@ -895,7 +890,7 @@ class _KernelWriter:
                     self.stmt(other, inner)
                 self.close()
             case LetStmt(var, value, body):
-                if self.is_nonneg(value):
+                if self.is_nonneg(fold(self.subst_expr(value))):
                     self.nonneg.add(var)
                 if self.thread_dependent(value):
                     self.thread_vars.add(var)
@@ -913,19 +908,17 @@ class _KernelWriter:
         extent = fold(self.subst_expr(loop.extent))
         if self.is_nonneg(lo):
             self.nonneg.add(var)
-        name = self.namer(var)
         ctype = self.value_type(var.dtype)
         if loop.kind is ForKind.THREAD_BINDING:
             assert loop.thread_tag is not None
             assert isinstance(extent, IntImm)
             position = self.axis_vars[loop.thread_tag]
+            if loop.thread_tag.startswith("thread."):
+                self.thread_vars.add(var)
             if _is_int(lo, 0):
-                if var is not position:
-                    self.subst[var] = position
+                self.subst[var] = position
             else:
-                self.line(f"const {ctype} {name} = {self.expr_text(lo + position)};")
-                if loop.thread_tag.startswith("thread."):
-                    self.thread_vars.add(var)
+                self.line(f"const {ctype} {self.namer(var)} = {self.expr_text(lo + position)};")
             if extent.value < self.bindings[loop.thread_tag]:
                 guard = lt(var, fold(lo + extent))
                 self.open(f"if ({self.expr_text(guard)})")
@@ -935,6 +928,7 @@ class _KernelWriter:
             else:
                 self.stmt(loop.body, scope)
             return
+        name = self.namer(var)
         if loop.kind is ForKind.UNROLLED:
             self.line("#pragma unroll")
         end = fold(lo + extent) if not _is_int(lo, 0) else extent
@@ -1052,6 +1046,8 @@ class _KernelWriter:
                 return False
 
     def thread_dependent(self, expr: Expr) -> bool:
+        """Whether ``expr`` may differ between threads of one threadgroup."""
+        expr = self.subst_expr(expr)
         return any(isinstance(e, Var) and e in self.thread_vars for e in _walk_expr(expr))
 
     def access(self, buffer: Buffer, indices: Sequence[Expr]) -> str:
@@ -1247,6 +1243,11 @@ def _replace(expr: Expr, named: dict[Expr, Expr]) -> Expr:
             return Not(_replace(a, named))
         case _:
             return expr
+
+
+def _xyz(bindings: dict[str, int], level: str) -> tuple[int, int, int]:
+    x, y, z = (bindings.get(f"{level}.{axis}", 1) for axis in "xyz")
+    return x, y, z
 
 
 def _dims(dims: Sequence[int]) -> str:
