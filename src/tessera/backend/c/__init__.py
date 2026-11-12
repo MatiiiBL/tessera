@@ -12,6 +12,7 @@ from tessera.backend.base import Backend, Template
 from tessera.backend.c.executor import CModel, build_model, run_kernel
 from tessera.backend.c.measure import DEFAULT_TIMEOUT, build_harness
 from tessera.backend.c.measure import measure as measure_kernel
+from tessera.backend.c.templates import make_templates
 from tessera.plan import ExecutionPlan
 from tessera.target import Target
 from tessera.tir.stmt import PrimFunc
@@ -23,8 +24,9 @@ class CBackend:
     name = "c"
 
     def templates(self, target: Target | None = None) -> Mapping[str, Template]:
-        """One schedule template per pattern of ``tessera.plan.PATTERNS``."""
-        return {}
+        """One schedule template per pattern of ``tessera.plan.PATTERNS``,
+        specialized for ``target`` (the host when None)."""
+        return make_templates(target or Target.host())
 
     def build(self, plan: ExecutionPlan, target: Target) -> CModel:
         """Compile every kernel of ``plan`` into one library and wire it to the plan."""
