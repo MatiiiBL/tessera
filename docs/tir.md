@@ -130,7 +130,7 @@ NaN), values are rounded to float32 on every store, integer stores wrap.
 Buffers the function allocates start as NaN (floats), so reading an element
 nothing wrote shows up in the output; `check_bounds=True` checks every index.
 
-Speed, from `results/tir_interpreter.md` (regenerate with
+Speed, from `results/tir/interpreter.md` (regenerate with
 `uv run python -m tessera.tir.bench`). These numbers were taken on
 2026-11-12 while the machine ran other work (1-minute load average 6.8), so
 they are provisional:

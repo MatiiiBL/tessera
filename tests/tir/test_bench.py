@@ -13,6 +13,6 @@ def test_bench_writes_results(tmp_path: Path) -> None:
     assert [r.kernel for r in rows] == list(bench.KERNELS)
     assert all(r.executions > 0 for r in rows)
     assert all(r.run_seconds > 0 for r in rows)
-    data = json.loads((tmp_path / "tir_interpreter.json").read_text())
+    data = json.loads((tmp_path / "interpreter.json").read_text())
     assert len(data["rows"]) == len(rows)
-    assert "| matmul 64x64x64 |" in (tmp_path / "tir_interpreter.md").read_text()
+    assert "| matmul 64x64x64 |" in (tmp_path / "interpreter.md").read_text()

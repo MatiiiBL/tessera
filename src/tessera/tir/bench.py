@@ -1,6 +1,6 @@
 """Interpreter speed on a few kernels (``python -m tessera.tir.bench``).
 
-Writes ``results/tir_interpreter.json`` and ``results/tir_interpreter.md``:
+Writes ``results/tir/interpreter.json`` and ``results/tir/interpreter.md``:
 for each kernel, the time to translate and compile it to Python, the median
 time of a run, the number of times its innermost statement runs and the
 time per execution.
@@ -153,7 +153,7 @@ def main(out_dir: Path | None = None, repeat: int = 3) -> list[Row]:
 
     rows = [measure(name, build(), repeat) for name, build in KERNELS.items()]
     storage = storage_cost()
-    out = out_dir or results_dir()
+    out = out_dir or results_dir() / "tir"
     out.mkdir(parents=True, exist_ok=True)
     info = _machine()
     data = {
@@ -161,7 +161,7 @@ def main(out_dir: Path | None = None, repeat: int = 3) -> list[Row]:
         "rows": [{**asdict(r), "ns_per_execution": r.ns_per_execution} for r in rows],
         "storage_ns": storage,
     }
-    (out / "tir_interpreter.json").write_text(json.dumps(data, indent=2) + "\n")
+    (out / "interpreter.json").write_text(json.dumps(data, indent=2) + "\n")
     lines = [
         "# Loop-IR interpreter speed",
         "",
@@ -186,7 +186,7 @@ def main(out_dir: Path | None = None, repeat: int = 3) -> list[Row]:
         "|---|---:|",
         *(f"| {name} | {ns:.0f} |" for name, ns in storage.items()),
     ]
-    (out / "tir_interpreter.md").write_text("\n".join(lines) + "\n")
+    (out / "interpreter.md").write_text("\n".join(lines) + "\n")
     return rows
 
 
