@@ -30,10 +30,13 @@ import math
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from tessera.dtype import DType
+from tessera.tir import intrin
 from tessera.tir.expr import (
     MATH_INTRINSICS,
     AddressOf,
@@ -590,7 +593,7 @@ def _fragment_count(buffer: Buffer) -> int:
 
 
 def _emit_fill(writer: _KernelWriter, call: Call) -> str:
-    frag, value = call.args
+    frag, value = call.args[:2]
     ctype = _BUFFER_TYPES[_fragment_dtype(frag)]
     return (
         f"{writer.fragment(frag)} = make_filled_simdgroup_matrix<{ctype}, 8, 8>"
@@ -604,7 +607,7 @@ def _fragment_dtype(arg: Expr) -> DType:
 
 
 def _emit_load(writer: _KernelWriter, call: Call) -> str:
-    frag, src, ld, transpose = call.args
+    frag, src, ld, transpose = call.args[:4]
     text = f"simdgroup_load({writer.fragment(frag)}, {writer.expr(src)[0]}, {writer.expr(ld)[0]}"
     if isinstance(transpose, IntImm) and transpose.value:
         text += ", ulong2(0, 0), true"
@@ -612,12 +615,12 @@ def _emit_load(writer: _KernelWriter, call: Call) -> str:
 
 
 def _emit_store(writer: _KernelWriter, call: Call) -> str:
-    frag, dst, ld = call.args
+    frag, dst, ld = call.args[:3]
     return f"simdgroup_store({writer.fragment(frag)}, {writer.expr(dst)[0]}, {writer.expr(ld)[0]});"
 
 
 def _emit_mma(writer: _KernelWriter, call: Call) -> str:
-    d, a, b, c = (writer.fragment(x) for x in call.args)
+    d, a, b, c = (writer.fragment(x) for x in call.args[:4])
     return f"simdgroup_multiply_accumulate({d}, {a}, {b}, {c});"
 
 
@@ -647,27 +650,82 @@ register_intrinsic(
 )
 
 
+# In the IR, each call also carries the row stride of its tile buffers (the last
+# arguments), which the interpreter's references need to find a tile in a flat
+# buffer. The generated code addresses SIMD-group matrices by tile instead.
+
+
+def _ld(frag: AddressOf) -> IntImm:
+    return IntImm(frag.buffer.shape[-1] if frag.buffer.ndim else 1)
+
+
 def simdgroup_fill(frag: AddressOf, value: Expr) -> Evaluate:
     """Set the 8 x 8 tile at ``frag`` to ``value``."""
-    return Evaluate(Call("metal.simdgroup_fill", (frag, value), DType.int32))
+    return Evaluate(Call("metal.simdgroup_fill", (frag, value, _ld(frag)), DType.int32))
 
 
 def simdgroup_load(
     frag: AddressOf, src: AddressOf, ld: int, *, transpose: bool = False
 ) -> Evaluate:
     """Load the 8 x 8 tile at ``src`` (rows ``ld`` elements apart) into ``frag``."""
-    args = (frag, src, IntImm(ld), IntImm(int(transpose)))
+    args = (frag, src, IntImm(ld), IntImm(int(transpose)), _ld(frag))
     return Evaluate(Call("metal.simdgroup_load", args, DType.int32))
 
 
 def simdgroup_store(frag: AddressOf, dst: AddressOf, ld: int) -> Evaluate:
     """Store the tile ``frag`` at ``dst`` (rows ``ld`` elements apart)."""
-    return Evaluate(Call("metal.simdgroup_store", (frag, dst, IntImm(ld)), DType.int32))
+    args = (frag, dst, IntImm(ld), _ld(frag))
+    return Evaluate(Call("metal.simdgroup_store", args, DType.int32))
 
 
 def simdgroup_mma(d: AddressOf, a: AddressOf, b: AddressOf, c: AddressOf) -> Evaluate:
     """``d = a @ b + c`` on 8 x 8 tiles."""
-    return Evaluate(Call("metal.simdgroup_mma", (d, a, b, c), DType.int32))
+    args = (d, a, b, c, _ld(d), _ld(a), _ld(b), _ld(c))
+    return Evaluate(Call("metal.simdgroup_mma", args, DType.int32))
+
+
+def _tile(pointer: intrin.Pointer, ld: int) -> npt.NDArray[Any]:
+    return pointer.view((8, 8), (ld, 1))
+
+
+def _fill_reference(frag: intrin.Pointer, value: float, ld: int) -> None:
+    _tile(frag, ld)[...] = value
+
+
+def _load_reference(
+    frag: intrin.Pointer, src: intrin.Pointer, ld: int, transpose: int, frag_ld: int
+) -> None:
+    tile = _tile(src, ld)
+    _tile(frag, frag_ld)[...] = tile.T if transpose else tile
+
+
+def _store_reference(frag: intrin.Pointer, dst: intrin.Pointer, ld: int, frag_ld: int) -> None:
+    _tile(dst, ld)[...] = _tile(frag, frag_ld)
+
+
+def _mma_reference(
+    d: intrin.Pointer,
+    a: intrin.Pointer,
+    b: intrin.Pointer,
+    c: intrin.Pointer,
+    ld_d: int,
+    ld_a: int,
+    ld_b: int,
+    ld_c: int,
+) -> None:
+    product = _tile(a, ld_a) @ _tile(b, ld_b) + _tile(c, ld_c)
+    _tile(d, ld_d)[...] = product
+
+
+# The interpreter runs these calls through their references.
+for _name, _reference in (
+    ("metal.simdgroup_fill", _fill_reference),
+    ("metal.simdgroup_load", _load_reference),
+    ("metal.simdgroup_store", _store_reference),
+    ("metal.simdgroup_mma", _mma_reference),
+):
+    if _name not in intrin.registered():
+        intrin.register(_name, reference=_reference)
 
 
 # -- expressions ----------------------------------------------------------------------

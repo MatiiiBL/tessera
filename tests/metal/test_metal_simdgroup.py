@@ -117,3 +117,12 @@ def test_simdgroup_matmul_is_correct(
     case = matmul_simdgroup(m, n, k, np.random.default_rng(k), groups=groups, frags=frags)
     result, reference = run_case(case)
     assert_close(result, reference, rtol=1e-4, atol=1e-4)
+
+
+def test_the_interpreter_runs_simdgroup_calls() -> None:
+    import tessera.tir as tir
+
+    case = matmul_simdgroup(32, 64, 24, np.random.default_rng(5), groups=(2, 1), frags=(2, 4))
+    result = np.zeros((32, 64), np.float32)
+    tir.interpret(case.func, [*case.inputs, result])
+    assert_close(result, case.inputs[0].astype(np.float64) @ case.inputs[1], rtol=1e-5, atol=1e-5)
