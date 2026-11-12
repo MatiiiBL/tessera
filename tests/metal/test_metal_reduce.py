@@ -36,7 +36,7 @@ def test_wide_reductions_use_simd_functions_and_threadgroup_memory() -> None:
     assert "if (tx % 32 == 0) {" in source
     assert "out_red[tx / 32] = out_partial;" in source
     # One thread writes the row: the init value combined with the total.
-    assert "if (tx == 0 && vi_1 < 4) {\n    out[vi_1] = 0.0f + out_partial;" in source
+    assert "if (tx == 0 && vi_1 < 4) {\n    out[vi_1] = out_partial;" in source
 
 
 def test_the_write_has_its_own_block_variables() -> None:

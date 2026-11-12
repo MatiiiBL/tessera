@@ -454,8 +454,9 @@ def interval(expr: Expr, ranges: dict[Var, tuple[int, int]]) -> tuple[int, int] 
     return None
 
 
-def _subtract(index: Expr, offset: Affine, canonical: dict[Var, Affine]) -> Expr:
-    """``index - offset``, cancelling the terms of ``index`` that the offset covers."""
+def _subtract(index: Expr, offset: Affine, canonical: dict[Var, Affine]) -> Expr | None:
+    """``index - offset``, cancelling the terms of ``index`` that the offset covers;
+    None if ``index`` does not contain the offset's terms."""
     fixed = {v for v in offset if v is not None}
     expand = _expander(canonical)
     kept: list[tuple[int, Expr]] = []
@@ -468,9 +469,7 @@ def _subtract(index: Expr, offset: Affine, canonical: dict[Var, Affine]) -> Expr
         else:
             kept.append((sign, term))
     if any(covered.get(v, 0) != c for v, c in offset.items() if v is not None):
-        # The region analysis only compacts a dimension whose accesses all have
-        # the offset's fixed part, so this means the two analyses disagree.
-        raise RuntimeError(f"compaction offset {offset} does not match index {index}")
+        return None
     out: Expr | None = None
     for sign, term in kept:
         if out is None:
@@ -514,7 +513,12 @@ class _Rewriter:
             # The offset is in loop variables, so the index is too: `by * 16 + ty`
             # minus `by * 16` reads as `ty`.
             index = substitute(index, self.bindings)
-            out.append(_subtract(index, offset, self.canonical))
+            shifted = _subtract(index, offset, self.canonical)
+            if shifted is None:
+                # The region analysis only compacts a dimension whose accesses all
+                # have the offset's fixed part, so this means the analyses disagree.
+                raise RuntimeError(f"compaction offset {offset} does not match index {index}")
+            out.append(shifted)
         return c.new, tuple(out)
 
     def expr(self, e: Expr) -> Expr:
@@ -541,13 +545,21 @@ class _Rewriter:
                 return e
 
     def region(self, r: BufferRegion) -> BufferRegion:
+        """A block's declared region, moved like the accesses; one that is not an
+        access of a single thread (a whole-buffer region) becomes the whole new buffer."""
         c = self.plan.get(r.buffer)
         if c is None:
             return r
-        mins = self.index(r.buffer, [x.min for x in r.region])[1]
-        return BufferRegion(
-            c.new, tuple(Range(m, x.extent) for m, x in zip(mins, r.region, strict=True))
-        )
+        ranges: list[Range] = []
+        for x, offset, size in zip(r.region, c.offsets, c.new.shape, strict=True):
+            start = substitute(self.expr(x.min), self.bindings)
+            shifted = _subtract(start, offset, self.canonical) if offset != {None: 0} else start
+            fits = isinstance(x.extent, IntImm) and x.extent.value <= size
+            if shifted is None or not fits:
+                ranges.append(Range.of(size))
+            else:
+                ranges.append(Range(shifted, x.extent))
+        return BufferRegion(c.new, tuple(ranges))
 
     def stmt(self, s: Stmt) -> Stmt:
         match s:
@@ -844,6 +856,11 @@ class _ReductionLowering:
         fresh: dict[Var, Expr] = dict(renamed)
         indices = tuple(substitute(i, fresh) for i in indices)
         base = substitute(init_value, fresh) if init_value is not None else BufferLoad(out, indices)
+        # Starting from the operator's identity changes nothing: store the total.
+        if init_value is not None and init_value == identity(op, dtype):
+            total: Expr = partial[zero]
+        else:
+            total = Binary(op, base, partial[zero])  # type: ignore[arg-type]
         # Every thread holds the total now. A local result is each thread's own copy,
         # so all of them write it; a shared or global one gets a single writer.
         write_pred: Expr = TRUE
@@ -856,7 +873,7 @@ class _ReductionLowering:
             tuple(IterVar(renamed[iv.var], iv.dom, iv.kind) for iv, _ in spatial),
             (BufferRegion.full(partial),),
             (BufferRegion.full(out),),
-            BufferStore(out, Binary(op, base, partial[zero]), indices),  # type: ignore[arg-type]
+            BufferStore(out, total, indices),
         )
         combine = seq_of(
             Evaluate(
