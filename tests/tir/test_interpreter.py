@@ -32,6 +32,7 @@ from tessera.tir.stmt import (
     For,
     ForKind,
     PrimFunc,
+    SeqStmt,
     Stmt,
 )
 
@@ -186,3 +187,37 @@ def test_read_only_inputs_are_not_written() -> None:
     out = np.zeros((3, 3), np.float32)
     tir.interpret(w.func, [*w.inputs, out])
     np.testing.assert_allclose(out, w.expected(), rtol=1e-5, atol=1e-5)
+
+
+def test_local_buffers_outside_thread_loops_are_per_thread() -> None:
+    # acc[0] is one register per thread: each of the 4 threads accumulates its own row.
+    x, out = Buffer("X", (4, 3)), Buffer("out", (4,))
+    acc = Buffer("acc", (1,), scope="local")
+
+    def threads(body: Callable[[Var], Stmt]) -> Stmt:
+        t = Var("t")
+        return For(t, IntImm(0), IntImm(4), ForKind.THREAD_BINDING, body(t), "thread.x")
+
+    k = Var("k")
+    zero = IntImm(0)
+    body = SeqStmt(
+        (
+            threads(lambda t: BufferStore(acc, FloatImm(0.0), (zero,))),
+            For(
+                k,
+                IntImm(0),
+                IntImm(3),
+                ForKind.SERIAL,
+                threads(lambda t: BufferStore(acc, acc[0] + x[t, k], (zero,))),
+            ),
+            threads(lambda t: BufferStore(out, acc[0], (t,))),
+        )
+    )
+    f = PrimFunc(
+        "rows", (x, out), BlockRealize((), TRUE, Block("root", (), (), (), body, None, (acc,)))
+    )
+    tir.verify(f)
+    data = np.arange(12, dtype=np.float32).reshape(4, 3)
+    res = np.zeros(4, np.float32)
+    tir.interpret(f, [data, res])
+    np.testing.assert_array_equal(res, data.sum(axis=1))

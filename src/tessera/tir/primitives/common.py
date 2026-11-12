@@ -364,6 +364,41 @@ def check_reductions(func: PrimFunc) -> None:
                 )
 
 
+def check_thread_locals(func: PrimFunc) -> None:
+    """Every ``local`` buffer used inside a ``thread.*`` loop is used only inside that
+    one loop: each thread has its own copy of a local buffer (Metal), so a value
+    written by one thread cannot be read outside it."""
+    owners: dict[Buffer, set[int | None]] = {}
+    names: dict[int, str] = {}
+    for path in iter_paths(func.body):
+        node = path[-1]
+        if not isinstance(node, BlockRealize) or not is_leaf_block(node.block):
+            continue
+        outer = next(
+            (
+                n
+                for n in path
+                if isinstance(n, For) and n.thread_tag and n.thread_tag.startswith("thread.")
+            ),
+            None,
+        )
+        f = facts(node.block)
+        for buf in f.reads | f.writes:
+            if buf.scope != "local":
+                continue
+            owners.setdefault(buf, set()).add(None if outer is None else id(outer))
+            if outer is not None:
+                names[id(outer)] = outer.loop_var.name
+    for buf, where in owners.items():
+        threads = [w for w in where if w is not None]
+        if threads and len(where) > 1:
+            loops = ", ".join(sorted(names[w] for w in threads))
+            raise ScheduleError(
+                f"local buffer {buf.name} is used inside thread loop {loops} and elsewhere; "
+                "each thread would see only its own copy"
+            )
+
+
 def refresh_regions(stmt: Stmt) -> Stmt:
     """Recompute the read/write regions of every leaf block in ``stmt``."""
 

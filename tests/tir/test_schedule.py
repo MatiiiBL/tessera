@@ -189,6 +189,16 @@ def test_bind_and_cross_thread_reduction() -> None:
     check(s, w)
 
 
+def test_thread_loops_keep_local_buffers_inside() -> None:
+    w = box_filter(2, 2, 2)
+    s = Schedule(w.func)
+    s.cache_write("pad", 0, "local")
+    fused = s.fuse(*s.get_loops("pad"))
+    refuses(s, "each thread would see only its own copy", s.bind, fused, "thread.x")
+    s.bind(fused, "threadgroup.x")
+    check(s, w)
+
+
 def test_bind_refuses_same_axis_twice_on_a_path() -> None:
     s = Schedule(matmul_bias_relu(4, 4, 4).func)
     i, j = s.get_loops("relu")

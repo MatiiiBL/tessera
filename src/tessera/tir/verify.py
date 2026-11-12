@@ -109,9 +109,9 @@ class _Verifier:
         elif isinstance(s, IfThenElse):
             self.expr(s.condition, visible, buffers, an)
             self.want_bool(s.condition, "if condition")
-            self.stmt(s.then_case, visible, buffers, an)
+            self.stmt(s.then_case, visible, buffers, _assume(an, s.condition))
             if s.else_case is not None:
-                self.stmt(s.else_case, visible, buffers, an)
+                self.stmt(s.else_case, visible, buffers, _assume(an, Not(s.condition)))
         elif isinstance(s, LetStmt):
             self.expr(s.value, visible, buffers, an)
             if s.value.dtype != s.var.type:
@@ -308,6 +308,28 @@ class _ExprChecker(ExprVisitor):
 
     def visit_address_of(self, e: AddressOf) -> None:
         self.v.access(e.buffer, e.indices, self.visible, self.buffers, self.an, "address of")
+
+
+def _assume(an: Analyzer, cond: Expr) -> Analyzer:
+    """``an`` with the ranges of variables narrowed by the conjuncts ``v < c`` and
+    ``v >= c`` of ``cond`` (the branch of an ``if`` where ``cond`` holds)."""
+    out = an.copy()
+    stack = [an.simplify(cond)]
+    while stack:
+        c = stack.pop()
+        if isinstance(c, Logical) and c.op == "and":
+            stack.extend((c.a, c.b))
+            continue
+        if not (isinstance(c, Compare) and isinstance(c.a, Var) and isinstance(c.b, IntImm)):
+            continue
+        r = out.bound(c.a)
+        if c.op == "lt":
+            hi = c.b.value - 1 if r.hi is None else min(r.hi, c.b.value - 1)
+            out.bind(c.a, Interval(r.lo, hi))
+        elif c.op == "ge":
+            lo = c.b.value if r.lo is None else max(r.lo, c.b.value)
+            out.bind(c.a, Interval(lo, r.hi))
+    return out
 
 
 # Bindings the interval reasoning cannot bound are checked by enumerating the

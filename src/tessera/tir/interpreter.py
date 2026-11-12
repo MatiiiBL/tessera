@@ -14,8 +14,12 @@ domain, ``floordiv``/``floormod`` round toward negative infinity, integer
 ``div`` truncates, float arithmetic follows IEEE (division by zero gives
 infinities, ``exp`` overflows to infinity, ``min``/``max`` propagate NaN).
 Arithmetic is done in double precision and rounded to float32 on every
-store. Buffers a function allocates start filled with NaN (floats) or
-zeros, so reading an element nothing wrote shows up in the result.
+store. Thread-bound loops run one after the other, which matches Metal for
+the IR the schedule produces, with one rule taken from Metal: a ``local``
+buffer allocated outside the ``thread.*`` loops belongs to each thread, so
+the interpreter keeps one copy of it per thread index. Buffers a function
+allocates start filled with NaN (floats) or zeros, so reading an element
+nothing wrote shows up in the result.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ import math
 import re
 import weakref
 from collections.abc import Callable, Sequence
+from math import prod
 from typing import Any
 
 import numpy as np
@@ -49,7 +54,7 @@ from tessera.tir.expr import (
     Select,
     Var,
 )
-from tessera.tir.functor import StmtVisitor
+from tessera.tir.functor import StmtVisitor, walk_stmts
 from tessera.tir.stmt import (
     TRUE,
     Block,
@@ -281,6 +286,12 @@ class _Gen:
         self.views: dict[Buffer, str] = {}
         self.an = Analyzer()
         self.addressed = _addressed_buffers(func.body)
+        # Metal semantics: a local buffer allocated outside the thread loops belongs
+        # to each thread, so it gets one copy per thread index.
+        self.thread_extents = _thread_extents(func.body)
+        self.copies = prod(self.thread_extents.values())
+        self.per_thread: set[Buffer] = set()
+        self.threads: dict[str, str] = {}
 
     # names -----------------------------------------------------------------
 
@@ -391,6 +402,22 @@ class _Gen:
         return f"{key}({', '.join(args)})"
 
     def flat(self, buf: Buffer, indices: tuple[Expr, ...]) -> str:
+        if buf in self.per_thread:
+            return f"{self.thread_index()} * {buf.numel} + {self.flat_in_copy(buf, indices)}"
+        return self.flat_in_copy(buf, indices)
+
+    def thread_index(self) -> str:
+        """The current thread's position among all threads of the function."""
+        out = "0"
+        for tag in ("thread.z", "thread.y", "thread.x"):
+            extent = self.thread_extents.get(tag)
+            if extent is None:
+                continue
+            here = self.threads.get(tag, "0")
+            out = f"({out} * {extent} + {here})"
+        return out
+
+    def flat_in_copy(self, buf: Buffer, indices: tuple[Expr, ...]) -> str:
         if not indices:
             return "0"
         if self.check_bounds:
@@ -464,7 +491,16 @@ class _Gen:
         self.emit(f"for {var} in range({bounds}):")
         self.depth += 1
         self.live.append(var)
+        tag = s.thread_tag if s.thread_tag and s.thread_tag.startswith("thread.") else None
+        outer_thread = self.threads.get(tag) if tag else None
+        if tag:
+            self.threads[tag] = var
         self.nested(s.body)
+        if tag:
+            if outer_thread is None:
+                del self.threads[tag]
+            else:
+                self.threads[tag] = outer_thread
         self.live.pop()
         self.depth -= 1
 
@@ -504,7 +540,11 @@ class _Gen:
         pushed = 0
         for buf in b.alloc_buffers:
             name = self.name(buf, "b_")
-            self.emit(f"{name} = _alloc({_TYPECODE[buf.dtype]!r}, {buf.numel})")
+            size = buf.numel
+            if buf.scope == "local" and self.thread_extents and not self.threads:
+                self.per_thread.add(buf)
+                size *= self.copies
+            self.emit(f"{name} = _alloc({_TYPECODE[buf.dtype]!r}, {size})")
             self.live.append(name)
             pushed += 1
             if buf in self.addressed:
@@ -545,6 +585,16 @@ class _Gen:
         # The kernel goes last so the outlined functions are defined when it runs.
         ordered = self.functions[1:] + self.functions[:1]
         return "\n\n".join("\n".join(fn) for fn in ordered) + "\n"
+
+
+def _thread_extents(s: Stmt) -> dict[str, int]:
+    """The number of threads along each ``thread.*`` axis (the largest bound loop)."""
+    out: dict[str, int] = {}
+    for node in walk_stmts(s):
+        if isinstance(node, For) and node.thread_tag and node.thread_tag.startswith("thread."):
+            assert isinstance(node.extent, IntImm)
+            out[node.thread_tag] = max(out.get(node.thread_tag, 1), node.extent.value)
+    return out
 
 
 def _narrower(dst: DType, src: DType) -> bool:
