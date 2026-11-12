@@ -187,6 +187,28 @@ def schedules_study(quick: bool) -> list[Row]:
             rows.append(
                 Row("schedules", f"{m}x{n}x{k}", label, seconds, 2.0 * m * n * k / seconds * 1e-9)
             )
+    if host_supports("neon"):
+        rows += _neon_conv_choice(quick)
+    return rows
+
+
+def _neon_conv_choice(quick: bool) -> list[Row]:
+    """NEON convolutions computed by the implicit-GEMM microkernel (strips of
+    output channels, one per thread) and by the generated loops."""
+    target = Target(isa="neon", num_threads=performance_cores())
+    variants: dict[str, dict[str, KnobValue]] = {
+        "conv: microkernel": {"kernel": "micro"},
+        "conv: generated loops": {"kernel": "loops"},
+    }
+    rows = []
+    for name, size, c, o, k, stride in [RESNET50[i] for i in ((2,) if quick else (2, 16, 17))]:
+        build = conv_graph(size, c, o, k, stride)
+        funcs = [configured(build, target, v) for v in variants.values()]
+        times = interleaved(funcs, target, 3 if quick else 8)
+        flops = conv_flops(size, c, o, k, stride)
+        case = f"{name}, neon t{target.threads}"
+        for label, seconds in zip(variants, times, strict=True):
+            rows.append(Row("schedules", case, label, seconds, flops / seconds * 1e-9))
     return rows
 
 
@@ -419,11 +441,13 @@ NOTES = {
         "them for each target."
     ),
     "schedules": (
-        "The matmul template's generated loops (c:generic, one thread) with the "
+        "Matmul rows: the matmul template's generated loops (c:generic, one thread) with the "
         "column strips of B outside the row tiles of A (the default, B packed into "
         "a contiguous local copy per strip when it fits the 64 KiB stack limit), "
-        "without the packing, and with the row tiles outside. Each variant's best "
-        "time over interleaved rounds."
+        "without the packing, and with the row tiles outside. Convolution rows: a "
+        "ResNet-50 layer on NEON with every thread, computed by the implicit-GEMM "
+        "microkernel or by the generated loops. Each variant's best time over "
+        "interleaved rounds."
     ),
     "sme_threads": (
         "The SME GEMM microkernel called from one to four threads, each on its own band "
@@ -441,7 +465,7 @@ NOTES = {
 TITLES = {
     "gemm": "GEMM throughput",
     "conv": "ResNet-50 convolutions",
-    "schedules": "Matmul loop order and packing",
+    "schedules": "Schedule choices",
     "sme_threads": "SME and threads",
     "sme_template": "SME tiles and threads",
 }
