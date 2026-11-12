@@ -122,7 +122,7 @@ def _sink_axis_op(rw: Rewriter, node: Node) -> Value | None:
         return None
     rank = node.output.type.rank
     perm = _common_perm(node, rank)
-    if perm is None:
+    if perm is None or rank == 0:
         return None
     src = _transposed(node.inputs[0])
     match node.op:

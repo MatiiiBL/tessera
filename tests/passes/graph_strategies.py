@@ -66,8 +66,14 @@ def _step(draw: Draw, g: Graph, pool: list[Value], import_ops: bool) -> Value | 
                 "concat",
                 "pad",
                 "decomposed",
+                "decomposed",
+                "rows_gemm",
             ]
-            + (["gemm", "flatten", "squeeze", "identity", "batchnorm"] if import_ops else [])
+            + (
+                ["gemm", "flatten", "squeeze", "identity", "batchnorm", "conv_bn", "rows_gemm"]
+                if import_ops
+                else []
+            )
         )
     )
     match choice:
@@ -149,6 +155,23 @@ def _step(draw: Draw, g: Graph, pool: list[Value], import_ops: bool) -> Value | 
             if not s:
                 return None
             return _decomposed(draw, g, x)
+        case "rows_gemm":
+            # An exporter's Linear on a 3-D input: merge rows, Gemm/MatMul, split rows again.
+            if len(s) < 3:
+                return None
+            rows = g.op("Reshape", x, shape=(prod(s[:-1]), s[-1]))
+            n = draw(st.integers(1, 5))
+            y = g.op("MatMul", rows, _const(draw, g, (s[-1], n), "w"))
+            y = g.op("Add", y, _const(draw, g, (n,), "b"))
+            return g.op("Reshape", y, shape=(*s[:-1], n))
+        case "conv_bn":
+            if len(s) != 4 or min(s[2:]) < 3:
+                return None
+            groups = 2 if s[1] % 2 == 0 and draw(st.booleans()) else 1
+            o = 2 * draw(st.integers(1, 3))
+            y = g.op("Conv2d", x, _const(draw, g, (o, s[1] // groups, 3, 3), "w"), groups=groups)
+            params = [_const(draw, g, (o,), n) for n in ("scale", "shift", "mean")]
+            return g.op("BatchNorm", y, *params, _const(draw, g, (o,), "var", positive=True))
         case "gemm":
             if len(s) != 2:
                 return None
@@ -174,8 +197,19 @@ def _step(draw: Draw, g: Graph, pool: list[Value], import_ops: bool) -> Value | 
 
 
 def _decomposed(draw: Draw, g: Graph, x: Value) -> Value:
-    """A LayerNorm or GELU spelled out with primitive operators, as exporters emit them."""
-    if draw(st.booleans()):
+    """A LayerNorm, GELU or SiLU spelled out with primitive operators, as exporters emit them."""
+    kind = draw(st.sampled_from(["layernorm", "gelu", "gelu_tanh", "silu"]))
+    if kind == "silu":
+        return g.op("Mul", x, g.op("Sigmoid", x))
+    if kind == "gelu_tanh":
+        cube = g.op("Pow", x, g.add_constant(np.float32(3.0), "three"))
+        inner = g.op("Add", x, g.op("Mul", cube, g.add_constant(np.float32(0.044715), "k")))
+        scale = g.add_constant(np.float32(np.sqrt(2 / np.pi)), "c")
+        t = g.op(
+            "Add", g.op("Tanh", g.op("Mul", scale, inner)), g.add_constant(np.float32(1), "one")
+        )
+        return g.op("Mul", g.op("Mul", g.add_constant(np.float32(0.5), "half"), x), t)
+    if kind == "layernorm":
         axis = len(x.shape) - 1
         mean = g.op("ReduceMean", x, axes=(axis,))
         centered = g.op("Sub", x, mean)
