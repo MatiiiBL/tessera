@@ -397,9 +397,10 @@ def _not(n: OnnxNode, x: Value) -> Value:
 
 @converter("LessOrEqual", "GreaterOrEqual")
 def _compare_or_equal(n: OnnxNode) -> list[Value]:
+    # Less or Equal, not Not(Greater): every comparison with a NaN is false.
     a, b = n.input(0), n.input(1)
-    strict = n.op_("Greater" if n.op == "LessOrEqual" else "Less", a, b)
-    return [_not(n, strict)]
+    strict = n.op_("Less" if n.op == "LessOrEqual" else "Greater", a, b)
+    return [n.op_("Where", strict, n.const(True), n.op_("Equal", a, b))]
 
 
 @converter("Not", "And", "Or", "Xor")

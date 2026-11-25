@@ -83,6 +83,22 @@ CASES: dict[str, tuple[list[onnx.NodeProto], dict[str, Array], dict[str, Array],
         {},
         17,
     ),
+    "or_equal_comparisons_with_nan": (
+        [
+            node("LessOrEqual", ["a", "b"], ["le"]),
+            node("GreaterOrEqual", ["a", "b"], ["ge"]),
+            node("Cast", ["le"], ["lei"], to=TensorProto.INT64),
+            node("Cast", ["ge"], ["gei"], to=TensorProto.INT64),
+            node("Add", ["lei", "lei"], ["le2"]),
+            node("Add", ["le2", "gei"], ["y"]),  # 2 * le + ge
+        ],
+        {
+            "a": np.array([np.nan, 1, 2, 3, np.nan, 1], np.float32),
+            "b": np.array([1, np.nan, 2, 1, np.nan, 3], np.float32),
+        },
+        {},
+        17,
+    ),
     "logic": (
         [
             node("Greater", ["a", "b"], ["g"]),
