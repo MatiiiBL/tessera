@@ -338,12 +338,17 @@ def tune_command(
         for task in comp.tasks.values():
             merge_task(by_key, task)
     tasks = list(by_key.values())
-    if new_only:
-        logged = {r.task for r in TuningLog(log or _default_log(comp)).records()}
-        tasks = [t for t in tasks if t.key not in logged]
     if not tasks:
         console.print("nothing to tune: no kernel of these models has a template")
         return
+    if new_only:
+        # Only this machine's records count: a log may hold other targets' (CPUs, threads).
+        records = TuningLog(log or _default_log(comp)).records()
+        logged = {r.task for r in records if r.target == comp.target.key}
+        tasks = [t for t in tasks if t.key not in logged]
+        if not tasks:
+            console.print(f"nothing to tune: every task is in the log for {comp.target.key}")
+            return
     path = log if log is not None else _default_log(comp)
     console.print(
         f"{len(tasks)} tasks for {kernels} kernels of {len(models)} models; logging to {path}"

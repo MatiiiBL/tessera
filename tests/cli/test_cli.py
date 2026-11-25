@@ -252,3 +252,24 @@ def test_tune_with_shapes_validates_in_the_model(tmp_path: Path) -> None:
     )
     assert "tasks compared in the models" in out
     assert len(TuningLog(log).records()) >= 8
+
+
+def test_tune_new_only_counts_this_targets_records_only(tmp_path: Path) -> None:
+    from e2e.onnx_models import mlp
+    from tessera.driver import lower
+    from tessera.tune.log import Record, TuningLog
+
+    path = tmp_path / "mlp.onnx"
+    onnx.save(mlp(), path)
+    comp = lower(path, target="c:generic", tuned=False)
+    log = tmp_path / "c-generic.jsonl"
+    common = ["tune", str(path), "-t", "c:generic", "--log", str(log), "--strategy", "random"]
+    quick = ["--validate-rounds", "0", "--model-rounds", "0", "--trials", "8", "--new-only"]
+    for key, task in comp.tasks.items():  # measured on another machine
+        TuningLog(log).append(Record("c-generic-t10-Other_CPU", key, task.space.default(), 1e-3))
+    out = invoke(*common, *quick)
+    assert f"{len(comp.tasks)} tasks for" in out
+    assert any(r.target == comp.target.key for r in TuningLog(log).records())
+    for key, task in comp.tasks.items():
+        TuningLog(log).append(Record(comp.target.key, key, task.space.default(), 1e-3))
+    assert "nothing to tune: every task is in the log" in invoke(*common, *quick)
