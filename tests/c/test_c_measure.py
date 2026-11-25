@@ -8,6 +8,7 @@ from collections.abc import Mapping
 import numpy as np
 import pytest
 from c_funcs import loop, matmul, root, tiled_matmul
+from onnx import TensorProto, helper, numpy_helper
 
 from tessera.backend.base import MeasureError, get_backend
 from tessera.backend.c import CBackend
@@ -42,6 +43,30 @@ def test_harness_reports_one_sample_per_repeat() -> None:
     samples = run_harness(path, repeat=4, min_seconds=0.004)
     assert len(samples) == 4
     assert all(s > 0 for s in samples)
+
+
+def test_every_timed_call_runs() -> None:
+    # A 4 x 32 x 16 product by a weight, in narrow serial tiles: clang inlined
+    # it into the timing loop and kept one call of many, and the harness
+    # reported 1 ns per call (4 TFLOP/s on one thread) for a kernel that takes
+    # 200 ns, so tuning preferred it to the faster default.
+    rng = np.random.default_rng(0)
+    w = numpy_helper.from_array(rng.standard_normal((32, 16)).astype(np.float32), "w")
+    graph = helper.make_graph(
+        [helper.make_node("MatMul", ["x", "w"], ["y"])],
+        "mm",
+        [helper.make_tensor_value_info("x", TensorProto.FLOAT, [4, 32])],
+        [helper.make_tensor_value_info("y", TensorProto.FLOAT, [4, 16])],
+        [w],
+    )
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)], ir_version=9)
+    (task,) = lower(model, target="c:generic", tuned=False).tasks.values()
+    cfg = {"order": "mn", "pack_b": True, "parallel": False, "tile_m": 4, "tile_n": 2}
+    seconds = CBackend().measure(
+        task.build(cfg), task.target, min_seconds=0.01, constants=frozenset(task.constants)
+    )
+    flops = 2 * 4 * 32 * 16
+    assert seconds > flops / 1e12, f"{flops / seconds / 1e9:.0f} GFLOP/s on one thread"
 
 
 def test_prebuild_fills_the_cache_used_by_measure() -> None:

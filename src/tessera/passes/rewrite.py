@@ -43,12 +43,15 @@ class Rewriter:
         return self.graph.add_constant(array, name)
 
     def readers(self, value: Value) -> list[Node]:
-        """Nodes reading ``value`` when the sweep started."""
+        """Nodes reading ``value`` when the sweep started, plus the readers of every
+        value replaced by it since (some may have died: never too few)."""
         return self.uses.get(value, [])
 
     def single_reader(self, value: Value) -> bool:
         """``value`` has one reader and is not a graph output."""
-        return len(self.readers(value)) == 1 and all(v is not value for v in self.graph.outputs)
+        return len(self.readers(value)) == 1 and all(
+            self.resolve(v) is not value for v in self.graph.outputs
+        )
 
     # -- running ----------------------------------------------------------------
 
@@ -57,6 +60,8 @@ class Rewriter:
             raise ValueError(f"cannot replace {old!r} with {new!r}: types differ")
         if old is not new:
             self._subst[id(old)] = new
+            # Later rules in this sweep see old's readers read new.
+            self.uses[new] = [*self.uses.get(new, []), *self.uses.get(old, [])]
 
     def resolve(self, value: Value) -> Value:
         while id(value) in self._subst:

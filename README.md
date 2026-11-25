@@ -56,7 +56,7 @@ milliseconds; lower is better.
 | Fusion | 37 to 53% as many kernels and 23 to 43% fewer bytes moved; faster on every model on Metal |
 | Memory planning | One arena 3.9 to 31x smaller than the intermediate tensors it holds (BERT: 2.3 MiB for 72.1 MiB) |
 | Kernels | SME GEMM 1.16 to 1.47x Accelerate on the transformer layers' shapes; Metal GEMM within 3% of MPS at 2048³ |
-| Code | 28k lines of Python, 1.6k of C/Objective-C, 14k of tests (1,374 tests); `mypy --strict`; CI on Linux and macOS |
+| Code | 28k lines of Python, 1.6k of C/Objective-C, 14k of tests (1,393 tests); `mypy --strict`; CI on Linux and macOS |
 
 The full tables have percentiles, untuned rows, a NEON-only CPU target and
 every ablation: [results/models.md](results/models.md), kernel throughput
@@ -218,7 +218,7 @@ See [docs/tuning.md](docs/tuning.md).
 
 ## Testing
 
-`make check` runs ruff, `mypy --strict` and pytest (1,374 tests, about a
+`make check` runs ruff, `mypy --strict` and pytest (1,393 tests, about a
 minute and a half).
 - Operators and their loop-IR definitions are tested against their NumPy
   references. Generated C and Metal kernels are tested against the

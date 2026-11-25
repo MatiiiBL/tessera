@@ -403,8 +403,13 @@ Each primitive checks the conditions under which the result cannot change:
   block's reduction loops (it would repeat the reduction or re-run the
   init). Blocks whose init was split off cannot be moved.
 - **Concurrency.** `parallel`, `vectorize` and `bind` require that different
-  iterations write different elements or private buffers (all accesses
-  inside the loop). Distinctness is proved by a mixed-radix test on the
+  iterations write different elements or buffers used only inside the loop.
+  A reduction may only accumulate into such a buffer if the backends give
+  every iteration its own copy (`local`, or `shared` under a
+  `threadgroup.*` binding): a `global` intermediate is allocated once per
+  call, and iterations would accumulate into it together. Other blocks
+  store the same values whichever iteration runs them (a pad recomputed per
+  tile). Distinctness is proved by a mixed-radix test on the
   row-major position of the written point (fused and split loops pass it
   even when the split is imperfect), by a box count, or by enumerating up to
   2^20 iterations per iteration of the enclosing loops. A loop that drives a

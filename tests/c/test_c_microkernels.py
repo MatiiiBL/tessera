@@ -63,8 +63,10 @@ def _library(isa: CpuIsa) -> ctypes.CDLL:
 def _gemm(isa: CpuIsa) -> Callable[..., None]:
     lib = _library(isa)
     fn = lib.gemm
+    # All twelve: ctypes passes an argument without a type as a C int, and the
+    # upper half of `constant`'s int64_t register is then whatever was there.
     fn.argtypes = (
-        [ctypes.c_int64] * 3 + [ctypes.c_void_p, ctypes.c_int64] * 3 + [ctypes.c_int64] * 2
+        [ctypes.c_int64] * 3 + [ctypes.c_void_p, ctypes.c_int64] * 3 + [ctypes.c_int64] * 3
     )
     fn.restype = None
     return fn

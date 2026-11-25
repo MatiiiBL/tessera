@@ -326,7 +326,13 @@ took 474 µs in `measure` and 498 µs in the model, and 32 x 64 tiles 620 µs
 and 692 µs. Before the SME threads slept, `measure` gave 1063 and 638 µs
 for the same two: it ranked them the other way round. A warm weight alone
 made `measure` up to a fifth faster than the model
-(`test_measure_ranks_weight_configs_as_the_model_does`). The harness runs as a subprocess, so a candidate
+(`test_measure_ranks_weight_configs_as_the_model_does`). Every timed call
+is followed by an empty `asm` that may read and write every buffer: the
+kernel is inlined into the timing loop and each call writes the same
+outputs from the same inputs, and without it clang kept one call of many
+for small serial kernels (a 4 x 32 x 16 product in 2-column tiles timed at
+1.0 ns instead of 227 ns, `test_every_timed_call_runs`), which tuning then
+preferred. The harness runs as a subprocess, so a candidate
 that crashes or hangs becomes a `MeasureError` (as do build errors and
 timeouts) and cannot take down the tuner. `prebuild` compiles the same
 harness into the cache from the tuner's build processes, so the later

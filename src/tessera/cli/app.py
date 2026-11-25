@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.table import Table
 
 from tessera import driver
+from tessera.bench.stats import errors
 from tessera.ir import interpret, random_inputs
 from tessera.ir.graph import NDArray
 
@@ -192,7 +193,7 @@ def run_command(
             f"{_absmax(value):.4g}",
         ]
         if check:
-            abs_err, rel_err = _errors(value, reference[name])
+            abs_err, rel_err = errors(value, reference[name])
             worst = max(worst, rel_err)
             row += [f"{abs_err:.3g}", f"{rel_err:.3g}"]
         table.add_row(*row)
@@ -337,12 +338,17 @@ def tune_command(
         for task in comp.tasks.values():
             merge_task(by_key, task)
     tasks = list(by_key.values())
-    if new_only:
-        logged = {r.task for r in TuningLog(log or _default_log(comp)).records()}
-        tasks = [t for t in tasks if t.key not in logged]
     if not tasks:
         console.print("nothing to tune: no kernel of these models has a template")
         return
+    if new_only:
+        # Only this machine's records count: a log may hold other targets' (CPUs, threads).
+        records = TuningLog(log or _default_log(comp)).records()
+        logged = {r.task for r in records if r.target == comp.target.key}
+        tasks = [t for t in tasks if t.key not in logged]
+        if not tasks:
+            console.print(f"nothing to tune: every task is in the log for {comp.target.key}")
+            return
     path = log if log is not None else _default_log(comp)
     console.print(
         f"{len(tasks)} tasks for {kernels} kernels of {len(models)} models; logging to {path}"
@@ -385,7 +391,12 @@ def tune_command(
 
         console.print("validating the tuned configurations inside the models")
         verdicts = validate_in_model(
-            models, target, TuningLog(path), rounds=model_rounds, progress=console.print
+            models,
+            target,
+            TuningLog(path),
+            input_shapes=parse_shapes(shape),
+            rounds=model_rounds,
+            progress=console.print,
         )
         slower = sorted(k for k, (default, tuned) in verdicts.items() if tuned > default)
         console.print(
@@ -558,13 +569,6 @@ def _mean(a: NDArray) -> float:
 
 def _absmax(a: NDArray) -> float:
     return float(np.max(np.abs(a))) if a.size else 0.0
-
-
-def _errors(a: NDArray, b: NDArray) -> tuple[float, float]:
-    diff = np.abs(np.asarray(a, np.float64) - np.asarray(b, np.float64))
-    worst = float(diff.max()) if diff.size else 0.0
-    scale = _absmax(np.asarray(b, np.float64))
-    return worst, worst / scale if scale > 0 else worst
 
 
 def main() -> None:

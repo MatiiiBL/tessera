@@ -108,6 +108,16 @@ def test_gelu_with_a_wrong_constant_stays_decomposed() -> None:
     assert ops(optimize(g))["Gelu"] == 0
 
 
+def test_a_product_with_one_half_twice_is_not_a_gelu() -> None:
+    g = Graph()
+    x = g.add_input("x", TensorType((4, 16), F32))
+    half = scalar(g, 0.5)
+    g.set_outputs([g.op("Mul", g.op("Mul", x, half), half)])
+    out = optimize(g)
+    assert ops(out)["Gelu"] == 0
+    assert_same_outputs(g, out)
+
+
 def test_silu_hardswish_and_rsqrt() -> None:
     g = Graph()
     x = g.add_input("x", TensorType((3, 5), F32))
@@ -138,6 +148,21 @@ def test_batchnorm_folds_into_the_convolution(bias: bool) -> None:
     unfolded = optimize(g, layout="NCHW", fold=False)
     assert ops(unfolded) == Counter({"Conv2d": 1, "Mul": 1, "Add": 1, "Relu": 1})
     assert_same_outputs(g, unfolded)
+
+
+@pytest.mark.parametrize("output", [False, True])
+def test_batchnorm_behind_an_identity_of_a_shared_convolution(output: bool) -> None:
+    # The Identity goes in the sweep that reaches the BatchNorm, which then
+    # reads the convolution directly: it must still count the other reader.
+    g = Graph()
+    x = g.add_input("x", TensorType((1, 3, 6, 6), F32))
+    y = g.op("Identity", g.op("Conv2d", x, const(g, 4, 3, 3, 3), const(g, 4), pads=(1, 1)))
+    stats = [const(g, 4), const(g, 4), const(g, 4), const(g, 4, positive=True)]
+    normed = g.op("BatchNorm", y, *stats)
+    g.set_outputs([normed if output else g.op("Relu", normed), g.op("Sigmoid", y)])
+    out = optimize(g, layout="NCHW")
+    assert ops(out)["Conv2d"] == 1
+    assert_same_outputs(g, out)
 
 
 def test_batchnorm_after_a_shared_convolution_is_decomposed() -> None:
