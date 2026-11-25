@@ -859,14 +859,27 @@ _CONSTANT_ONLY: dict[str, Callable[..., Any]] = {
     "Floor": np.floor,
     "Ceil": np.ceil,
     "Round": np.round,
-    "Mod": np.fmod,
     "NonZero": lambda x: np.asarray(np.nonzero(x), np.int64),
     "IsNaN": np.isnan,
-    "IsInf": np.isinf,
     "Sign": np.sign,
 }
 for _op, _fn in _CONSTANT_ONLY.items():
     _CONVERTERS[_op] = _constant_only(_fn)
+
+
+@converter("Mod")
+def _mod(n: OnnxNode) -> list[Value]:
+    a, b = n.constant(0, "A"), n.constant(1, "B")
+    # fmod=0 (the default) takes the sign of the divisor, like Python's %.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return [n.const(np.fmod(a, b) if n.attr("fmod", 0) else np.mod(a, b))]
+
+
+@converter("IsInf")
+def _isinf(n: OnnxNode) -> list[Value]:
+    x = n.constant(0, "X")
+    positive = np.isposinf(x) & bool(n.attr("detect_positive", 1))
+    return [n.const(positive | (np.isneginf(x) & bool(n.attr("detect_negative", 1))))]
 
 
 @converter("GatherElements")
