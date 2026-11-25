@@ -25,6 +25,7 @@ from tessera.tir.primitives.common import (
     find_block,
     find_loop,
     fresh,
+    is_reduction,
     loop_of,
     loop_roles,
     loops_above,
@@ -42,6 +43,7 @@ from tessera.tir.stmt import (
     Annotations,
     Block,
     BlockRealize,
+    Buffer,
     BufferStore,
     Evaluate,
     For,
@@ -242,24 +244,41 @@ def reorder(func: PrimFunc, loops: Sequence[Var]) -> PrimFunc:
 # -- loop kinds ---------------------------------------------------------------------
 
 
-def _private(func: PrimFunc, loop: For, buf: object) -> bool:
+def _private(func: PrimFunc, loop: For, buf: Buffer) -> bool:
     """True if every access to ``buf`` is under ``loop`` (it can live per iteration)."""
     if buf in func.params:
         return False
     under = {id(r) for r in _leaf_realizes(loop)}
-    accessors = writers(func, buf) + readers(func, buf)  # type: ignore[arg-type]
+    accessors = writers(func, buf) + readers(func, buf)
     return all(id(r) in under for r in accessors)
+
+
+def _per_iteration(buf: Buffer, thread_tag: str | None) -> bool:
+    """Whether the backends give ``buf`` a copy per iteration of a loop that is
+    parallel or bound to ``thread_tag``: ``local`` buffers get one (on the
+    thread's stack on the CPU, per GPU thread), ``shared`` ones one per
+    threadgroup, and ``global`` intermediates are allocated once per call."""
+    group = thread_tag is not None and thread_tag.startswith("threadgroup.")
+    return buf.scope == "local" or (buf.scope == "shared" and group)
 
 
 def _leaf_realizes(stmt: Stmt) -> list[BlockRealize]:
     return [s for s in walk_stmts(stmt) if isinstance(s, BlockRealize) and is_leaf_block(s.block)]
 
 
-def check_independent(func: PrimFunc, loop: Var, what: str, *, allow_reduce: bool = False) -> None:
+def check_independent(
+    func: PrimFunc,
+    loop: Var,
+    what: str,
+    *,
+    allow_reduce: bool = False,
+    thread_tag: str | None = None,
+) -> None:
     """Different iterations of ``loop`` write different elements (or private buffers)
     and do not take part in a reduction, so they may run concurrently. With
     ``allow_reduce`` the loop may drive a reduction (a cross-thread reduction,
-    which the backend lowers to a cooperative one)."""
+    which the backend lowers to a cooperative one). ``thread_tag``: the axis the
+    loop is being bound to, if any."""
     lpath = find_loop(func, loop)
     lnode = loop_of(lpath)
     for bpath in block_paths(func):
@@ -280,7 +299,12 @@ def check_independent(func: PrimFunc, loop: Var, what: str, *, allow_reduce: boo
                 f"cannot {what} loop {loop.name}: it is a reduction loop of block {r.block.name}"
             )
         for buf in facts(r.block).writes:
-            if _private(func, lnode, buf):
+            # Iterations may write the same elements of a buffer only they use if
+            # each has its own copy, or if they all store the same values there
+            # (a pad recomputed per tile): not if they accumulate into one copy.
+            if _private(func, lnode, buf) and (
+                not is_reduction(r.block) or _per_iteration(buf, thread_tag)
+            ):
                 continue
             if role == "N":
                 raise ScheduleError(
@@ -477,7 +501,7 @@ def set_kind(func: PrimFunc, loop: Var, kind: ForKind, thread_tag: str | None = 
             )
     if kind != ForKind.UNROLLED:
         cross_thread = kind == ForKind.THREAD_BINDING and str(thread_tag).startswith("thread.")
-        check_independent(func, loop, verb, allow_reduce=cross_thread)
+        check_independent(func, loop, verb, allow_reduce=cross_thread, thread_tag=thread_tag)
     new = replace_for(node, kind=kind, thread_tag=thread_tag)
     return with_body(func, rebuild(path, new))
 

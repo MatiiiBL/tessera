@@ -179,6 +179,35 @@ def test_parallel_over_a_privatizable_intermediate() -> None:
     check(s, w)
 
 
+def test_parallel_iterations_accumulate_only_into_their_own_copies() -> None:
+    # S is recomputed in every iteration of j and used only there, but it is a
+    # global buffer, allocated once per call: on the C backend the threads reset
+    # and accumulated into the same row of S together.
+    x = te.placeholder((2, 8, 4), DType.float32, "X")
+    y = te.placeholder((2, 6), DType.float32, "Y")
+    k = te.reduce_axis(4, "k")
+    sums = te.compute((2, 8), lambda i, c: te.sum(x[i, c, k], axis=k), "S", axis_names=["i", "c"])
+    o = te.compute((2, 6), lambda i, j: y[i, j] * sums[i, 0] + sums[i, 7], "O")
+    func = te.create_prim_func([x, y, o])
+    s = Schedule(func)
+    s.compute_at("S", s.get_loops("O")[1])
+    refuses(s, "every iteration writes the same elements of S", s.parallel, s.get_loops("O")[1])
+    # Accumulating into a local buffer, which each iteration has a copy of, is fine.
+    s = Schedule(func)
+    s.cache_write("S", 0, "local")
+    j = s.get_loops("O")[1]
+    s.compute_at("S_local", j)
+    s.compute_at("S", j)
+    s.parallel(j)
+    tir.verify(s.func)
+    rng = np.random.default_rng(3)
+    xs, ys = rng.random((2, 8, 4), np.float32), rng.random((2, 6), np.float32)
+    out = np.full((2, 6), np.nan, np.float32)
+    tir.interpret(s.func, [xs, ys, out])
+    total = xs.astype(np.float64).sum(axis=2)
+    np.testing.assert_allclose(out, ys * total[:, :1] + total[:, 7:], rtol=1e-5)
+
+
 def test_bind_and_cross_thread_reduction() -> None:
     w = row_softmax(4, 8)
     s = Schedule(w.func)
