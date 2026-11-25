@@ -330,8 +330,10 @@ def _reciprocal(n: OnnxNode) -> list[Value]:
 
 @converter("Softplus")
 def _softplus(n: OnnxNode) -> list[Value]:
+    # log(1 + e^x) as max(x, 0) + log(1 + e^-|x|): e^x overflows float32 above x = 88.7.
     x = n.input(0)
-    return [n.op_("Log", n.op_("Add", n.op_("Exp", x), n.const(1, like=x)))]
+    tail = n.op_("Exp", n.op_("Neg", n.op_("Abs", x)))
+    return [n.op_("Add", n.op_("Relu", x), n.op_("Log", n.op_("Add", tail, n.const(1, like=x))))]
 
 
 @converter("LeakyRelu")
@@ -608,19 +610,24 @@ def _broadcast_to(n: OnnxNode, value: Value, shape: tuple[int, ...]) -> Value:
 def _softmax(n: OnnxNode) -> list[Value]:
     x = n.input(0)
     rank = x.type.rank
-    if n.importer.opset >= 13:
-        y = n.op_("Softmax", x, axis=int(n.attr("axis", -1)))
-    else:
-        # Before opset 13, Softmax normalizes the 2-D view [prod(:axis), prod(axis:)].
-        axis = int(n.attr("axis", 1))
-        axis = axis + rank if axis < 0 else axis
-        if axis == rank - 1:
-            y = n.op_("Softmax", x, axis=axis)
-        else:
-            rows = int(np.prod(x.shape[:axis]))
-            flat = n.op_("Reshape", x, shape=(rows, -1))
-            y = n.op_("Reshape", n.op_("Softmax", flat, axis=1), shape=x.shape)
-    return [n.op_("Log", y) if n.op == "LogSoftmax" else y]
+    axis = int(n.attr("axis", -1 if n.importer.opset >= 13 else 1))
+    axis = axis + rank if axis < 0 else axis
+    if n.importer.opset >= 13 or axis == rank - 1:
+        return [_softmax_along(n, x, axis)]
+    # Before opset 13, Softmax normalizes the 2-D view [prod(:axis), prod(axis:)].
+    rows = int(np.prod(x.shape[:axis]))
+    flat = n.op_("Reshape", x, shape=(rows, -1))
+    return [n.op_("Reshape", _softmax_along(n, flat, 1), shape=x.shape)]
+
+
+def _softmax_along(n: OnnxNode, x: Value, axis: int) -> Value:
+    if n.op == "Softmax":
+        return n.op_("Softmax", x, axis=axis)
+    # log(softmax(x)) is -inf wherever softmax(x) underflows (x more than about
+    # 104 below the maximum); (x - max) - log(sum(exp(x - max))) is not.
+    shifted = n.op_("Sub", x, n.op_("ReduceMax", x, axes=(axis,), keepdims=1))
+    total = n.op_("ReduceSum", n.op_("Exp", shifted), axes=(axis,), keepdims=1)
+    return n.op_("Sub", shifted, n.op_("Log", total))
 
 
 @converter("ReduceSum", "ReduceMean", "ReduceMax", "ReduceMin")

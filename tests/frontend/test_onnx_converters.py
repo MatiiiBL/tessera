@@ -56,6 +56,12 @@ def node(op: str, inputs: list[str], outputs: list[str] | None = None, **attrs: 
 CASES: dict[str, tuple[list[onnx.NodeProto], dict[str, Array], dict[str, Array], int]] = {
     "reciprocal": ([node("Reciprocal", ["x"])], {"x": f32(3, 4) + 4}, {}, 17),
     "softplus": ([node("Softplus", ["x"])], {"x": f32(3, 4)}, {}, 17),
+    "softplus_where_exp_overflows": (
+        [node("Softplus", ["x"])],
+        {"x": np.array([-100, -1, 0, 50, 89, 100], np.float32)},
+        {},
+        17,
+    ),
     "leaky_relu": ([node("LeakyRelu", ["x"], alpha=0.1)], {"x": f32(3, 4)}, {}, 17),
     "clip_opset6": ([node("Clip", ["x"], min=-0.5, max=0.5)], {"x": f32(5)}, {}, 6),
     "clip_max_only": (
@@ -140,6 +146,13 @@ CASES: dict[str, tuple[list[onnx.NodeProto], dict[str, Array], dict[str, Array],
     ),
     "softmax_opset11_axis1": ([node("Softmax", ["x"], axis=1)], {"x": f32(2, 3, 4)}, {}, 11),
     "log_softmax": ([node("LogSoftmax", ["x"], axis=-1)], {"x": f32(2, 5)}, {}, 13),
+    "log_softmax_where_softmax_underflows": (
+        [node("LogSoftmax", ["x"], axis=0)],
+        {"x": np.array([[0, 1], [-200, -1], [5, 300]], np.float32)},
+        {},
+        13,
+    ),
+    "log_softmax_opset11_axis1": ([node("LogSoftmax", ["x"])], {"x": f32(2, 3, 4) * 50}, {}, 11),
     "reduce_min": ([node("ReduceMin", ["x"], axes=[1], keepdims=0)], {"x": f32(3, 4)}, {}, 13),
     "reduce_mean_opset13": ([node("ReduceMean", ["x"], axes=[-1])], {"x": f32(3, 4)}, {}, 13),
     "reduce_sum_no_axes": ([node("ReduceSum", ["x"], keepdims=0)], {"x": f32(3, 4)}, {}, 13),
