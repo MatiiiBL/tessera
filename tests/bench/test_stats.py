@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from tessera.bench.report import environment, header, markdown_table, write
-from tessera.bench.stats import MIN_RUNS, Latency, agreement, time_runs
+from tessera.bench.stats import MIN_RUNS, Latency, agreement, errors, time_runs
 
 
 def test_latency_percentiles() -> None:
@@ -41,6 +41,31 @@ def test_agreement() -> None:
         agreement([{"z": ref[0]["y"]}], ref[:1])
     with pytest.raises(ValueError, match="shape"):
         agreement([{"y": np.zeros(2)}], ref[:1])
+
+
+def test_errors_never_hide_a_nan() -> None:
+    ref = np.array([1.0, -4.0, 2.0], np.float32)
+    assert errors(np.array([1.0, -3.0, 2.0]), ref) == (1.0, 0.25)
+    # NaN or infinity on one side only is an infinite error, never a match.
+    for bad in (np.nan, np.inf, -np.inf):
+        assert errors(np.array([1.0, bad, 2.0]), ref) == (np.inf, np.inf)
+        assert errors(ref, np.array([1.0, bad, 2.0])) == (np.inf, np.inf)
+    assert errors(np.full(3, np.nan), ref) == (np.inf, np.inf)
+    # The same non-finite value on both sides agrees; the scale is the finite part.
+    both = np.array([np.nan, np.inf, -np.inf, 2.0])
+    assert errors(both, both) == (0.0, 0.0)
+    assert errors(np.array([np.nan, np.inf, -np.inf, 3.0]), both) == (1.0, 0.5)
+    assert errors(np.array([np.inf]), np.array([-np.inf])) == (np.inf, np.inf)
+    assert errors(np.zeros(0), np.zeros(0)) == (0.0, 0.0)
+    with pytest.raises(ValueError, match="shape"):
+        errors(np.zeros(2), np.zeros(3))
+
+
+def test_agreement_reports_a_nan_output() -> None:
+    ref = [{"y": np.array([[1.0, 4.0, 2.0]])}, {"y": np.array([[3.0, 0.0, 1.0]])}]
+    out = [ref[0], {"y": np.array([[3.0, np.nan, 1.0]])}]
+    a = agreement(out, ref)
+    assert (a.max_abs, a.max_rel) == (np.inf, np.inf)
 
 
 def test_result_files(tmp_path: Path) -> None:

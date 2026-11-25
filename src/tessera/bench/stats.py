@@ -80,6 +80,30 @@ class Agreement:
         return asdict(self)
 
 
+def errors(output: NDArray, reference: NDArray) -> tuple[float, float]:
+    """The largest ``|output - reference|`` over all elements, and that difference
+    relative to the largest finite magnitude in ``reference``.
+
+    Equal elements agree, including NaN against NaN and infinities of the same
+    sign. An element that is NaN or infinite on one side only differs by
+    infinity, so an output with NaNs in it never looks like a match: a NaN
+    difference would be lost in a running ``max`` and pass any ``> tolerance``
+    test."""
+    a = np.asarray(output, dtype=np.float64)
+    b = np.asarray(reference, dtype=np.float64)
+    if a.shape != b.shape:
+        raise ValueError(f"shape {a.shape} != {b.shape}")
+    if not a.size:
+        return 0.0, 0.0
+    with np.errstate(invalid="ignore"):
+        diff = np.where((a == b) | (np.isnan(a) & np.isnan(b)), 0.0, np.abs(a - b))
+    diff[np.isnan(diff)] = np.inf
+    worst = float(diff.max())
+    finite = np.abs(b[np.isfinite(b)])
+    scale = float(finite.max()) if finite.size else 0.0
+    return worst, worst / scale if scale > 0 else worst
+
+
 def agreement(
     outputs: Sequence[Mapping[str, NDArray]],
     references: Sequence[Mapping[str, NDArray]],
@@ -98,14 +122,12 @@ def agreement(
         if set(out) != set(ref):
             raise ValueError(f"output names differ: {sorted(out)} vs {sorted(ref)}")
         for name in ref:
-            a = np.asarray(out[name], dtype=np.float64)
-            b = np.asarray(ref[name], dtype=np.float64)
-            if a.shape != b.shape:
-                raise ValueError(f"output {name!r}: shape {a.shape} != {b.shape}")
-            diff = float(np.max(np.abs(a - b))) if a.size else 0.0
-            scale = float(np.max(np.abs(b))) if b.size else 0.0
+            try:
+                diff, rel = errors(out[name], ref[name])
+            except ValueError as e:
+                raise ValueError(f"output {name!r}: {e}") from None
             max_abs = max(max_abs, diff)
-            max_rel = max(max_rel, diff / scale if scale > 0 else diff)
+            max_rel = max(max_rel, rel)
         if classifier:
             first = next(iter(ref))
             a_cls = np.argmax(np.asarray(out[first]).reshape(-1, out[first].shape[-1]), axis=-1)

@@ -29,7 +29,7 @@ from onnx import TensorProto, helper, numpy_helper
 from tessera.bench.baselines import torch_available
 from tessera.bench.latency import fresh_process_profile, fresh_process_runs
 from tessera.bench.report import markdown_table
-from tessera.bench.stats import Latency, time_runs
+from tessera.bench.stats import Latency, errors, time_runs
 from tessera.driver import lower, resolve_target
 from tessera.ir.graph import NDArray, Node
 
@@ -127,8 +127,7 @@ def _gemm_baseline(system: str, x: NDArray, w: NDArray) -> Latency:
 def _gemm_tessera(model: onnx.ModelProto, target: str, x: NDArray) -> Latency:
     compiled = lower(model, target=target).build()
     expected = x.astype(np.float64) @ numpy_helper.to_array(model.graph.initializer[0])
-    got = compiled.run({"x": x})["y"]
-    error = float(np.max(np.abs(got - expected)) / np.max(np.abs(expected)))
+    _, error = errors(compiled.run({"x": x})["y"], expected)
     if error > 1e-4:
         raise ValueError(f"wrong result: relative error {error:.2e}")
     if resolve_target(target).kind != "c":

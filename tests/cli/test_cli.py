@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import onnx
 import pytest
 import typer
+from onnx import TensorProto, helper
 from typer.testing import CliRunner
 
 from e2e.onnx_models import views_model
@@ -34,6 +36,38 @@ def test_run_check(model: Path) -> None:
     out = invoke("run", str(model), "--target", "c:generic", "--check")
     assert "match: worst relative error 0" in out
     assert "(6, 4)" in out
+
+
+def test_run_check_fails_on_a_nan_output(model: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tessera.driver import NamedModel
+
+    run = NamedModel.run
+
+    def broken(self: NamedModel, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        outputs = run(self, inputs)
+        outputs["z"].flat[3] = np.nan
+        return outputs
+
+    monkeypatch.setattr(NamedModel, "run", broken)
+    result = runner.invoke(app, ["run", str(model), "--target", "c:generic", "--check"])
+    assert result.exit_code == 1, result.output
+    assert "MISMATCH: worst relative error inf" in result.output
+
+
+def test_run_check_accepts_nans_the_reference_has_too(tmp_path: Path) -> None:
+    graph = helper.make_graph(
+        [helper.make_node("Log", ["x"], ["y"])],
+        "log",
+        [helper.make_tensor_value_info("x", TensorProto.FLOAT, [4, 8])],
+        [helper.make_tensor_value_info("y", TensorProto.FLOAT, [4, 8])],
+    )
+    path = tmp_path / "log.onnx"
+    onnx.save(
+        helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)], ir_version=9), path
+    )
+    out = invoke("run", str(path), "--target", "c:generic", "--check")  # N(0, 1): half are < 0
+    assert "match" in out
+    assert "MISMATCH" not in out
 
 
 @pytest.mark.parametrize(

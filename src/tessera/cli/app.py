@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.table import Table
 
 from tessera import driver
+from tessera.bench.stats import errors
 from tessera.ir import interpret, random_inputs
 from tessera.ir.graph import NDArray
 
@@ -192,7 +193,7 @@ def run_command(
             f"{_absmax(value):.4g}",
         ]
         if check:
-            abs_err, rel_err = _errors(value, reference[name])
+            abs_err, rel_err = errors(value, reference[name])
             worst = max(worst, rel_err)
             row += [f"{abs_err:.3g}", f"{rel_err:.3g}"]
         table.add_row(*row)
@@ -558,13 +559,6 @@ def _mean(a: NDArray) -> float:
 
 def _absmax(a: NDArray) -> float:
     return float(np.max(np.abs(a))) if a.size else 0.0
-
-
-def _errors(a: NDArray, b: NDArray) -> tuple[float, float]:
-    diff = np.abs(np.asarray(a, np.float64) - np.asarray(b, np.float64))
-    worst = float(diff.max()) if diff.size else 0.0
-    scale = _absmax(np.asarray(b, np.float64))
-    return worst, worst / scale if scale > 0 else worst
 
 
 def main() -> None:
