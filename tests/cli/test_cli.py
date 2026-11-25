@@ -234,3 +234,21 @@ def test_tune_new_only_skips_tasks_already_in_the_log(tmp_path: Path) -> None:
     added = TuningLog(log).records()[16:]
     assert added
     assert not {r.task for r in added} & mlp_tasks
+
+
+def test_tune_with_shapes_validates_in_the_model(tmp_path: Path) -> None:
+    from e2e.onnx_models import mlp
+    from tessera.tune.log import TuningLog
+
+    model = mlp()
+    model.graph.input[0].type.tensor_type.shape.dim[0].dim_param = "batch"
+    path = tmp_path / "mlp.onnx"
+    onnx.save(model, path)
+    log = tmp_path / "c-generic.jsonl"
+    out = invoke(
+        *("tune", str(path), "-t", "c:generic", "--shape", "x=4,64", "--log", str(log)),
+        *("--trials", "8", "--batch", "4", "--strategy", "random", "--validate-rounds", "0"),
+        *("--model-rounds", "1"),
+    )
+    assert "tasks compared in the models" in out
+    assert len(TuningLog(log).records()) >= 8

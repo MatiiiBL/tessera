@@ -16,7 +16,7 @@ the model than the default is not used.
 from __future__ import annotations
 
 import statistics
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from tessera.driver import lower
@@ -32,20 +32,22 @@ def validate_in_model(
     target: str,
     log: TuningLog,
     *,
+    input_shapes: Mapping[str, tuple[int, ...]] | None = None,
     rounds: int = 3,
     repeat: int = 10,
     progress: Callable[[str], None] = lambda message: None,
 ) -> dict[str, Verdict]:
     """Profile each model tuned and untuned ``rounds`` times in alternation and log,
     per task whose tuned configuration differs from its default, the in-model time
-    per kernel of both; returns them by task key."""
+    per kernel of both; returns them by task key. ``input_shapes`` fixes dynamic
+    dimensions, as for the tuning itself."""
     best = BestConfigs(log.records())
     seconds: dict[str, tuple[list[float], list[float]]] = {}  # task -> default, tuned
     configs: dict[str, tuple[dict[str, KnobValue], dict[str, KnobValue]]] = {}
     target_key = ""
     for model in models:
-        tuned = lower(model, target=target, tuning_log=best)
-        untuned = lower(model, target=target, tuned=False)
+        tuned = lower(model, target=target, input_shapes=input_shapes, tuning_log=best)
+        untuned = lower(model, target=target, input_shapes=input_shapes, tuned=False)
         target_key = tuned.target.key
         pairs = [
             (u, t)

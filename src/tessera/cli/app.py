@@ -386,7 +386,12 @@ def tune_command(
 
         console.print("validating the tuned configurations inside the models")
         verdicts = validate_in_model(
-            models, target, TuningLog(path), rounds=model_rounds, progress=console.print
+            models,
+            target,
+            TuningLog(path),
+            input_shapes=parse_shapes(shape),
+            rounds=model_rounds,
+            progress=console.print,
         )
         slower = sorted(k for k, (default, tuned) in verdicts.items() if tuned > default)
         console.print(
