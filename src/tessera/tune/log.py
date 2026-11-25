@@ -91,8 +91,15 @@ class TuningLog:
             self._records.append(record)
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(record.to_json() + "\n")
+        line = record.to_json() + "\n"
+        with self.path.open("a+b") as f:
+            # A run killed while writing leaves a line without its newline: end it,
+            # or this record would continue that line and be lost with it.
+            if f.seek(0, os.SEEK_END) > 0:
+                f.seek(-1, os.SEEK_END)
+                if f.read(1) != b"\n":
+                    line = "\n" + line
+            f.write(line.encode("utf-8"))
             f.flush()
             os.fsync(f.fileno())
 

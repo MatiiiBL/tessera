@@ -53,6 +53,22 @@ def test_append_resume_and_partial_lines(tmp_path: Path) -> None:
     assert reopened.measured("other", "a") == {}
 
 
+def test_append_after_a_run_killed_mid_line(tmp_path: Path) -> None:
+    path = tmp_path / "run.jsonl"
+    TuningLog(path).append(Record("t", "a", {"x": 1}, 3.0))
+    with path.open("a") as f:
+        f.write('{"target": "t", "task": "a", "config": {"x": 2}, "seco')  # killed here
+    resumed = TuningLog(path)
+    assert [r.config["x"] for r in resumed.records()] == [1]
+    resumed.append(Record("t", "a", {"x": 3}, 0.5))
+    resumed.append(Record("t", "a", {"x": 4}, 2.0))
+    assert [r.config["x"] for r in resumed.records()] == [1, 3, 4]
+    assert [r.config["x"] for r in TuningLog(path).records()] == [1, 3, 4]
+    best = BestConfigs.load(path).lookup("t", "a")
+    assert best is not None
+    assert best.config == {"x": 3}
+
+
 def test_in_memory_log() -> None:
     log = TuningLog()
     log.append(Record("t", "a", {"x": 1}, 1.0))
