@@ -150,6 +150,21 @@ def test_batchnorm_folds_into_the_convolution(bias: bool) -> None:
     assert_same_outputs(g, unfolded)
 
 
+@pytest.mark.parametrize("output", [False, True])
+def test_batchnorm_behind_an_identity_of_a_shared_convolution(output: bool) -> None:
+    # The Identity goes in the sweep that reaches the BatchNorm, which then
+    # reads the convolution directly: it must still count the other reader.
+    g = Graph()
+    x = g.add_input("x", TensorType((1, 3, 6, 6), F32))
+    y = g.op("Identity", g.op("Conv2d", x, const(g, 4, 3, 3, 3), const(g, 4), pads=(1, 1)))
+    stats = [const(g, 4), const(g, 4), const(g, 4), const(g, 4, positive=True)]
+    normed = g.op("BatchNorm", y, *stats)
+    g.set_outputs([normed if output else g.op("Relu", normed), g.op("Sigmoid", y)])
+    out = optimize(g, layout="NCHW")
+    assert ops(out)["Conv2d"] == 1
+    assert_same_outputs(g, out)
+
+
 def test_batchnorm_after_a_shared_convolution_is_decomposed() -> None:
     g = Graph()
     x = g.add_input("x", TensorType((1, 2, 4, 4), F32))
