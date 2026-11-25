@@ -15,6 +15,12 @@ copies of them to exceed the caches: a model reads each weight once per run,
 from memory, not from the cache that the previous call left warm. Other
 parameters stay warm, like the activations a kernel reads right after the
 kernel before it wrote them.
+
+Every call is made. The kernel is static and in the same translation unit, and
+each call writes the same outputs from the same inputs, so clang may inline a
+small kernel and keep one call of a timed loop (a 4 x 32 x 16 matmul then timed
+at 1.2 ns instead of 230). Every buffer is passed to an empty ``asm`` once, and
+another one that may read and write any memory follows every call.
 """
 
 from __future__ import annotations
@@ -77,6 +83,13 @@ def harness_sources(
         "  return (float)(bits >> 40) * (2.0f / 16777216.0f) - 1.0f;",
         "}",
         "",
+        "/* Opaque to the compiler: tsr_escape() makes a buffer reachable from asm and",
+        " * TSR_CLOBBER() may read and write all such memory, so no call is elided. */",
+        "static void tsr_escape(void* p) {",
+        '  __asm__ __volatile__("" : : "r"(p) : "memory");',
+        "}",
+        '#define TSR_CLOBBER() __asm__ __volatile__("" : : : "memory")',
+        "",
         "int main(int argc, char** argv) {",
         "  int repeat = argc > 1 ? atoi(argv[1]) : 5;",
         "  double min_seconds = argc > 2 ? atof(argv[2]) : 0.05;",
@@ -107,14 +120,15 @@ def harness_sources(
             )
         else:
             lines.append(f"{indent}memset({name}, 0, {nbytes});")
+        lines.append(f"{indent}tsr_escape({name});")
         if i in constants:
             lines.append("  }")
         args.append(name)
-    call = f"{code.name}({', '.join(args)});"
+    call = f"{code.name}({', '.join(args)}); TSR_CLOBBER();"
     lines += [
         "  /* Prepare every copy of the constants, untimed, as a model's first run does. */",
         "  int c = 0;",
-        f"  for (c = 0; c < COPIES; ++c) {call}",
+        f"  for (c = 0; c < COPIES; ++c) {{ {call} }}",
         "  c = 0;",
         "  double start = tsr_now();",
         f"  {call}",
