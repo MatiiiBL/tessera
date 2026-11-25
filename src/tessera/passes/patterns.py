@@ -127,10 +127,10 @@ def _gelu(rw: Rewriter, node: Node) -> Value | None:
     factors = _factors(node.output, rw)
     if len(factors) != 3:
         return None
-    for half in factors:
+    for i, half in enumerate(factors):
         if not _near(scalar(half), 0.5):
             continue
-        rest = [f for f in factors if f is not half]
+        rest = factors[:i] + factors[i + 1 :]  # by position: x * 0.5 * 0.5 has 0.5 twice
         for x, phi in (rest, rest[::-1]):
             if x.type != node.output.type:
                 continue

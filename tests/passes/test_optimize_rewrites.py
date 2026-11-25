@@ -108,6 +108,16 @@ def test_gelu_with_a_wrong_constant_stays_decomposed() -> None:
     assert ops(optimize(g))["Gelu"] == 0
 
 
+def test_a_product_with_one_half_twice_is_not_a_gelu() -> None:
+    g = Graph()
+    x = g.add_input("x", TensorType((4, 16), F32))
+    half = scalar(g, 0.5)
+    g.set_outputs([g.op("Mul", g.op("Mul", x, half), half)])
+    out = optimize(g)
+    assert ops(out)["Gelu"] == 0
+    assert_same_outputs(g, out)
+
+
 def test_silu_hardswish_and_rsqrt() -> None:
     g = Graph()
     x = g.add_input("x", TensorType((3, 5), F32))
